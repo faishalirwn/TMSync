@@ -26,7 +26,8 @@
                 "iframe.js"
             ],
             "matches": [
-                "https://mcloud.bz/*"
+                "https://mcloud.bz/*",
+                "https://vid2faf.site/*"
             ],
             "all_frames": true
         }
