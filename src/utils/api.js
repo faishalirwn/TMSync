@@ -5,15 +5,13 @@ export const callApi = async (url, method, body, isAuth) => {
     const storageResult = await chrome.storage.sync.get(['access_token'])
     const accessToken = await storageResult.access_token
 
-    console.log(body)
-
     const response = await fetch(url, {
         method,
         headers: {
             ...traktHeaders,
             Authorization: isAuth ? `Bearer ${accessToken}` : undefined
         },
-        body
+        body: method === 'GET' ? undefined : JSON.stringify(body)
     });
 
     const json = await response.json();

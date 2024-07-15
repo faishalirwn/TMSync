@@ -13,21 +13,14 @@ if (urlObj.hostname === "fmovies24.to" && (urlObj.pathname.startsWith('/tv') || 
     const genreSpan = document.querySelector('div.detail > div:nth-child(3) > span').textContent
     const genres = genreSpan.split(",").map((genre) => genre.trim().toLowerCase()) ?? undefined;
 
-    (async () => {
-        const response = await chrome.runtime.sendMessage({
-            type: 'Search',
-            payload: {
-                type: getMediaType(),
-                query: title || undefined,
-                years: year,
-                runtime,
-                genres
-            }
-        });
-
-        chrome.storage.sync.set({
-            [getUrlIdentifier()]: response[0][response[0].type]
-        })
-    })();
-
+    chrome.runtime.sendMessage({
+        type: 'mediaInfo',
+        payload: {
+            type: getMediaType(),
+            query: title || undefined,
+            years: year,
+            runtime,
+            genres
+        }
+    });
 }
