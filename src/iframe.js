@@ -1,12 +1,11 @@
 let isWatched = false;
 
-const intervalId = window.setInterval(function () {
-    const video = document.querySelector("video")
+window.setInterval(function () {
+    const video = document.querySelector('video');
     const watchPercentage = (video.currentTime / video.duration) * 100;
-    console.log(watchPercentage)
+    console.log(watchPercentage);
 
     if (watchPercentage >= 80 && !isWatched) {
-
         isWatched = true;
 
         (async () => {
@@ -16,8 +15,7 @@ const intervalId = window.setInterval(function () {
                     progress: watchPercentage
                 }
             });
-            console.log(resp)
-        })()
-
+            console.log(resp);
+        })();
     }
 }, 1000);

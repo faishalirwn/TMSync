@@ -1,26 +1,15 @@
-const url = window.location.href;
-const urlObj = new URL(url);
-const urlPath = urlObj.pathname.split('/');
-
-export const getMediaType = () => {
-    let type;
-
-    if (urlPath[1] === 'movie') {
-        type = 'movie'
-    } else if (urlPath[1] === 'tv') {
-        type = 'show'
-    }
-    return type;
-}
-
-export const getEpisode = () => {
-    const episodeString = urlPath[-1];
-    return {
-        season: episodeString.split("-")[0],
-        number: episodeString.split("-")[1]
-    };
-}
-
-export const getUrlIdentifier = () => {
+export const getUrlIdentifier = (url) => {
+    const urlObj = new URL(url);
+    const urlPath = urlObj.pathname.split('/');
     return urlObj.hostname + '/' + urlPath[1] + '/' + urlPath[2];
-}
+};
+
+export const getEpisode = (url) => {
+    const urlObj = new URL(url);
+    const urlPath = urlObj.pathname.split('/');
+    const episodeArr = urlPath[urlPath.length - 1].split('-');
+    return {
+        season: episodeArr[0],
+        number: episodeArr[1]
+    };
+};
