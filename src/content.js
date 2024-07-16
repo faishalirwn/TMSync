@@ -1,4 +1,4 @@
-import { getUrlIdentifier, getMediaType } from "./utils/url";
+import { getMediaType } from "./utils/url";
 
 const url = window.location.href;
 const urlObj = new URL(url);
@@ -13,14 +13,17 @@ if (urlObj.hostname === "fmovies24.to" && (urlObj.pathname.startsWith('/tv') || 
     const genreSpan = document.querySelector('div.detail > div:nth-child(3) > span').textContent
     const genres = genreSpan.split(",").map((genre) => genre.trim().toLowerCase()) ?? undefined;
 
-    chrome.runtime.sendMessage({
-        type: 'mediaInfo',
-        payload: {
-            type: getMediaType(),
-            query: title || undefined,
-            years: year,
-            runtime,
-            genres
-        }
-    });
+    (async () => {
+        const resp = await chrome.runtime.sendMessage({
+            type: 'mediaInfo',
+            payload: {
+                type: getMediaType(),
+                query: title || undefined,
+                years: year,
+                runtime,
+                genres
+            }
+        });
+        console.log(resp)
+    })()
 }

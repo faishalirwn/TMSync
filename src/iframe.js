@@ -3,17 +3,21 @@ let isWatched = false;
 const intervalId = window.setInterval(function () {
     const video = document.querySelector("video")
     const watchPercentage = (video.currentTime / video.duration) * 100;
+    console.log(watchPercentage)
 
     if (watchPercentage >= 80 && !isWatched) {
 
         isWatched = true;
 
-        chrome.runtime.sendMessage({
-            type: 'scrobble',
-            payload: {
-                progress: watchPercentage
-            }
-        });
+        (async () => {
+            const resp = await chrome.runtime.sendMessage({
+                type: 'scrobble',
+                payload: {
+                    progress: watchPercentage
+                }
+            });
+            console.log(resp)
+        })()
 
     }
 }, 1000);
