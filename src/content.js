@@ -1,124 +1,155 @@
-const url = window.location.href;
-const urlObj = new URL(url);
+// Set up URL monitoring using different methods to ensure we catch navigation changes
+let lastUrl = location.href;
 
-if (
-    urlObj.hostname === 'fmovies24.to' &&
-    (urlObj.pathname.startsWith('/tv') || urlObj.pathname.startsWith('/movie'))
-) {
-    const getMediaType = (url) => {
-        let type;
-        const urlObj = new URL(url);
-        const urlPath = urlObj.pathname.split('/');
-
-        if (urlPath[1] === 'movie') {
-            type = 'movie';
-        } else if (urlPath[1] === 'tv') {
-            type = 'show';
+// Method 1: Use MutationObserver to watch for URL changes
+// Method 1: Use MutationObserver to watch for URL changes
+const observer = new MutationObserver(function(mutations) {
+    if (location.href !== lastUrl) {
+        console.log('URL changed from', lastUrl, 'to', location.href);
+        lastUrl = location.href;
+        
+        // First run the cleanup from the previous page
+        if (typeof cleanup === 'function') {
+            cleanup();
         }
-        return type;
-    };
+        
+        // Then run main() for the new page and store its cleanup function
+        cleanup = main();
+    }
+});
 
-    const title = document.querySelector('h1.name').textContent;
-    const year = document.querySelector('span.year').textContent ?? undefined;
+observer.observe(document, {
+    subtree: true,
+    childList: true
+});
 
-    const metaDiv = document.querySelector('div.meta');
-    const runtimes =
-        metaDiv.children[metaDiv.children.length - 1].textContent.split(
-            ' '
-        )[0] ?? undefined;
+// Method 2: Regular interval check as a fallback
+setInterval(() => {
+    if (location.href !== lastUrl) {
+        console.log('URL changed from', lastUrl, 'to', location.href);
+        lastUrl = location.href;
+        
+        // First run the cleanup from the previous page
+        if (typeof cleanup === 'function') {
+            cleanup();
+        }
+        
+        // Then run main() for the new page and store its cleanup function
+        cleanup = main();
+    }
+}, 1000);
 
-    (async () => {
-        const resp = await chrome.runtime.sendMessage({
-            type: 'mediaInfo',
-            payload: {
-                type: getMediaType(url),
-                query: title || undefined,
-                years: year,
-                runtimes
+// Main function to handle media content
+function main() {
+    const url = window.location.href;
+    const urlObj = new URL(url);
+    console.log('Main function executing for:', url);
+
+    if (
+        urlObj.hostname === 'www.cineby.ru' &&
+        (urlObj.pathname.startsWith('/tv') ||
+            urlObj.pathname.startsWith('/movie'))
+    ) {
+        const getMediaType = (url) => {
+            let type;
+            const urlObj = new URL(url);
+            const urlPath = urlObj.pathname.split('/');
+
+            if (urlPath[1] === 'movie') {
+                type = 'movie';
+            } else if (urlPath[1] === 'tv') {
+                type = 'show';
             }
-        });
-        console.log(resp);
-    })();
+            return type;
+        };
+
+        // Store interval IDs for cleanup
+        const intervals = new Set();
+
+        // Media info detection
+        const mediaInfoInterval = setInterval(() => {
+            try {
+                const titleElement = document.querySelector('head > title');
+                const yearElement = document.querySelector(
+                    '#__next > div.relative.w-full.h-screen > div.z-\\[1\\].mx-0.max-w-screen-lg.px-4.pb-4.md\\:mx-4.lg\\:mx-auto.lg\\:pb-20.xl\\:px-0 > div.flex.items-center.justify-center.min-h-screen.gap-12.text-center > div > div.flex.items-center.gap-3.font-semibold > div:nth-child(1)'
+                );
+
+                if (titleElement && yearElement) {
+                    clearInterval(mediaInfoInterval);
+                    intervals.delete(mediaInfoInterval);
+
+                    const title = titleElement.textContent;
+                    const year = yearElement.textContent.split('/')[0];
+
+                    chrome.runtime.sendMessage({
+                        type: 'mediaInfo',
+                        payload: {
+                            type: getMediaType(url),
+                            query: title || undefined,
+                            years: year
+                        }
+                    }).then(resp => {
+                        console.log('Media info response:', resp);
+                    }).catch(err => {
+                        console.error('Error sending media info:', err);
+                    });
+                }
+            } catch (error) {
+                console.error('Error in media info detection:', error);
+            }
+        }, 500);
+        intervals.add(mediaInfoInterval);
+
+        // Cleanup media info interval after timeout
+        setTimeout(() => {
+            clearInterval(mediaInfoInterval);
+            intervals.delete(mediaInfoInterval);
+        }, 10000);
+
+        let isWatched = false;
+
+        // Video progress monitoring
+        const watchInterval = setInterval(() => {
+            try {
+                const video = document.querySelector('video');
+                if (video) {
+                    const watchPercentage = (video.currentTime / video.duration) * 100;
+                    console.log('Watch percentage:', watchPercentage);
+
+                    if (watchPercentage >= 80 && !isWatched) {
+                        isWatched = true;
+
+                        chrome.runtime.sendMessage({
+                            type: 'scrobble',
+                            payload: {
+                                progress: watchPercentage
+                            }
+                        }).then(resp => {
+                            console.log('Scrobble response:', resp);
+                        }).catch(err => {
+                            console.error('Error sending scrobble:', err);
+                        });
+                    }
+                }
+            } catch (error) {
+                console.error('Error in video monitoring:', error);
+            }
+        }, 1000);
+        intervals.add(watchInterval);
+
+        // Return cleanup function
+        return function cleanup() {
+            console.log('Cleaning up intervals...');
+            for (const interval of intervals) {
+                clearInterval(interval);
+            }
+            intervals.clear();
+        };
+    }
+
+    // Return empty cleanup function if URL doesn't match
+    return function cleanup() {};
 }
 
-function waitForElm(selector) {
-    return new Promise((resolve) => {
-        if (document.querySelector(selector)) {
-            return resolve(document.querySelector(selector));
-        }
-
-        const observer = new MutationObserver(() => {
-            if (document.querySelector(selector)) {
-                observer.disconnect();
-                resolve(document.querySelector(selector));
-            }
-        });
-
-        // If you get "parameter 1 is not of type 'Node'" error, see https://stackoverflow.com/a/77855838/492336
-        observer.observe(document.body, {
-            childList: true,
-            subtree: true
-        });
-    });
-}
-
-if (urlObj.hostname === 'binged.live' && urlObj.pathname.startsWith('/watch')) {
-    const getMediaType = (url) => {
-        let type;
-        const urlObj = new URL(url);
-        const urlPath = urlObj.pathname.split('/');
-
-        if (urlPath[2] === 'movie') {
-            type = 'movie';
-        } else if (urlPath[2] === 'tv') {
-            type = 'show';
-        }
-        return type;
-    };
-
-    (async () => {
-        let title;
-        let year;
-        if (getMediaType(url) === 'movie') {
-            const titleEl = await waitForElm(
-                // prettier-ignore
-                // eslint-disable-next-line no-useless-escape
-                '#root > div.min-h-screen.overflow-auto > div:nth-child(2) > div.w-full.max-w-7xl.mx-auto.px-2.sm\\:px-3 > div > div.flex.w-full.lg\\:w-\\[70\\%\\].md\\:w-\\[80\\%\\].flex-col.gap-2 > span'
-            );
-            title = titleEl.textContent;
-
-            const yearEl = await waitForElm(
-                // prettier-ignore
-                // eslint-disable-next-line no-useless-escape
-                'div.min-h-screen.overflow-auto > div:nth-child(2) > div.w-full.max-w-7xl.mx-auto.px-2.sm\\:px-3 > div > div.flex.w-full.lg\\:w-\\[70\\%\\].md\\:w-\\[80\\%\\].flex-col.gap-2 > div.flex.flex-col.flex-wrap.gap-\\[\\.6rem\\].lg\\:gap-\\[\\.4rem\\].tracking-wide > div:nth-child(1) > span'
-            );
-            year = yearEl.textContent.split('/')[0] ?? undefined;
-        }
-
-        if (getMediaType(url) === 'show') {
-            const titleEl = await waitForElm(
-                // prettier-ignore
-                // eslint-disable-next-line no-useless-escape
-                '#root > div:nth-child(7) > div > div.flex.w-full.lg\\:w-\\[70\\%\\].md\\:w-\\[80\\%\\].flex-col.gap-2 > span'
-            );
-            title = titleEl.textContent;
-
-            const yearEl = await waitForElm(
-                // prettier-ignore
-                // eslint-disable-next-line no-useless-escape
-                '#root > div:nth-child(7) > div > div.flex.w-full.lg\\:w-\\[70\\%\\].md\\:w-\\[80\\%\\].flex-col.gap-2 > div.flex.flex-col.flex-wrap.gap-\\[\\.6rem\\].lg\\:gap-\\[\\.4rem\\].tracking-wide > div:nth-child(1) > span'
-            );
-            year = yearEl.textContent.split('/')[0] ?? undefined;
-        }
-
-        const resp = await chrome.runtime.sendMessage({
-            type: 'mediaInfo',
-            payload: {
-                type: getMediaType(url),
-                query: title || undefined,
-                years: year
-            }
-        });
-        console.log(resp);
-    })();
-}
+// Initial call
+let cleanup = main();

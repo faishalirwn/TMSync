@@ -3,14 +3,7 @@ export const getUrlIdentifier = (url) => {
     const urlPath = urlObj.pathname.split('/');
 
     if (
-        urlObj.hostname === 'binged.live' &&
-        urlObj.pathname.startsWith('/watch')
-    ) {
-        return urlObj.hostname + '/' + urlObj.pathname;
-    }
-
-    if (
-        urlObj.hostname === 'fmovies24.to' &&
+        urlObj.hostname === 'www.cineby.ru' &&
         (urlObj.pathname.startsWith('/tv') ||
             urlObj.pathname.startsWith('/movie'))
     ) {
@@ -23,24 +16,20 @@ export const getEpisode = (url) => {
     const urlPath = urlObj.pathname.split('/');
 
     if (
-        urlObj.hostname === 'binged.live' &&
-        urlObj.pathname.startsWith('/watch')
-    ) {
-        return {
-            season: urlObj.searchParams.get('season'),
-            number: urlObj.searchParams.get('ep')
-        };
-    }
-
-    if (
-        urlObj.hostname === 'fmovies24.to' &&
+        urlObj.hostname === 'www.cineby.ru' &&
         (urlObj.pathname.startsWith('/tv') ||
             urlObj.pathname.startsWith('/movie'))
     ) {
-        const episodeArr = urlPath[urlPath.length - 1].split('-');
-        return {
-            season: episodeArr[0],
-            number: episodeArr[1]
-        };
+        if (urlPath.length === 3) {
+            return {
+                season: 1,
+                number: 1
+            };
+        } else {
+            return {
+                season: urlPath[3],
+                number: urlPath[4]
+            };
+        }
     }
 };
