@@ -1,4 +1,4 @@
-export const getUrlIdentifier = (url) => {
+export const getUrlIdentifier = (url: string): string => {
     const urlObj = new URL(url);
     const urlPath = urlObj.pathname.split('/');
 
@@ -8,10 +8,12 @@ export const getUrlIdentifier = (url) => {
             urlObj.pathname.startsWith('/movie'))
     ) {
         return urlObj.hostname + '/' + urlPath[1] + '/' + urlPath[2];
+    } else {
+        return '';
     }
 };
 
-export const getEpisode = (url) => {
+export const getEpisode = (url: string) => {
     const urlObj = new URL(url);
     const urlPath = urlObj.pathname.split('/');
 

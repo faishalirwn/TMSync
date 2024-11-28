@@ -2,17 +2,16 @@
 let lastUrl = location.href;
 
 // Method 1: Use MutationObserver to watch for URL changes
-// Method 1: Use MutationObserver to watch for URL changes
-const observer = new MutationObserver(function(mutations) {
+const observer = new MutationObserver(function (mutations) {
     if (location.href !== lastUrl) {
         console.log('URL changed from', lastUrl, 'to', location.href);
         lastUrl = location.href;
-        
+
         // First run the cleanup from the previous page
         if (typeof cleanup === 'function') {
             cleanup();
         }
-        
+
         // Then run main() for the new page and store its cleanup function
         cleanup = main();
     }
@@ -28,12 +27,12 @@ setInterval(() => {
     if (location.href !== lastUrl) {
         console.log('URL changed from', lastUrl, 'to', location.href);
         lastUrl = location.href;
-        
+
         // First run the cleanup from the previous page
         if (typeof cleanup === 'function') {
             cleanup();
         }
-        
+
         // Then run main() for the new page and store its cleanup function
         cleanup = main();
     }
@@ -50,7 +49,7 @@ function main() {
         (urlObj.pathname.startsWith('/tv') ||
             urlObj.pathname.startsWith('/movie'))
     ) {
-        const getMediaType = (url) => {
+        const getMediaType = (url: string) => {
             let type;
             const urlObj = new URL(url);
             const urlPath = urlObj.pathname.split('/');
@@ -64,7 +63,7 @@ function main() {
         };
 
         // Store interval IDs for cleanup
-        const intervals = new Set();
+        const intervals = new Set<NodeJS.Timeout>();
 
         // Media info detection
         const mediaInfoInterval = setInterval(() => {
@@ -79,20 +78,25 @@ function main() {
                     intervals.delete(mediaInfoInterval);
 
                     const title = titleElement.textContent;
-                    const year = yearElement.textContent.split('/')[0];
+                    const year = yearElement.textContent
+                        ? yearElement.textContent.split('/')[0]
+                        : undefined;
 
-                    chrome.runtime.sendMessage({
-                        type: 'mediaInfo',
-                        payload: {
-                            type: getMediaType(url),
-                            query: title || undefined,
-                            years: year
-                        }
-                    }).then(resp => {
-                        console.log('Media info response:', resp);
-                    }).catch(err => {
-                        console.error('Error sending media info:', err);
-                    });
+                    chrome.runtime
+                        .sendMessage({
+                            type: 'mediaInfo',
+                            payload: {
+                                type: getMediaType(url),
+                                query: title || undefined,
+                                years: year
+                            }
+                        })
+                        .then((resp) => {
+                            console.log('Media info response:', resp);
+                        })
+                        .catch((err) => {
+                            console.error('Error sending media info:', err);
+                        });
                 }
             } catch (error) {
                 console.error('Error in media info detection:', error);
@@ -109,26 +113,31 @@ function main() {
         let isWatched = false;
 
         // Video progress monitoring
+        console.log('Initiate Video progress monitoring');
         const watchInterval = setInterval(() => {
             try {
                 const video = document.querySelector('video');
                 if (video) {
-                    const watchPercentage = (video.currentTime / video.duration) * 100;
-                    console.log('Watch percentage:', watchPercentage);
+                    const watchPercentage =
+                        (video.currentTime / video.duration) * 100;
 
                     if (watchPercentage >= 80 && !isWatched) {
+                        console.log('Watch percentage:', watchPercentage);
                         isWatched = true;
 
-                        chrome.runtime.sendMessage({
-                            type: 'scrobble',
-                            payload: {
-                                progress: watchPercentage
-                            }
-                        }).then(resp => {
-                            console.log('Scrobble response:', resp);
-                        }).catch(err => {
-                            console.error('Error sending scrobble:', err);
-                        });
+                        chrome.runtime
+                            .sendMessage({
+                                type: 'scrobble',
+                                payload: {
+                                    progress: watchPercentage
+                                }
+                            })
+                            .then((resp) => {
+                                console.log('Scrobble response:', resp);
+                            })
+                            .catch((err) => {
+                                console.error('Error sending scrobble:', err);
+                            });
                     }
                 }
             } catch (error) {
