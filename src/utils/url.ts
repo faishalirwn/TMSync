@@ -3,7 +3,7 @@ export const getUrlIdentifier = (url: string): string => {
     const urlPath = urlObj.pathname.split('/');
 
     if (
-        urlObj.hostname === 'www.cineby.ru' &&
+        urlObj.hostname === 'www.cineby.app' &&
         (urlObj.pathname.startsWith('/tv') ||
             urlObj.pathname.startsWith('/movie'))
     ) {
@@ -18,7 +18,7 @@ export const getEpisode = (url: string) => {
     const urlPath = urlObj.pathname.split('/');
 
     if (
-        urlObj.hostname === 'www.cineby.ru' &&
+        urlObj.hostname === 'www.cineby.app' &&
         (urlObj.pathname.startsWith('/tv') ||
             urlObj.pathname.startsWith('/movie'))
     ) {

@@ -45,7 +45,7 @@ function main() {
     console.log('Main function executing for:', url);
 
     if (
-        urlObj.hostname === 'www.cineby.ru' &&
+        urlObj.hostname === 'www.cineby.app' &&
         (urlObj.pathname.startsWith('/tv') ||
             urlObj.pathname.startsWith('/movie'))
     ) {
@@ -79,7 +79,7 @@ function main() {
 
                     const title = titleElement.textContent;
                     const year = yearElement.textContent
-                        ? yearElement.textContent.split('/')[0]
+                        ? yearElement.textContent.split('/')[2]
                         : undefined;
 
                     chrome.runtime

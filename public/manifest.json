@@ -5,26 +5,15 @@
     "action": {
         "default_popup": "popup.html"
     },
-    "permissions": [
-        "identity",
-        "storage"
-    ],
-    "host_permissions": [
-        "https://api.trakt.tv/*/"
-    ],
+    "permissions": ["identity", "storage"],
+    "host_permissions": ["https://api.trakt.tv/*/"],
     "content_scripts": [
         {
-            "js": [
-                "js/contentScript.js"
-            ],
-            "matches": [
-                "https://www.cineby.ru/*"
-            ]
+            "js": ["js/contentScript.js"],
+            "matches": ["https://www.cineby.app/*"]
         },
         {
-            "js": [
-                "js/iframeContentScript.js"
-            ],
+            "js": ["js/iframeContentScript.js"],
             "matches": [
                 "https://mcloud.bz/*",
                 "https://vid2faf.site/*",
