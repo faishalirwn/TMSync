@@ -1,43 +1,6 @@
 import { callApi } from './utils/api';
+import { MovieMediaInfo, ScrobbleBody, ShowMediaInfo } from './utils/types';
 import { getEpisode, getUrlIdentifier } from './utils/url';
-
-interface MovieMediaInfo {
-    type: string;
-    score: number;
-    movie: {
-        title: string;
-        year: number;
-        ids: {
-            trakt: number;
-            slug: string;
-            imdb: string;
-            tmdb: number;
-        };
-    };
-}
-
-interface ShowMediaInfo {
-    type: string;
-    score: number;
-    show: {
-        title: string;
-        year: number;
-        ids: {
-            trakt: number;
-            slug: string;
-            tvdb: number;
-            imdb: string;
-            tmdb: number;
-        };
-    };
-}
-
-interface ScrobbleBody {
-    movie?: MovieMediaInfo['movie'];
-    show?: ShowMediaInfo['show'];
-    episode?: ReturnType<typeof getEpisode>;
-    progress: number;
-}
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.type === 'scrobble') {
@@ -77,7 +40,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                             JSON.stringify(body),
                             true
                         );
-                        sendResponse(stopResult);
+                        sendResponse(body);
                     } catch (error) {
                         sendResponse('fail scrobble dawg');
                     }

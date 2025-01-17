@@ -1,4 +1,4 @@
-export function waitForElm(selector: string) {
+export function waitForElm(selector: string): Promise<Element | null> {
     return new Promise((resolve) => {
         if (document.querySelector(selector)) {
             return resolve(document.querySelector(selector));
@@ -7,7 +7,7 @@ export function waitForElm(selector: string) {
         const observer = new MutationObserver(() => {
             if (document.querySelector(selector)) {
                 observer.disconnect();
-                resolve(document.querySelector(selector));
+                return resolve(document.querySelector(selector));
             }
         });
 
