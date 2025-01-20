@@ -1,4 +1,4 @@
-import { getEpisode } from './url';
+import { getSeasonEpisodeObj } from './url';
 
 interface MovieMediaInfo {
     type: string;
@@ -34,7 +34,7 @@ interface ShowMediaInfo {
 interface ScrobbleBody {
     movie?: MovieMediaInfo['movie'];
     show?: ShowMediaInfo['show'];
-    episode?: ReturnType<typeof getEpisode>;
+    episode?: ReturnType<typeof getSeasonEpisodeObj>;
     progress: number;
 }
 

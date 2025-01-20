@@ -5,6 +5,7 @@ import { getUrlIdentifier } from './utils/url';
 
 // Set up URL monitoring using different methods to ensure we catch navigation changes
 let url = location.href;
+let urlIdentifier = getUrlIdentifier(url);
 let urlObj = new URL(url);
 
 let title = document.title;
@@ -19,6 +20,7 @@ setInterval(() => {
 
     if (location.href !== url) {
         url = location.href;
+        urlIdentifier = getUrlIdentifier(url);
         urlObj = new URL(url);
         urlChanged = true;
     }
@@ -106,12 +108,10 @@ function main() {
             );
         }
 
-        chrome.storage.local.get(getUrlIdentifier(url)).then((mediaInfoGet) => {
-            if (mediaInfoGet[getUrlIdentifier(url)]) {
-                console.log(
-                    'Media info already stored:',
-                    mediaInfoGet[getUrlIdentifier(url)]
-                );
+        chrome.storage.local.get(urlIdentifier).then((mediaInfoGet) => {
+            if (mediaInfoGet[urlIdentifier]) {
+                console.log('Media info already stored:');
+                console.log(mediaInfoGet[urlIdentifier]);
                 return;
             }
 
@@ -132,28 +132,30 @@ function main() {
         const watchInterval = setInterval(() => {
             try {
                 const video = document.querySelector('video');
-                if (video) {
-                    const watchPercentage =
-                        (video.currentTime / video.duration) * 100;
+                if (!video) {
+                    return;
+                }
 
-                    if (watchPercentage >= 80 && !isWatched) {
-                        console.log('Watch percentage:', watchPercentage);
-                        isWatched = true;
+                const watchPercentage =
+                    (video.currentTime / video.duration) * 100;
 
-                        chrome.runtime
-                            .sendMessage({
-                                type: 'scrobble',
-                                payload: {
-                                    progress: watchPercentage
-                                }
-                            })
-                            .then((resp) => {
-                                console.log('Scrobble response:', resp);
-                            })
-                            .catch((err) => {
-                                console.error('Error sending scrobble:', err);
-                            });
-                    }
+                if (watchPercentage >= 80 && !isWatched) {
+                    console.log('Watch percentage:', watchPercentage);
+                    isWatched = true;
+
+                    chrome.runtime
+                        .sendMessage({
+                            type: 'scrobble',
+                            payload: {
+                                progress: watchPercentage
+                            }
+                        })
+                        .then((resp) => {
+                            console.log('Scrobble response:', resp);
+                        })
+                        .catch((err) => {
+                            console.error('Error sending scrobble:', err);
+                        });
                 }
             } catch (error) {
                 console.error('Error in video monitoring:', error);

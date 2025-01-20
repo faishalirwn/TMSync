@@ -13,7 +13,7 @@ export const getUrlIdentifier = (url: string): string => {
     }
 };
 
-export const getEpisode = (url: string) => {
+export const getSeasonEpisodeObj = (url: string) => {
     const urlObj = new URL(url);
     const urlPath = urlObj.pathname.split('/');
 
@@ -29,8 +29,8 @@ export const getEpisode = (url: string) => {
             };
         } else {
             return {
-                season: urlPath[3],
-                number: urlPath[4]
+                season: Number(urlPath[3]),
+                number: Number(urlPath[4])
             };
         }
     }
