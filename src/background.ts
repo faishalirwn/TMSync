@@ -1,5 +1,10 @@
 import { callApi } from './utils/api';
-import { MovieMediaInfo, ScrobbleBody, ShowMediaInfo } from './utils/types';
+import {
+    HistoryBody,
+    MovieMediaInfo,
+    ScrobbleBody,
+    ShowMediaInfo
+} from './utils/types';
 import { getSeasonEpisodeObj, getUrlIdentifier } from './utils/url';
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -20,33 +25,36 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             const mediaInfoGet = await chrome.storage.local.get(tabUrl);
             const mediaInfo: MovieMediaInfo | ShowMediaInfo =
                 mediaInfoGet[tabUrl];
-            const body: ScrobbleBody = {
-                progress: request.payload.progress
-            };
+            let body: HistoryBody = {};
 
             if (mediaInfo.type === 'movie' && 'movie' in mediaInfo) {
-                body.movie = mediaInfo.movie;
+                body.movies = [mediaInfo.movie];
             } else if (mediaInfo.type === 'show' && 'show' in mediaInfo) {
-                body.show = mediaInfo.show;
-                body.episode = getSeasonEpisodeObj(sender.tab.url);
+                body.shows = [mediaInfo.show];
+                const seasonEpisode = getSeasonEpisodeObj(sender.tab.url);
+                if (!seasonEpisode) {
+                    sendResponse('season episode parse fail');
+                    return;
+                }
+                const { season, number } = seasonEpisode;
+                body.shows[0].seasons = [
+                    {
+                        number: season,
+                        episodes: [{ number }]
+                    }
+                ];
             }
             console.log(body);
 
             try {
-                await callApi(
-                    `https://api.trakt.tv/scrobble/start`,
+                const historyResponse = await callApi(
+                    `https://api.trakt.tv/sync/history`,
                     'POST',
                     JSON.stringify(body),
                     true
                 );
-                await new Promise((r) => setTimeout(r, 1000));
-                await callApi(
-                    `https://api.trakt.tv/scrobble/stop`,
-                    'POST',
-                    JSON.stringify(body),
-                    true
-                );
-                sendResponse(body);
+
+                sendResponse(historyResponse);
             } catch (error) {
                 sendResponse('fail scrobble dawg');
             }
