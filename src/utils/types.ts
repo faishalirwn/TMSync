@@ -1,6 +1,6 @@
 import { getSeasonEpisodeObj } from './url';
 
-interface MovieMediaInfo {
+export interface MovieMediaInfo {
     type: string;
     score: number;
     movie: {
@@ -15,7 +15,7 @@ interface MovieMediaInfo {
     };
 }
 
-interface ShowMediaInfo {
+export interface ShowMediaInfo {
     type: string;
     score: number;
     show: {
@@ -31,7 +31,7 @@ interface ShowMediaInfo {
     };
 }
 
-interface ScrobbleBody {
+export interface ScrobbleBody {
     movie?: MovieMediaInfo['movie'];
     show?: ShowMediaInfo['show'];
     episode?: ReturnType<typeof getSeasonEpisodeObj>;
@@ -100,11 +100,49 @@ interface StandaloneEpisode {
 }
 
 // Main history body interface
-interface HistoryBody {
+export interface HistoryBody {
     movies?: HistoryMovie[];
     shows?: HistoryShow[];
     seasons?: StandaloneSeason[];
     episodes?: StandaloneEpisode[];
 }
 
-export { MovieMediaInfo, ShowMediaInfo, ScrobbleBody, HistoryBody };
+// Request types sent from content script
+export interface MediaInfoRequest {
+    action: 'mediaInfo';
+    params: {
+        type: string;
+        query: string;
+        years: string;
+    };
+}
+
+export interface ScrobbleRequest {
+    action: 'scrobble';
+    params: { progress: number };
+}
+
+export interface UndoScrobbleRequest {
+    action: 'undoScrobble';
+    params: { historyId: number };
+}
+
+// Define a union of all possible request types
+export type MessageRequest =
+    | MediaInfoRequest
+    | ScrobbleRequest
+    | UndoScrobbleRequest;
+
+// Define the response type
+export interface MessageResponse<T> {
+    success: boolean;
+    data?: T;
+    error?: string;
+}
+
+// Response data types for specific actions
+export type MediaInfoResponse = MovieMediaInfo | ShowMediaInfo;
+
+export interface ScrobbleResponse {
+    traktHistoryId: number;
+}

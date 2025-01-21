@@ -3,8 +3,8 @@ import { traktHeaders } from './config';
 export const callApi = async (
     url: string,
     method: string,
-    body: BodyInit | string,
-    isAuth: boolean
+    body: BodyInit | string = '',
+    isAuth: boolean = true
 ) => {
     // because we're using this chrome API, this whole function can only be called from content script, service worker, and other extension specific file
     const storageResult = await chrome.storage.sync.get(['access_token']);

@@ -1,4 +1,11 @@
 import { waitForElm } from './utils/content';
+import {
+    MediaInfoRequest,
+    MediaInfoResponse,
+    MessageResponse,
+    ScrobbleRequest,
+    ScrobbleResponse
+} from './utils/types';
 import { getUrlIdentifier } from './utils/url';
 
 // TODO: way to change media info if it's wrong
@@ -56,7 +63,7 @@ function main() {
             urlObj.pathname.startsWith('/movie'))
     ) {
         function getMediaType(url: string) {
-            let type;
+            let type = '';
             const urlObj = new URL(url);
             const urlPath = urlObj.pathname.split('/');
 
@@ -87,19 +94,35 @@ function main() {
                     const year = yearElement.textContent
                         ? yearElement.textContent.split('/')[2]
                         : undefined;
+                    const mediaType = getMediaType(url);
+
+                    if (!title || !year || !mediaType) {
+                        console.error('Title, year, or media type not found');
+                        return;
+                    }
 
                     // Call API through background script because content scripts can't make API requests directly because of CORS
                     chrome.runtime
-                        .sendMessage({
-                            type: 'mediaInfo',
-                            payload: {
+                        .sendMessage<
+                            MediaInfoRequest,
+                            MessageResponse<MediaInfoResponse>
+                        >({
+                            action: 'mediaInfo',
+                            params: {
                                 type: getMediaType(url),
-                                query: title || undefined,
+                                query: title,
                                 years: year
                             }
                         })
                         .then((resp) => {
-                            console.log('Media info response:', resp);
+                            if (resp.success) {
+                                console.log('Media info response:', resp.data);
+                            } else {
+                                console.error(
+                                    'Error sending media info:',
+                                    resp.error
+                                );
+                            }
                         })
                         .catch((err) => {
                             console.error('Error sending media info:', err);
@@ -144,14 +167,63 @@ function main() {
                     isWatched = true;
 
                     chrome.runtime
-                        .sendMessage({
-                            type: 'scrobble',
-                            payload: {
+                        .sendMessage<
+                            ScrobbleRequest,
+                            MessageResponse<ScrobbleResponse>
+                        >({
+                            action: 'scrobble',
+                            params: {
                                 progress: watchPercentage
                             }
                         })
                         .then((resp) => {
-                            console.log('Scrobble response:', resp);
+                            if (resp.success) {
+                                console.log('Scrobble response:', resp.data);
+
+                                if (!resp.data) {
+                                    return;
+                                }
+
+                                const traktHistoryId = resp.data.traktHistoryId;
+
+                                const undoScrobble = confirm(
+                                    'Scrobble complete! Undo scrobble?'
+                                );
+
+                                if (undoScrobble) {
+                                    chrome.runtime
+                                        .sendMessage({
+                                            action: 'undoScrobble',
+                                            params: {
+                                                historyId: traktHistoryId
+                                            }
+                                        })
+                                        .then((resp) => {
+                                            if (resp.success) {
+                                                console.log(
+                                                    'Undo scrobble response:',
+                                                    resp
+                                                );
+                                            } else {
+                                                console.error(
+                                                    'Error undoing scrobble:',
+                                                    resp.error
+                                                );
+                                            }
+                                        })
+                                        .catch((err) => {
+                                            console.error(
+                                                'Error undoing scrobble:',
+                                                err
+                                            );
+                                        });
+                                }
+                            } else {
+                                console.error(
+                                    'Error sending scrobble:',
+                                    resp.error
+                                );
+                            }
                         })
                         .catch((err) => {
                             console.error('Error sending scrobble:', err);
