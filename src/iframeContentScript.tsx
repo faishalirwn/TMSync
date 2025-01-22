@@ -1,23 +1,23 @@
-let isWatched = false;
+// basically the same as contentScript.tsx. going to delete this file later
 
-window.setInterval(function () {
-    const video = document.querySelector('video');
-    if (video) {
-        const watchPercentage = (video.currentTime / video.duration) * 100;
-        console.log(watchPercentage);
+// let isWatched = false;
 
-        if (watchPercentage >= 80 && !isWatched) {
-            isWatched = true;
-
-            (async () => {
-                const resp = await chrome.runtime.sendMessage({
-                    type: 'scrobble',
-                    payload: {
-                        progress: watchPercentage
-                    }
-                });
-                console.log(resp);
-            })();
-        }
-    }
-}, 1000);
+// window.setInterval(function () {
+//     const video = document.querySelector('video');
+//     if (video) {
+//         const watchPercentage = (video.currentTime / video.duration) * 100;
+//         console.log(watchPercentage);
+//         if (watchPercentage >= 80 && !isWatched) {
+//             isWatched = true;
+//             (async () => {
+//                 const resp = await chrome.runtime.sendMessage({
+//                     type: 'scrobble',
+//                     payload: {
+//                         progress: watchPercentage
+//                     }
+//                 });
+//                 console.log(resp);
+//             })();
+//         }
+//     }
+// }, 1000);
