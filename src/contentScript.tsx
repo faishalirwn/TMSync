@@ -9,6 +9,10 @@ import {
 import { getSeasonEpisodeObj, getUrlIdentifier } from './utils/url';
 
 // TODO: way to change media info if it's wrong
+// IDEA: ditch main. have a initial page load listener using setInterval, and have a mutation observer to detect
+// changes in the page. if the page changes, run the main function again. if the page changes to a different page,
+// run the cleanup function and then run the main function again.
+// listener, scrapper, scrobble/video monitoring.
 
 // Set up URL monitoring using different methods to ensure we catch navigation changes
 let url = location.href;
