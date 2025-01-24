@@ -22,6 +22,8 @@ chrome.runtime.onMessage.addListener(
                 return;
             }
 
+            // important: we use geturlidentifer because sender.tab.url is only accessible in background script.
+            // this function can be used in content script as well. so the url is consistent.
             const tabUrl = getUrlIdentifier(sender.tab.url);
 
             if (!tabUrl) {
@@ -118,6 +120,9 @@ chrome.runtime.onMessage.addListener(
                         'GET'
                     );
                     const mediaInfo: MovieMediaInfo | ShowMediaInfo = result[0];
+                    // IMPORTANT: we store the info in local storage so we can use it in a site that uses iframe as video player.
+                    // global variable content script won't work because the parent website is different from the iframe website.
+                    // they have their own content script, they trigger independently.
                     chrome.storage.local.set({
                         [tabUrl]: {
                             ...mediaInfo,
