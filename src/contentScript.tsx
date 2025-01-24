@@ -6,7 +6,7 @@ import {
     ScrobbleRequest,
     ScrobbleResponse
 } from './utils/types';
-import { getSeasonEpisodeObj, getUrlIdentifier } from './utils/url';
+import { getUrlIdentifier } from './utils/url';
 
 // TODO: way to change media info if it's wrong
 // IDEA: ditch main. have a initial page load listener using setInterval, and have a mutation observer to detect
@@ -22,8 +22,6 @@ let urlObj = new URL(url);
 let title = document.title;
 let titleChanged = false;
 let urlChanged = false;
-
-let traktId: number;
 
 setInterval(() => {
     if (document.title !== title) {
@@ -81,13 +79,6 @@ function main() {
             return type;
         }
 
-        const mediaType = getMediaType(url);
-
-        let seasonAndEpisode: ReturnType<typeof getSeasonEpisodeObj>;
-        if (mediaType === 'show') {
-            seasonAndEpisode = getSeasonEpisodeObj(url);
-        }
-
         // Store interval IDs for cleanup
         const intervals = new Set<NodeJS.Timeout>();
 
@@ -107,6 +98,7 @@ function main() {
                     const year = yearElement.textContent
                         ? yearElement.textContent.split('/')[2]
                         : undefined;
+                    const mediaType = getMediaType(url);
 
                     if (!title || !year || !mediaType) {
                         console.error('Title, year, or media type not found');
@@ -121,7 +113,7 @@ function main() {
                         >({
                             action: 'mediaInfo',
                             params: {
-                                type: mediaType,
+                                type: getMediaType(url),
                                 query: title,
                                 years: year
                             }
@@ -129,10 +121,6 @@ function main() {
                         .then((resp) => {
                             if (resp.success) {
                                 console.log('Media info response:', resp.data);
-                                if (!resp.data) {
-                                    return;
-                                }
-                                traktId = resp.data.traktId;
                             } else {
                                 console.error(
                                     'Error sending media info:',
@@ -147,14 +135,22 @@ function main() {
             );
         }
 
-        const titleChangeInterval = setInterval(() => {
-            if (document.title !== 'Cineby') {
-                getMediaInfo();
-                clearInterval(titleChangeInterval);
-            } else {
-                console.log('Waiting for title change...');
+        chrome.storage.local.get(urlIdentifier).then((mediaInfoGet) => {
+            if (mediaInfoGet[urlIdentifier]) {
+                console.log('Media info already stored:');
+                console.log(mediaInfoGet[urlIdentifier]);
+                return;
             }
-        }, 1000);
+
+            const titleChangeInterval = setInterval(() => {
+                if (document.title !== 'Cineby') {
+                    getMediaInfo();
+                    clearInterval(titleChangeInterval);
+                } else {
+                    console.log('Waiting for title change...');
+                }
+            }, 1000);
+        });
 
         let isWatched = false;
 
@@ -181,11 +177,7 @@ function main() {
                         >({
                             action: 'scrobble',
                             params: {
-                                progress: watchPercentage,
-                                traktId,
-                                type: mediaType,
-                                season: seasonAndEpisode?.season,
-                                episode: seasonAndEpisode?.number
+                                progress: watchPercentage
                             }
                         })
                         .then((resp) => {
@@ -202,36 +194,34 @@ function main() {
                                     'Scrobble complete! Undo scrobble?'
                                 );
 
-                                if (!undoScrobble) {
-                                    return;
-                                }
-
-                                chrome.runtime
-                                    .sendMessage({
-                                        action: 'undoScrobble',
-                                        params: {
-                                            historyId: traktHistoryId
-                                        }
-                                    })
-                                    .then((resp) => {
-                                        if (resp.success) {
-                                            console.log(
-                                                'Undo scrobble response:',
-                                                resp
-                                            );
-                                        } else {
+                                if (undoScrobble) {
+                                    chrome.runtime
+                                        .sendMessage({
+                                            action: 'undoScrobble',
+                                            params: {
+                                                historyId: traktHistoryId
+                                            }
+                                        })
+                                        .then((resp) => {
+                                            if (resp.success) {
+                                                console.log(
+                                                    'Undo scrobble response:',
+                                                    resp
+                                                );
+                                            } else {
+                                                console.error(
+                                                    'Error undoing scrobble:',
+                                                    resp.error
+                                                );
+                                            }
+                                        })
+                                        .catch((err) => {
                                             console.error(
                                                 'Error undoing scrobble:',
-                                                resp.error
+                                                err
                                             );
-                                        }
-                                    })
-                                    .catch((err) => {
-                                        console.error(
-                                            'Error undoing scrobble:',
-                                            err
-                                        );
-                                    });
+                                        });
+                                }
                             } else {
                                 console.error(
                                     'Error sending scrobble:',

@@ -1,5 +1,3 @@
-import { SeasonAndEpisode } from './types';
-
 export const getUrlIdentifier = (url: string): string => {
     const urlObj = new URL(url);
     const urlPath = urlObj.pathname.split('/');
@@ -15,7 +13,7 @@ export const getUrlIdentifier = (url: string): string => {
     }
 };
 
-export const getSeasonEpisodeObj = (url: string): SeasonAndEpisode | null => {
+export const getSeasonEpisodeObj = (url: string) => {
     const urlObj = new URL(url);
     const urlPath = urlObj.pathname.split('/');
 
@@ -36,6 +34,4 @@ export const getSeasonEpisodeObj = (url: string): SeasonAndEpisode | null => {
             };
         }
     }
-
-    return null;
 };

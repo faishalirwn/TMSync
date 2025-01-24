@@ -8,35 +8,55 @@ import {
     ScrobbleResponse,
     ShowMediaInfo
 } from './utils/types';
+import { getSeasonEpisodeObj, getUrlIdentifier } from './utils/url';
 
 chrome.runtime.onMessage.addListener(
     (request: MessageRequest, sender, sendResponse) => {
         (async () => {
+            if (!sender.tab || !sender.tab.url) {
+                const response: MessageResponse<null> = {
+                    success: false,
+                    error: 'no sender.tab'
+                };
+                sendResponse(response);
+                return;
+            }
+
+            const tabUrl = getUrlIdentifier(sender.tab.url);
+
+            if (!tabUrl) {
+                const response: MessageResponse<null> = {
+                    success: false,
+                    error: 'tab url parse fail'
+                };
+                sendResponse(response);
+                return;
+            }
+
             if (request.action === 'scrobble') {
+                const mediaInfoGet = await chrome.storage.local.get(tabUrl);
+                const mediaInfo: MovieMediaInfo | ShowMediaInfo =
+                    mediaInfoGet[tabUrl];
                 let body: HistoryBody = {};
 
-                if (request.params.type === 'movie') {
-                    body.movies = [
+                if (mediaInfo.type === 'movie' && 'movie' in mediaInfo) {
+                    body.movies = [mediaInfo.movie];
+                } else if (mediaInfo.type === 'show' && 'show' in mediaInfo) {
+                    body.shows = [mediaInfo.show];
+                    const seasonEpisode = getSeasonEpisodeObj(sender.tab.url);
+                    if (!seasonEpisode) {
+                        const response: MessageResponse<null> = {
+                            success: false,
+                            error: 'season episode parse fail'
+                        };
+                        sendResponse(response);
+                        return;
+                    }
+                    const { season, number } = seasonEpisode;
+                    body.shows[0].seasons = [
                         {
-                            ids: {
-                                trakt: request.params.traktId
-                            }
-                        }
-                    ];
-                } else if (request.params.type === 'show') {
-                    body.shows = [
-                        {
-                            ids: {
-                                trakt: request.params.traktId
-                            },
-                            seasons: [
-                                {
-                                    number: request.params.season,
-                                    episodes: [
-                                        { number: request.params.episode || 1 }
-                                    ]
-                                }
-                            ]
+                            number: season,
+                            episodes: [{ number }]
                         }
                     ];
                 }
@@ -98,20 +118,15 @@ chrome.runtime.onMessage.addListener(
                         'GET'
                     );
                     const mediaInfo: MovieMediaInfo | ShowMediaInfo = result[0];
-
-                    let traktId: number;
-                    if ('movie' in mediaInfo) {
-                        traktId = mediaInfo.movie.ids.trakt;
-                    } else if ('show' in mediaInfo) {
-                        traktId = mediaInfo.show.ids.trakt;
-                    } else {
-                        throw new Error('Unknown media type');
-                    }
+                    chrome.storage.local.set({
+                        [tabUrl]: {
+                            ...mediaInfo,
+                            type: request.params.type
+                        }
+                    });
                     const response: MessageResponse<MediaInfoResponse> = {
                         success: true,
-                        data: {
-                            traktId
-                        }
+                        data: mediaInfo
                     };
                     sendResponse(response);
                 } catch (error) {

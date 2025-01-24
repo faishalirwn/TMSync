@@ -119,13 +119,7 @@ export interface MediaInfoRequest {
 
 export interface ScrobbleRequest {
     action: 'scrobble';
-    params: {
-        progress: number;
-        type: string;
-        traktId: number;
-        season?: number;
-        episode?: number;
-    };
+    params: { progress: number };
 }
 
 export interface UndoScrobbleRequest {
@@ -133,17 +127,11 @@ export interface UndoScrobbleRequest {
     params: { historyId: number };
 }
 
-export interface TestRequest {
-    action: 'test';
-    params: { test: any };
-}
-
 // Define a union of all possible request types
 export type MessageRequest =
     | MediaInfoRequest
     | ScrobbleRequest
-    | UndoScrobbleRequest
-    | TestRequest;
+    | UndoScrobbleRequest;
 
 // Define the response type
 export interface MessageResponse<T> {
@@ -153,15 +141,8 @@ export interface MessageResponse<T> {
 }
 
 // Response data types for specific actions
-export type MediaInfoResponse = {
-    traktId: number;
-};
+export type MediaInfoResponse = MovieMediaInfo | ShowMediaInfo;
 
 export interface ScrobbleResponse {
     traktHistoryId: number;
-}
-
-export interface SeasonAndEpisode {
-    season: number;
-    number: number;
 }

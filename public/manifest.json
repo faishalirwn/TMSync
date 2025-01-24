@@ -10,15 +10,14 @@
     "content_scripts": [
         {
             "js": ["js/contentScript.js"],
-            "matches": ["https://www.cineby.app/*", "https://freek.to/*"]
+            "matches": ["https://www.cineby.app/*"]
         },
         {
             "js": ["js/iframeContentScript.js"],
             "matches": [
                 "https://mcloud.bz/*",
                 "https://vid2faf.site/*",
-                "https://vidsrc.pro/*",
-                "https://embed.su/*"
+                "https://vidsrc.pro/*"
             ],
             "all_frames": true
         }
