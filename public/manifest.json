@@ -15,16 +15,9 @@
                 "https://freek.to/*",
                 "https://mcloud.bz/*",
                 "https://vid2faf.site/*",
-                "https://vidsrc.pro/*"
-            ],
-            "all_frames": true
-        },
-        {
-            "js": ["js/iframeContentScript.js"],
-            "matches": [
-                "https://mcloud.bz/*",
-                "https://vid2faf.site/*",
-                "https://vidsrc.pro/*"
+                "https://vidsrc.pro/*",
+                "https://embed.su/*",
+                "https://player.autoembed.cc/*"
             ],
             "all_frames": true
         }

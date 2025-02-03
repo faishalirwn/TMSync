@@ -9,6 +9,7 @@ import {
 import { getUrlIdentifier } from './utils/url';
 
 // TODO: way to change media info if it's wrong
+// TODO: add iframe url automatically to manifest
 
 // Set up URL monitoring using different methods to ensure we catch navigation changes
 let url = location.href;
@@ -63,6 +64,7 @@ const cinebyConfig: MediaInfoConfig = {
             return null;
         }
     },
+    // TODO: primary method: use tmdb id extracted from dom wherever.
     hostname: 'www.cineby.app',
     isWatchpage() {
         return (
@@ -88,10 +90,20 @@ const cinebyConfig: MediaInfoConfig = {
 
 const freekConfig: MediaInfoConfig = {
     async getTitle() {
-        const titleElement = await waitForElm(
-            '//*[@id="root"]/div/div[2]/div/div[5]/div/div[2]/div/div[2]/div/span',
-            true
-        );
+        let titleElement;
+
+        if (urlObj.pathname.startsWith('/watch/tv')) {
+            titleElement = await waitForElm(
+                '//*[@id="right-header"]/div[1]',
+                true
+            );
+        } else if (urlObj.pathname.startsWith('/watch/movie')) {
+            titleElement = await waitForElm(
+                '//*[@id="root"]/div/div[2]/div/div[5]/div/div[2]/div/div[2]/div/span',
+                true
+            );
+        }
+
         const title = titleElement?.textContent;
 
         if (title) {
@@ -101,10 +113,20 @@ const freekConfig: MediaInfoConfig = {
         }
     },
     async getYear() {
-        const yearElement = await waitForElm(
-            '//*[@id="root"]/div/div[2]/div/div[5]/div/div[2]/div/div[1]/div[2]/div[3]/span[2]',
-            true
-        );
+        let yearElement;
+
+        if (urlObj.pathname.startsWith('/watch/tv')) {
+            yearElement = await waitForElm(
+                '//*[@id="root"]/div/div[2]/div/div[5]/div/div[2]/div[3]/div[1]/div[2]/div[3]/span[2]',
+                true
+            );
+        } else if (urlObj.pathname.startsWith('/watch/movie')) {
+            yearElement = await waitForElm(
+                '//*[@id="root"]/div/div[2]/div/div[5]/div/div[2]/div/div[1]/div[2]/div[3]/span[2]',
+                true
+            );
+        }
+
         const date = yearElement?.textContent;
 
         if (date) {
@@ -248,6 +270,7 @@ function monitorVideoInterval() {
 
                             const traktHistoryId = resp.data.traktHistoryId;
 
+                            // TODO: undo when the video is in iframe, use message passing chrome.tabs.sendmessage i think
                             const undoScrobble = confirm(
                                 'Scrobble complete! Undo scrobble?'
                             );
@@ -303,7 +326,6 @@ function getMediaInfo(config: MediaInfoConfig) {
     const title = getTitle();
     const year = getYear();
     const mediaType = config.getMediaType();
-    // TODO: freek fail here. wtf is with these promises
 
     Promise.all([title, year]).then(([title, year]) => {
         if (!title || !year || !mediaType) {
@@ -343,6 +365,22 @@ function main() {
     console.log('Main function executing for:', url);
     // confirm('Main function executing for:' + url);
 
+    const watchInterval = monitorVideoInterval();
+    intervals.add(watchInterval);
+
+    function cleanup() {
+        console.log('Cleaning up intervals...');
+        for (const interval of intervals) {
+            clearInterval(interval);
+        }
+        intervals.clear();
+    }
+
+    if (!(urlHostname in configs)) {
+        console.error('Hostname not supported:', urlHostname);
+        return cleanup;
+    }
+
     const config = configs[urlHostname];
 
     if (configs[urlHostname].isWatchpage()) {
@@ -357,16 +395,7 @@ function main() {
         });
     }
 
-    const watchInterval = monitorVideoInterval();
-    intervals.add(watchInterval);
-
-    return function cleanup() {
-        console.log('Cleaning up intervals...');
-        for (const interval of intervals) {
-            clearInterval(interval);
-        }
-        intervals.clear();
-    };
+    return cleanup;
 }
 
 // Initial call

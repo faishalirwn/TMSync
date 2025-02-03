@@ -21,7 +21,7 @@ export const getUrlIdentifier = (url: string): string => {
             '/' +
             urlPath[2] +
             '/' +
-            urlPath[2]
+            urlPath[3]
         );
     } else {
         return '';
@@ -32,6 +32,7 @@ export const getSeasonEpisodeObj = (url: string) => {
     const urlObj = new URL(url);
     const urlPath = urlObj.pathname.split('/');
 
+    // TODO: freek ep and season parsing
     if (
         urlObj.hostname === 'www.cineby.app' &&
         (urlObj.pathname.startsWith('/tv') ||
