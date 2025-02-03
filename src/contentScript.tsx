@@ -31,18 +31,38 @@ interface UrlMediaPath {
 }
 
 interface MediaInfoConfig {
-    titleSelector: string;
-    yearSelector: string;
-    yearParser?: (text: string) => string | undefined;
+    getTitle(): Promise<string | null>;
+    getYear(): Promise<string | null>;
     hostname: HostnameType;
     isWatchpage(): boolean;
     urlMediaPath: UrlMediaPath;
+    getMediaType(): string;
 }
 
 const cinebyConfig: MediaInfoConfig = {
-    titleSelector: 'head > title',
-    yearSelector:
-        '#__next > div.relative.w-full.h-screen > div.z-\\[1\\].mx-0.max-w-screen-lg.px-4.pb-4.md\\:mx-4.lg\\:mx-auto.lg\\:pb-20.xl\\:px-0 > div.flex.items-center.justify-center.min-h-screen.gap-12.text-center > div > div.flex.items-center.gap-3.font-semibold > div:nth-child(1)',
+    async getTitle() {
+        const titleElement = await waitForElm('head > title');
+        const title = titleElement?.textContent;
+
+        if (title) {
+            return title;
+        } else {
+            return null;
+        }
+    },
+    async getYear() {
+        const yearElement = await waitForElm(
+            '#__next > div.relative.w-full.h-screen > div.z-\\[1\\].mx-0.max-w-screen-lg.px-4.pb-4.md\\:mx-4.lg\\:mx-auto.lg\\:pb-20.xl\\:px-0 > div.flex.items-center.justify-center.min-h-screen.gap-12.text-center > div > div.flex.items-center.gap-3.font-semibold > div:nth-child(1)'
+        );
+        const date = yearElement?.textContent;
+        // TODO: in play page, year is not found
+
+        if (date) {
+            return date.split('/')[2].replace(' ', '');
+        } else {
+            return null;
+        }
+    },
     hostname: 'www.cineby.app',
     isWatchpage() {
         return (
@@ -56,14 +76,43 @@ const cinebyConfig: MediaInfoConfig = {
             movie: 'movie',
             show: 'tv'
         }
+    },
+    getMediaType() {
+        return getMediaType(
+            url,
+            this.urlMediaPath.pos,
+            this.urlMediaPath.keywords
+        );
     }
 };
 
 const freekConfig: MediaInfoConfig = {
-    titleSelector:
-        '#root > div > div.flex.flex-col.size-full > div > div.bg-white/[.07].overflow-hidden > div > div.flex.flex-col.size-full.gap-6.p-4.pt-3.overflow-auto > div > div.flex-grow.flex.flex-col.gap-4 > div > span',
-    yearSelector:
-        '#root > div > div.flex.flex-col.size-full > div > div.bg-white/[.07].overflow-hidden > div > div.flex.flex-col.size-full.gap-6.p-4.pt-3.overflow-auto > div > div.flex.gap-3.w-full.relative > div.flex.flex-col.gap-4.flex-grow.w-1/2.justify-end.text-white.shrink-0.text-sm.\\32 xl:text-base.!tracking-wider > div:nth-child(3) > span:nth-child(2)',
+    async getTitle() {
+        const titleElement = await waitForElm(
+            '//*[@id="root"]/div/div[2]/div/div[5]/div/div[2]/div/div[2]/div/span',
+            true
+        );
+        const title = titleElement?.textContent;
+
+        if (title) {
+            return title;
+        } else {
+            return null;
+        }
+    },
+    async getYear() {
+        const yearElement = await waitForElm(
+            '//*[@id="root"]/div/div[2]/div/div[5]/div/div[2]/div/div[1]/div[2]/div[3]/span[2]',
+            true
+        );
+        const date = yearElement?.textContent;
+
+        if (date) {
+            return date.split(',')[1].replace(' ', '');
+        } else {
+            return null;
+        }
+    },
     hostname: 'freek.to',
     isWatchpage() {
         return (
@@ -78,8 +127,12 @@ const freekConfig: MediaInfoConfig = {
             show: 'tv'
         }
     },
-    yearParser(text: string) {
-        return text.split(',')[1].replace(' ', '');
+    getMediaType() {
+        return getMediaType(
+            url,
+            this.urlMediaPath.pos,
+            this.urlMediaPath.keywords
+        );
     }
 };
 
@@ -244,66 +297,43 @@ function monitorVideoInterval() {
     }, 1000);
 }
 
-function getMediaInfo(url: string, config: MediaInfoConfig) {
-    const {
-        titleSelector,
-        yearSelector,
-        yearParser = (text) => text.split('/')[2],
-        urlMediaPath
-    } = config;
+function getMediaInfo(config: MediaInfoConfig) {
+    const { getTitle, getYear } = config;
 
-    const titleElement = waitForElm(titleSelector);
-    const yearElement = waitForElm(yearSelector);
+    const title = getTitle();
+    const year = getYear();
+    const mediaType = config.getMediaType();
     // TODO: freek fail here. wtf is with these promises
 
-    Promise.all([titleElement, yearElement]).then(
-        ([titleElement, yearElement]) => {
-            if (!titleElement || !yearElement) {
-                console.error('Title or year element not found');
-                return;
-            }
-
-            const title = titleElement.textContent;
-            const year = yearElement.textContent
-                ? yearParser(yearElement.textContent)
-                : undefined;
-            const mediaType = getMediaType(
-                url,
-                urlMediaPath.pos,
-                urlMediaPath.keywords
-            );
-
-            if (!title || !year || !mediaType) {
-                console.error('Title, year, or media type not found');
-                return;
-            }
-
-            // Call API through background script
-            chrome.runtime
-                .sendMessage<
-                    MediaInfoRequest,
-                    MessageResponse<MediaInfoResponse>
-                >({
-                    action: 'mediaInfo',
-                    params: {
-                        type: mediaType,
-                        query: title,
-                        years: year
-                    }
-                })
-                .then((resp) => {
-                    if (resp.success) {
-                        console.log('Media info response:', resp.data);
-                        alert(JSON.stringify(resp.data));
-                    } else {
-                        console.error('Error sending media info:', resp.error);
-                    }
-                })
-                .catch((err) => {
-                    console.error('Error sending media info:', err);
-                });
+    Promise.all([title, year]).then(([title, year]) => {
+        if (!title || !year || !mediaType) {
+            console.error('Title, year, or media type not found');
+            return;
         }
-    );
+
+        // Call API through background script
+        chrome.runtime
+            .sendMessage<MediaInfoRequest, MessageResponse<MediaInfoResponse>>({
+                action: 'mediaInfo',
+                params: {
+                    type: mediaType,
+                    query: title,
+                    years: year
+                }
+            })
+            .then((resp) => {
+                if (resp.success) {
+                    console.log('Media info response:', resp.data);
+                    // confirm(JSON.stringify(resp.data));
+                } else {
+                    console.error('Error sending media info:', resp.error);
+                    // confirm('Error sending media info: ' + resp.error);
+                }
+            })
+            .catch((err) => {
+                console.error('Error sending media info:', err);
+            });
+    });
 }
 
 // Main function to handle media content
@@ -311,7 +341,7 @@ function main() {
     const intervals = new Set<NodeJS.Timeout>();
 
     console.log('Main function executing for:', url);
-    // alert('Main function executing for:' + url);
+    // confirm('Main function executing for:' + url);
 
     const config = configs[urlHostname];
 
@@ -323,7 +353,7 @@ function main() {
                 return;
             }
 
-            getMediaInfo(url, config);
+            getMediaInfo(config);
         });
     }
 
