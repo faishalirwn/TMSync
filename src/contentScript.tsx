@@ -8,14 +8,12 @@ import {
     ScrobbleRequest,
     ScrobbleResponse
 } from './utils/types';
-import { getUrlIdentifier } from './utils/url';
 
 // TODO: way to change media info if it's wrong
 // TODO: add iframe url automatically to manifest
 
 // Set up URL monitoring using different methods to ensure we catch navigation changes
 let url = location.href;
-let urlIdentifier = getUrlIdentifier(url);
 let urlObj = new URL(url);
 let urlHostname = urlObj.hostname as HostnameType;
 
@@ -23,11 +21,28 @@ let title = document.title;
 let titleChanged = false;
 let urlChanged = false;
 
-setInterval(() => {
+let config: MediaInfoConfig | null = null;
+const isIframe = !(urlHostname in configs);
+
+if (isIframe) {
+    console.error('Hostname not supported:', urlHostname);
+    main();
+} else {
+    config = configs[urlHostname];
+}
+
+let urlIdentifier = config ? config.getUrlIdentifier(url) : null;
+
+const SPAPageChangeInterval = setInterval(() => {
+    if (isIframe || !config) {
+        clearInterval(SPAPageChangeInterval);
+        return;
+    }
+
     const newUrl = location.href;
     if (newUrl !== url) {
         url = newUrl;
-        urlIdentifier = getUrlIdentifier(url);
+        urlIdentifier = config.getUrlIdentifier(url);
         urlObj = new URL(url);
         urlHostname = urlObj.hostname as HostnameType;
         urlChanged = true;
@@ -39,7 +54,7 @@ setInterval(() => {
         titleChanged = true;
     }
 
-    if (configs[urlHostname].isWatchpage(url)) {
+    if (config && config.isWatchPage(url)) {
         if (urlHostname === 'www.cineby.app' && titleChanged && urlChanged) {
             // Reset change flags
             titleChanged = false;
@@ -212,16 +227,14 @@ function main() {
         intervals.clear();
     }
 
-    if (!(urlHostname in configs)) {
+    if (isIframe) {
         console.error('Hostname not supported:', urlHostname);
         return cleanup;
     }
 
-    const config = configs[urlHostname];
-
-    if (config.isWatchpage(url)) {
+    if (config && config.isWatchPage(url)) {
         chrome.storage.local.get(urlIdentifier).then((mediaInfoGet) => {
-            if (mediaInfoGet[urlIdentifier]) {
+            if (urlIdentifier && mediaInfoGet[urlIdentifier]) {
                 console.log('Media info already stored:');
                 console.log(mediaInfoGet[urlIdentifier]);
                 return;

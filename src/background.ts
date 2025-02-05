@@ -1,6 +1,8 @@
+import { configs } from './urlConfig';
 import { callApi } from './utils/api';
 import {
     HistoryBody,
+    HostnameType,
     MediaInfoResponse,
     MessageRequest,
     MessageResponse,
@@ -8,7 +10,6 @@ import {
     ScrobbleResponse,
     ShowMediaInfo
 } from './utils/types';
-import { getSeasonEpisodeObj, getUrlIdentifier } from './utils/url';
 
 chrome.runtime.onMessage.addListener(
     (request: MessageRequest, sender, sendResponse) => {
@@ -24,7 +25,11 @@ chrome.runtime.onMessage.addListener(
 
             // important: we use geturlidentifer because sender.tab.url is only accessible in background script.
             // this function can be used in content script as well. so the url is consistent.
-            const tabUrl = getUrlIdentifier(sender.tab.url);
+            let url = sender.tab.url;
+            let urlObj = new URL(url);
+            let urlHostname = urlObj.hostname as HostnameType;
+            const config = configs[urlHostname];
+            const tabUrl = config.getUrlIdentifier(url);
 
             if (!tabUrl) {
                 const response: MessageResponse<null> = {
@@ -45,7 +50,7 @@ chrome.runtime.onMessage.addListener(
                     body.movies = [mediaInfo.movie];
                 } else if (mediaInfo.type === 'show' && 'show' in mediaInfo) {
                     body.shows = [mediaInfo.show];
-                    const seasonEpisode = getSeasonEpisodeObj(sender.tab.url);
+                    const seasonEpisode = config.getSeasonEpisodeObj(url);
                     if (!seasonEpisode) {
                         const response: MessageResponse<null> = {
                             success: false,

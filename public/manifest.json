@@ -17,7 +17,7 @@
                 "https://vid2faf.site/*",
                 "https://vidsrc.pro/*",
                 "https://embed.su/*",
-                "https://player.autoembed.cc/*"
+                "https://*.autoembed.cc/*"
             ],
             "all_frames": true
         }

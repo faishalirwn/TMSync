@@ -47,13 +47,18 @@ const cinebyConfig: MediaInfoConfig = {
     },
     // TODO: primary method: use tmdb id extracted from dom wherever.
     hostname: 'www.cineby.app',
-    isWatchpage(url: string) {
+    isWatchPage(url: string) {
         const urlObj = new URL(url);
 
         return (
             urlObj.pathname.startsWith('/tv') ||
             urlObj.pathname.startsWith('/movie')
         );
+    },
+    isShowPage(url: string) {
+        const urlObj = new URL(url);
+
+        return urlObj.pathname.startsWith('/tv');
     },
     urlMediaPath: {
         pos: 1,
@@ -73,10 +78,30 @@ const cinebyConfig: MediaInfoConfig = {
         const urlObj = new URL(url);
         const urlPath = urlObj.pathname.split('/');
 
-        if (urlObj.hostname === 'www.cineby.app' && this.isWatchpage(url)) {
+        if (urlObj.hostname === 'www.cineby.app' && this.isWatchPage(url)) {
             return urlObj.hostname + '/' + urlPath[1] + '/' + urlPath[2];
         } else {
             return '';
+        }
+    },
+    getSeasonEpisodeObj(url: string) {
+        const urlObj = new URL(url);
+        const urlPath = urlObj.pathname.split('/');
+
+        if (this.isShowPage(url)) {
+            if (urlPath.length === 3) {
+                return {
+                    season: 1,
+                    number: 1
+                };
+            } else {
+                return {
+                    season: Number(urlPath[3]),
+                    number: Number(urlPath[4])
+                };
+            }
+        } else {
+            return null;
         }
     }
 };
@@ -127,19 +152,28 @@ const freekConfig: MediaInfoConfig = {
         const date = yearElement?.textContent;
 
         if (date) {
-            return date.split(',')[1].replace(' ', '');
+            return date
+                .split(',')[1]
+                .replace(' ', '')
+                .split('-')[0]
+                .replace(' ', '');
         } else {
             return null;
         }
     },
     hostname: 'freek.to',
-    isWatchpage(url: string) {
+    isWatchPage(url: string) {
         const urlObj = new URL(url);
 
         return (
             urlObj.pathname.startsWith('/watch/tv') ||
             urlObj.pathname.startsWith('/watch/movie')
         );
+    },
+    isShowPage(url: string) {
+        const urlObj = new URL(url);
+
+        return urlObj.pathname.startsWith('/watch/tv');
     },
     urlMediaPath: {
         pos: 2,
@@ -159,7 +193,7 @@ const freekConfig: MediaInfoConfig = {
         const urlObj = new URL(url);
         const urlPath = urlObj.pathname.split('/');
 
-        if (urlObj.hostname === 'freek.to' && this.isWatchpage(url)) {
+        if (urlObj.hostname === 'freek.to' && this.isWatchPage(url)) {
             return (
                 urlObj.hostname +
                 '/' +
@@ -171,6 +205,36 @@ const freekConfig: MediaInfoConfig = {
             );
         } else {
             return '';
+        }
+    },
+    getSeasonEpisodeObj(url: string) {
+        const urlObj = new URL(url);
+        const urlQuerParams = urlObj.searchParams;
+
+        if (this.isShowPage(url)) {
+            if (urlQuerParams.has('season') && urlQuerParams.has('ep')) {
+                return {
+                    season: Number(urlQuerParams.get('season')),
+                    number: Number(urlQuerParams.get('ep'))
+                };
+            } else if (urlQuerParams.has('ep')) {
+                return {
+                    season: 1,
+                    number: Number(urlQuerParams.get('ep'))
+                };
+            } else if (urlQuerParams.has('season')) {
+                return {
+                    season: Number(urlQuerParams.get('season')),
+                    number: 1
+                };
+            } else {
+                return {
+                    season: 1,
+                    number: 1
+                };
+            }
+        } else {
+            return null;
         }
     }
 };

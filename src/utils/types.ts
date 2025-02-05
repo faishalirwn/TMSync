@@ -1,5 +1,3 @@
-import { getSeasonEpisodeObj } from './url';
-
 export interface MovieMediaInfo {
     type: string;
     score: number;
@@ -34,7 +32,7 @@ export interface ShowMediaInfo {
 export interface ScrobbleBody {
     movie?: MovieMediaInfo['movie'];
     show?: ShowMediaInfo['show'];
-    episode?: ReturnType<typeof getSeasonEpisodeObj>;
+    episode?: SeasonEpisodeObj;
     progress: number;
 }
 
@@ -157,14 +155,21 @@ interface UrlMediaPath {
     };
 }
 
+interface SeasonEpisodeObj {
+    season: number;
+    number: number;
+}
+
 export interface MediaInfoConfig {
     getTitle(url: string): Promise<string | null>;
     getYear(url: string): Promise<string | null>;
     hostname: HostnameType;
-    isWatchpage(url: string): boolean;
+    isWatchPage(url: string): boolean;
+    isShowPage(url: string): boolean;
     urlMediaPath: UrlMediaPath;
     getMediaType(url: string): string;
     getUrlIdentifier(url: string): string;
+    getSeasonEpisodeObj(url: string): SeasonEpisodeObj | null;
 }
 
 export type ConfigsType = {
