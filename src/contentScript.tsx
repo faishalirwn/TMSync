@@ -219,7 +219,7 @@ function main() {
 
     const config = configs[urlHostname];
 
-    if (configs[urlHostname].isWatchpage(url)) {
+    if (config.isWatchpage(url)) {
         chrome.storage.local.get(urlIdentifier).then((mediaInfoGet) => {
             if (mediaInfoGet[urlIdentifier]) {
                 console.log('Media info already stored:');

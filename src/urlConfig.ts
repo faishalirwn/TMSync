@@ -68,6 +68,16 @@ const cinebyConfig: MediaInfoConfig = {
             this.urlMediaPath.pos,
             this.urlMediaPath.keywords
         );
+    },
+    getUrlIdentifier(url: string) {
+        const urlObj = new URL(url);
+        const urlPath = urlObj.pathname.split('/');
+
+        if (urlObj.hostname === 'www.cineby.app' && this.isWatchpage(url)) {
+            return urlObj.hostname + '/' + urlPath[1] + '/' + urlPath[2];
+        } else {
+            return '';
+        }
     }
 };
 
@@ -144,6 +154,24 @@ const freekConfig: MediaInfoConfig = {
             this.urlMediaPath.pos,
             this.urlMediaPath.keywords
         );
+    },
+    getUrlIdentifier(url: string) {
+        const urlObj = new URL(url);
+        const urlPath = urlObj.pathname.split('/');
+
+        if (urlObj.hostname === 'freek.to' && this.isWatchpage(url)) {
+            return (
+                urlObj.hostname +
+                '/' +
+                urlPath[1] +
+                '/' +
+                urlPath[2] +
+                '/' +
+                urlPath[3]
+            );
+        } else {
+            return '';
+        }
     }
 };
 

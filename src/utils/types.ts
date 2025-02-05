@@ -164,6 +164,7 @@ export interface MediaInfoConfig {
     isWatchpage(url: string): boolean;
     urlMediaPath: UrlMediaPath;
     getMediaType(url: string): string;
+    getUrlIdentifier(url: string): string;
 }
 
 export type ConfigsType = {
