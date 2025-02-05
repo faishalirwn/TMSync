@@ -13,11 +13,15 @@
             "matches": [
                 "https://www.cineby.app/*",
                 "https://freek.to/*",
+                "https://popcornmovies.to/*",
                 "https://mcloud.bz/*",
                 "https://vid2faf.site/*",
                 "https://vidsrc.pro/*",
                 "https://embed.su/*",
-                "https://*.autoembed.cc/*"
+                "https://*.autoembed.cc/*",
+                "https://vidlink.pro/*",
+                "https://*.videasy.net/*",
+                "https://*.2embed.cc/*"
             ],
             "all_frames": true
         }

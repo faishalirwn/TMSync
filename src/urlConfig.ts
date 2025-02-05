@@ -45,7 +45,6 @@ const cinebyConfig: MediaInfoConfig = {
             return null;
         }
     },
-    // TODO: primary method: use tmdb id extracted from dom wherever.
     hostname: 'www.cineby.app',
     isWatchPage(url: string) {
         const urlObj = new URL(url);

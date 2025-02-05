@@ -121,7 +121,6 @@ function monitorVideoInterval() {
 
                             const traktHistoryId = resp.data.traktHistoryId;
 
-                            // TODO: undo when the video is in iframe, use message passing chrome.tabs.sendmessage i think
                             const undoScrobble = confirm(
                                 'Scrobble complete! Undo scrobble?'
                             );
