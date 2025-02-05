@@ -146,3 +146,26 @@ export type MediaInfoResponse = MovieMediaInfo | ShowMediaInfo;
 export interface ScrobbleResponse {
     traktHistoryId: number;
 }
+
+export type HostnameType = 'www.cineby.app' | 'freek.to';
+
+interface UrlMediaPath {
+    pos: number;
+    keywords: {
+        movie: string;
+        show: string;
+    };
+}
+
+export interface MediaInfoConfig {
+    getTitle(url: string): Promise<string | null>;
+    getYear(url: string): Promise<string | null>;
+    hostname: HostnameType;
+    isWatchpage(url: string): boolean;
+    urlMediaPath: UrlMediaPath;
+    getMediaType(url: string): string;
+}
+
+export type ConfigsType = {
+    [key in HostnameType]: MediaInfoConfig;
+};
