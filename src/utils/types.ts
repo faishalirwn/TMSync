@@ -125,11 +125,17 @@ export interface UndoScrobbleRequest {
     params: { historyId: number };
 }
 
+export interface VideoMonitorRequest {
+    action: 'videoMonitor';
+    params?: { tabId: number };
+}
+
 // Define a union of all possible request types
 export type MessageRequest =
     | MediaInfoRequest
     | ScrobbleRequest
-    | UndoScrobbleRequest;
+    | UndoScrobbleRequest
+    | VideoMonitorRequest;
 
 // Define the response type
 export interface MessageResponse<T> {

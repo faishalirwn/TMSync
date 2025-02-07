@@ -147,6 +147,24 @@ chrome.runtime.onMessage.addListener(
                     sendResponse(response);
                 }
             }
+
+            if (request.action === 'videoMonitor') {
+                const tabId = sender.tab.id;
+                if (!tabId) {
+                    const response: MessageResponse<null> = {
+                        success: false,
+                        error: 'no tabId'
+                    };
+                    sendResponse(response);
+                    return;
+                }
+
+                chrome.tabs.sendMessage(tabId, { action: 'startVideoMonitor' });
+                const response: MessageResponse<null> = {
+                    success: true
+                };
+                sendResponse(response);
+            }
         })();
 
         // Important! Return true to indicate you want to send a response asynchronously

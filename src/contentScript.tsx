@@ -12,7 +12,6 @@ import {
 // TODO: way to change media info if it's wrong
 // TODO: add iframe url automatically to manifest
 
-// Set up URL monitoring using different methods to ensure we catch navigation changes
 let url = location.href;
 let urlObj = new URL(url);
 let urlHostname = urlObj.hostname as HostnameType;
@@ -56,38 +55,28 @@ const SPAPageChangeInterval = setInterval(() => {
 
     if (config && config.isWatchPage(url)) {
         if (urlHostname === 'www.cineby.app' && titleChanged && urlChanged) {
-            // Reset change flags
             titleChanged = false;
             urlChanged = false;
 
             if (document.title !== 'Cineby') {
-                // First run the cleanup from the previous page
-                if (typeof cleanup === 'function') {
-                    cleanup();
-                }
-
-                // Then run main() for the new page and store its cleanup function
-                cleanup = main();
+                main();
             }
         }
 
         if (urlHostname === 'freek.to' && urlChanged) {
             urlChanged = false;
 
-            if (typeof cleanup === 'function') {
-                cleanup();
-            }
-
-            cleanup = main();
+            main();
         }
     }
 }, 1000);
 
-function monitorVideoInterval() {
+function startMonitorVideoInterval() {
     let isWatched = false;
-    // Video progress monitoring
     console.log('Initiate Video progress monitoring');
-    return setInterval(() => {
+
+    let monitorVideoInterval: NodeJS.Timeout;
+    monitorVideoInterval = setInterval(() => {
         try {
             const video = document.querySelector('video');
             if (!video) {
@@ -100,7 +89,8 @@ function monitorVideoInterval() {
                 console.log('Watch percentage:', watchPercentage);
                 isWatched = true;
 
-                // TODO: wait for media info to be stored before sending scrobble
+                clearInterval(monitorVideoInterval);
+
                 chrome.runtime
                     .sendMessage<
                         ScrobbleRequest,
@@ -177,14 +167,13 @@ function getMediaInfo(config: MediaInfoConfig) {
     const year = getYear(url);
     const mediaType = config.getMediaType(url);
 
-    Promise.all([title, year]).then(([title, year]) => {
+    return Promise.all([title, year]).then(([title, year]) => {
         if (!title || !year || !mediaType) {
             console.error('Title, year, or media type not found');
-            return;
+            return null;
         }
 
-        // Call API through background script
-        chrome.runtime
+        return chrome.runtime
             .sendMessage<MediaInfoRequest, MessageResponse<MediaInfoResponse>>({
                 action: 'mediaInfo',
                 params: {
@@ -196,55 +185,61 @@ function getMediaInfo(config: MediaInfoConfig) {
             .then((resp) => {
                 if (resp.success) {
                     console.log('Media info response:', resp.data);
-                    // confirm(JSON.stringify(resp.data));
+                    return resp.data;
                 } else {
                     console.error('Error sending media info:', resp.error);
-                    // confirm('Error sending media info: ' + resp.error);
+                    return null;
                 }
             })
             .catch((err) => {
                 console.error('Error sending media info:', err);
+                return null;
             });
     });
 }
 
-// Main function to handle media content
 function main() {
-    const intervals = new Set<NodeJS.Timeout>();
-
-    console.log('Main function executing for:', url);
-    // confirm('Main function executing for:' + url);
-
-    const watchInterval = monitorVideoInterval();
-    intervals.add(watchInterval);
-
-    function cleanup() {
-        console.log('Cleaning up intervals...');
-        for (const interval of intervals) {
-            clearInterval(interval);
-        }
-        intervals.clear();
-    }
-
-    if (isIframe) {
-        console.error('Hostname not supported:', urlHostname);
-        return cleanup;
-    }
-
     if (config && config.isWatchPage(url)) {
-        chrome.storage.local.get(urlIdentifier).then((mediaInfoGet) => {
+        chrome.storage.local.get(urlIdentifier).then(async (mediaInfoGet) => {
+            let mediaInfo = null;
             if (urlIdentifier && mediaInfoGet[urlIdentifier]) {
                 console.log('Media info already stored:');
                 console.log(mediaInfoGet[urlIdentifier]);
+                mediaInfo = mediaInfoGet[urlIdentifier];
+            } else {
+                mediaInfo = await getMediaInfo(config);
+            }
+
+            if (!mediaInfo) {
                 return;
             }
 
-            getMediaInfo(config);
+            chrome.runtime
+                .sendMessage({
+                    action: 'videoMonitor'
+                })
+                .then((resp) => {
+                    if (resp.success) {
+                        console.log('Video monitor response:', resp.data);
+                    } else {
+                        console.error(
+                            'Error sending video monitor:',
+                            resp.error
+                        );
+                    }
+                })
+                .catch((err) => {
+                    console.error('Error sending video monitor:', err);
+                });
         });
     }
-
-    return cleanup;
 }
 
-// Initial call
-let cleanup = main();
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === 'startVideoMonitor') {
+        // TODO: handle multi server site that spawns multiple iframes and videos like freek.to, triggered multiple popup
+        startMonitorVideoInterval();
+    }
+});
+
+main();
