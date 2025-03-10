@@ -1,5 +1,5 @@
-import { configs } from './urlConfig';
 import { callApi } from './utils/api';
+import { getCurrentSiteConfig } from './utils/siteConfigs';
 import {
     HistoryBody,
     HostnameType,
@@ -27,9 +27,9 @@ chrome.runtime.onMessage.addListener(
             // this function can be used in content script as well. so the url is consistent.
             let url = sender.tab.url;
             let urlObj = new URL(url);
-            let urlHostname = urlObj.hostname as HostnameType;
-            const config = configs[urlHostname];
-            const tabUrl = config.getUrlIdentifier(url);
+            let hostname = urlObj.hostname as HostnameType;
+            const siteConfig = getCurrentSiteConfig(hostname);
+            const tabUrl = siteConfig.getUrlIdentifier(url);
 
             if (!tabUrl) {
                 const response: MessageResponse<null> = {
@@ -50,7 +50,7 @@ chrome.runtime.onMessage.addListener(
                     body.movies = [mediaInfo.movie];
                 } else if (mediaInfo.type === 'show' && 'show' in mediaInfo) {
                     body.shows = [mediaInfo.show];
-                    const seasonEpisode = config.getSeasonEpisodeObj(url);
+                    const seasonEpisode = siteConfig.getSeasonEpisodeObj(url);
                     if (!seasonEpisode) {
                         const response: MessageResponse<null> = {
                             success: false,

@@ -1,4 +1,4 @@
-import { configs } from './urlConfig';
+import { getCurrentSiteConfig } from './utils/siteConfigs';
 import {
     HostnameType,
     MediaInfoConfig,
@@ -12,68 +12,73 @@ import {
 // TODO: way to change media info if it's wrong
 // TODO: add iframe url automatically to manifest
 
+// Get current URL information
 let url = location.href;
 let urlObj = new URL(url);
-let urlHostname = urlObj.hostname as HostnameType;
+let hostname = urlObj.hostname;
 
+// Get the configuration for the current site
+let siteConfig = getCurrentSiteConfig(hostname);
+const isIframe = !siteConfig;
+
+// Track page changes for SPA sites
 let title = document.title;
 let titleChanged = false;
 let urlChanged = false;
 
-let config: MediaInfoConfig | null = null;
-const isIframe = !(urlHostname in configs);
+let urlIdentifier = siteConfig ? siteConfig.getUrlIdentifier(url) : null;
 
-if (!isIframe) {
-    config = configs[urlHostname];
-}
-
-let urlIdentifier = config ? config.getUrlIdentifier(url) : null;
-
-const SPAPageChangeInterval = setInterval(() => {
-    if (isIframe || !config) {
-        clearInterval(SPAPageChangeInterval);
+// Monitor for page changes in Single Page Applications
+const monitorPageChanges = () => {
+    if (isIframe || !siteConfig) {
         return;
     }
 
-    const newUrl = location.href;
-    if (newUrl !== url) {
-        url = newUrl;
-        urlIdentifier = config.getUrlIdentifier(url);
-        urlObj = new URL(url);
-        urlHostname = urlObj.hostname as HostnameType;
-        urlChanged = true;
-    }
+    const SPAPageChangeInterval = setInterval(() => {
+        const newUrl = location.href;
+        if (newUrl !== url) {
+            url = newUrl;
+            urlIdentifier = siteConfig.getUrlIdentifier(url);
+            urlObj = new URL(url);
+            hostname = urlObj.hostname;
+            urlChanged = true;
+        }
 
-    const newTitle = document.title;
-    if (newTitle !== title) {
-        title = newTitle;
-        titleChanged = true;
-    }
+        const newTitle = document.title;
+        if (newTitle !== title) {
+            title = newTitle;
+            titleChanged = true;
+        }
 
-    if (config && config.isWatchPage(url)) {
-        if (urlHostname === 'www.cineby.app' && titleChanged && urlChanged) {
-            titleChanged = false;
-            urlChanged = false;
+        // Check if we're on a watch page to trigger processing
+        if (siteConfig && siteConfig.isWatchPage(url)) {
+            // Handle different site-specific triggers
+            if (hostname === 'www.cineby.app' && titleChanged && urlChanged) {
+                titleChanged = false;
+                urlChanged = false;
 
-            if (document.title !== 'Cineby') {
-                main();
+                if (document.title !== 'Cineby') {
+                    processCurrentPage();
+                }
+            } else if (hostname === 'freek.to' && urlChanged) {
+                urlChanged = false;
+                processCurrentPage();
+            } else if (urlChanged) {
+                // Generic handler for other sites
+                urlChanged = false;
+                processCurrentPage();
             }
         }
+    }, 1000);
 
-        if (urlHostname === 'freek.to' && urlChanged) {
-            urlChanged = false;
+    return SPAPageChangeInterval;
+};
 
-            main();
-        }
-    }
-}, 1000);
-
-function startMonitorVideoInterval() {
+function startVideoMonitoring() {
     let isWatched = false;
-    console.log('Initiate Video progress monitoring', urlHostname);
+    console.log('Initiate Video progress monitoring', hostname);
 
-    let monitorVideoInterval: NodeJS.Timeout;
-    monitorVideoInterval = setInterval(() => {
+    const monitorVideoInterval = setInterval(() => {
         try {
             const video = document.querySelector('video');
             if (!video) {
@@ -98,55 +103,7 @@ function startMonitorVideoInterval() {
                             progress: watchPercentage
                         }
                     })
-                    .then((resp) => {
-                        if (resp.success) {
-                            console.log('Scrobble response:', resp.data);
-
-                            if (!resp.data) {
-                                return;
-                            }
-
-                            const traktHistoryId = resp.data.traktHistoryId;
-
-                            const undoScrobble = confirm(
-                                'Scrobble complete! Undo scrobble?'
-                            );
-
-                            if (undoScrobble) {
-                                chrome.runtime
-                                    .sendMessage({
-                                        action: 'undoScrobble',
-                                        params: {
-                                            historyId: traktHistoryId
-                                        }
-                                    })
-                                    .then((resp) => {
-                                        if (resp.success) {
-                                            console.log(
-                                                'Undo scrobble response:',
-                                                resp
-                                            );
-                                        } else {
-                                            console.error(
-                                                'Error undoing scrobble:',
-                                                resp.error
-                                            );
-                                        }
-                                    })
-                                    .catch((err) => {
-                                        console.error(
-                                            'Error undoing scrobble:',
-                                            err
-                                        );
-                                    });
-                            }
-                        } else {
-                            console.error(
-                                'Error sending scrobble:',
-                                resp.error
-                            );
-                        }
-                    })
+                    .then(handleScrobbleResponse)
                     .catch((err) => {
                         console.error('Error sending scrobble:', err);
                     });
@@ -155,16 +112,54 @@ function startMonitorVideoInterval() {
             console.error('Error in video monitoring:', error);
         }
     }, 1000);
+
+    return monitorVideoInterval;
 }
 
-function getMediaInfo(config: MediaInfoConfig) {
-    const { getTitle, getYear } = config;
+function handleScrobbleResponse(resp: MessageResponse<ScrobbleResponse>) {
+    if (resp.success) {
+        console.log('Scrobble response:', resp.data);
 
-    const title = getTitle(url);
-    const year = getYear(url);
-    const mediaType = config.getMediaType(url);
+        if (!resp.data) {
+            return;
+        }
 
-    return Promise.all([title, year]).then(([title, year]) => {
+        const traktHistoryId = resp.data.traktHistoryId;
+
+        const undoScrobble = confirm('Scrobble complete! Undo scrobble?');
+
+        if (undoScrobble) {
+            chrome.runtime
+                .sendMessage({
+                    action: 'undoScrobble',
+                    params: {
+                        historyId: traktHistoryId
+                    }
+                })
+                .then((resp) => {
+                    if (resp.success) {
+                        console.log('Undo scrobble response:', resp);
+                    } else {
+                        console.error('Error undoing scrobble:', resp.error);
+                    }
+                })
+                .catch((err) => {
+                    console.error('Error undoing scrobble:', err);
+                });
+        }
+    } else {
+        console.error('Error sending scrobble:', resp.error);
+    }
+}
+
+async function getMediaInfo() {
+    if (!siteConfig) return null;
+
+    try {
+        const title = await siteConfig.getTitle(url);
+        const year = await siteConfig.getYear(url);
+        const mediaType = siteConfig.getMediaType(url);
+
         if (!title || !year || !mediaType) {
             console.error('Title, year, or media type not found');
             return null;
@@ -187,32 +182,59 @@ function getMediaInfo(config: MediaInfoConfig) {
                     console.error('Error sending media info:', resp.error);
                     return null;
                 }
-            })
-            .catch((err) => {
-                console.error('Error sending media info:', err);
-                return null;
             });
+    } catch (error) {
+        console.error('Error getting media info:', error);
+        return null;
+    }
+}
+
+async function processCurrentPage() {
+    if (!siteConfig || !siteConfig.isWatchPage(url) || !urlIdentifier) {
+        return;
+    }
+
+    // Check if we already have media info for this URL
+    chrome.storage.local.get(urlIdentifier).then(async (mediaInfoGet) => {
+        let mediaInfo = null;
+
+        if (urlIdentifier && mediaInfoGet[urlIdentifier]) {
+            console.log(
+                'Media info already stored:',
+                mediaInfoGet[urlIdentifier]
+            );
+            mediaInfo = mediaInfoGet[urlIdentifier];
+        } else {
+            mediaInfo = await getMediaInfo();
+        }
+
+        if (!mediaInfo) {
+            return;
+        }
+
+        startVideoMonitoring();
     });
 }
 
-function main() {
-    if (config && config.isWatchPage(url)) {
-        chrome.storage.local.get(urlIdentifier).then(async (mediaInfoGet) => {
-            let mediaInfo = null;
-            if (urlIdentifier && mediaInfoGet[urlIdentifier]) {
-                console.log('Media info already stored:');
-                console.log(mediaInfoGet[urlIdentifier]);
-                mediaInfo = mediaInfoGet[urlIdentifier];
-            } else {
-                mediaInfo = await getMediaInfo(config);
-            }
+// Initialize the content script
+function initialize() {
+    // Start monitoring for page changes (for SPAs)
+    const pageChangeInterval = monitorPageChanges();
 
-            if (!mediaInfo) {
-                return;
-            }
-        });
+    // Process the current page
+    if (siteConfig && siteConfig.isWatchPage(url)) {
+        processCurrentPage();
     }
-    startMonitorVideoInterval();
+
+    if (isIframe) {
+        startVideoMonitoring();
+    }
+
+    // Return cleanup function for future use
+    return () => {
+        if (pageChangeInterval) clearInterval(pageChangeInterval);
+    };
 }
 
-main();
+// Start the content script
+initialize();
