@@ -23,10 +23,7 @@ let urlChanged = false;
 let config: MediaInfoConfig | null = null;
 const isIframe = !(urlHostname in configs);
 
-if (isIframe) {
-    console.error('Hostname not supported:', urlHostname);
-    main();
-} else {
+if (!isIframe) {
     config = configs[urlHostname];
 }
 
@@ -73,7 +70,7 @@ const SPAPageChangeInterval = setInterval(() => {
 
 function startMonitorVideoInterval() {
     let isWatched = false;
-    console.log('Initiate Video progress monitoring');
+    console.log('Initiate Video progress monitoring', urlHostname);
 
     let monitorVideoInterval: NodeJS.Timeout;
     monitorVideoInterval = setInterval(() => {
@@ -213,33 +210,9 @@ function main() {
             if (!mediaInfo) {
                 return;
             }
-
-            chrome.runtime
-                .sendMessage({
-                    action: 'videoMonitor'
-                })
-                .then((resp) => {
-                    if (resp.success) {
-                        console.log('Video monitor response:', resp.data);
-                    } else {
-                        console.error(
-                            'Error sending video monitor:',
-                            resp.error
-                        );
-                    }
-                })
-                .catch((err) => {
-                    console.error('Error sending video monitor:', err);
-                });
         });
     }
+    startMonitorVideoInterval();
 }
-
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.action === 'startVideoMonitor') {
-        // TODO: handle multi server site that spawns multiple iframes and videos like freek.to, triggered multiple popup
-        startMonitorVideoInterval();
-    }
-});
 
 main();
