@@ -17,13 +17,20 @@
                 "https://popcornmovies.to/*",
                 "https://mcloud.bz/*",
                 "https://vid2faf.site/*",
+                "https://vidsrc.cc/*",
+                "https://vidsrc.su/*",
+                "https://vidsrc.vip/*",
                 "https://vidsrc.pro/*",
                 "https://ythd.org/*",
                 "https://embed.su/*",
                 "https://*.autoembed.cc/*",
                 "https://vidlink.pro/*",
                 "https://*.videasy.net/*",
-                "https://*.2embed.cc/*"
+                "https://*.2embed.cc/*",
+                "https://edgedeliverynetwork.com/*",
+                "https://vid3c.site/*",
+                "https://*.moviesapi.club/*",
+                "https://stre4mplay.one/*"
             ],
             "all_frames": true
         }
