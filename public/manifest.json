@@ -9,7 +9,7 @@
     "host_permissions": ["https://api.trakt.tv/*/"],
     "content_scripts": [
         {
-            "js": ["js/contentScript.js"],
+            "js": ["js/vendor.js", "js/contentScript.js"],
             "matches": [
                 "https://www.cineby.app/*",
                 "https://freek.to/*",

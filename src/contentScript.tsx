@@ -1,3 +1,7 @@
+import { ScrobbleNotification } from './components/ScrobbleNotification';
+import React from 'react';
+import './styles/index.css';
+import { createRoot } from 'react-dom/client';
 import { getCurrentSiteConfig } from './utils/siteConfigs';
 import {
     HostnameType,
@@ -224,6 +228,28 @@ function initialize() {
     // Process the current page
     if (siteConfig && siteConfig.isWatchPage(url)) {
         processCurrentPage();
+
+        function injectReactApp() {
+            // Create container
+            const body = document.querySelector('body');
+            const app = document.createElement('div');
+
+            app.id = 'tmsync-container';
+
+            if (body) {
+                body.prepend(app);
+            }
+
+            const container = document.getElementById('tmsync-container');
+
+            if (container) {
+                const root = createRoot(container);
+                root.render(<ScrobbleNotification />);
+            }
+        }
+
+        // Only inject the UI when needed
+        injectReactApp();
     }
 
     if (isIframe) {
