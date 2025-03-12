@@ -1,4 +1,5 @@
 import { waitForElm } from '../content';
+import { SeasonEpisodeObj } from '../types';
 
 interface MediaInfoSelectors {
     title: string;
@@ -23,7 +24,7 @@ export interface SiteConfigBase {
     isShowPage(url: string): boolean;
     getMediaType(url: string): MediaType;
     getUrlIdentifier(url: string): string;
-    getSeasonEpisodeObj(url: string): { season: number; number: number } | null;
+    getSeasonEpisodeObj(url: string): SeasonEpisodeObj | null;
     // Methods to extract title and year
     getTitle(url: string): Promise<string | null>;
     getYear(url: string): Promise<string | null>;

@@ -1,20 +1,19 @@
 import { ScrobbleNotification } from './components/ScrobbleNotification';
-import React from 'react';
 import './styles/index.css';
+import React from 'react';
 import { createRoot } from 'react-dom/client';
+import { Root } from 'react-dom/client';
 import { getCurrentSiteConfig } from './utils/siteConfigs';
 import {
     HostnameType,
-    MediaInfoConfig,
     MediaInfoRequest,
     MediaInfoResponse,
     MessageResponse,
+    ScrobbleNotificationMediaType,
     ScrobbleRequest,
-    ScrobbleResponse
+    ScrobbleResponse,
+    UndoScrobbleRequest
 } from './utils/types';
-
-// TODO: way to change media info if it's wrong
-// TODO: add iframe url automatically to manifest
 
 // Get current URL information
 let url = location.href;
@@ -22,27 +21,32 @@ let urlObj = new URL(url);
 let hostname = urlObj.hostname;
 
 // Get the configuration for the current site
-let siteConfig = getCurrentSiteConfig(hostname);
-const isIframe = !siteConfig;
+let siteConfig = getCurrentSiteConfig(hostname as HostnameType);
+const isIframe = window.self !== window.top;
 
 // Track page changes for SPA sites
 let title = document.title;
 let titleChanged = false;
 let urlChanged = false;
-
 let urlIdentifier = siteConfig ? siteConfig.getUrlIdentifier(url) : null;
 
+// Store media info and scrobble state
+let currentMediaInfo: MediaInfoResponse | null = null;
+let reactRoot: Root | null = null;
+let isScrobbled: boolean = false;
+let currentTraktHistoryId: number | null = null;
+
 // Monitor for page changes in Single Page Applications
-const monitorPageChanges = () => {
+function monitorPageChanges(): number | undefined {
     if (isIframe || !siteConfig) {
         return;
     }
 
-    const SPAPageChangeInterval = setInterval(() => {
+    const SPAPageChangeInterval = window.setInterval(() => {
         const newUrl = location.href;
         if (newUrl !== url) {
             url = newUrl;
-            urlIdentifier = siteConfig.getUrlIdentifier(url);
+            urlIdentifier = siteConfig!.getUrlIdentifier(url);
             urlObj = new URL(url);
             hostname = urlObj.hostname;
             urlChanged = true;
@@ -76,13 +80,13 @@ const monitorPageChanges = () => {
     }, 1000);
 
     return SPAPageChangeInterval;
-};
+}
 
-function startVideoMonitoring() {
+function startVideoMonitoring(): number {
     let isWatched = false;
     console.log('Initiate Video progress monitoring', hostname);
 
-    const monitorVideoInterval = setInterval(() => {
+    const monitorVideoInterval = window.setInterval(() => {
         try {
             const video = document.querySelector('video');
             if (!video) {
@@ -95,22 +99,10 @@ function startVideoMonitoring() {
                 console.log('Watch percentage:', watchPercentage);
                 isWatched = true;
 
-                clearInterval(monitorVideoInterval);
+                window.clearInterval(monitorVideoInterval);
 
-                chrome.runtime
-                    .sendMessage<
-                        ScrobbleRequest,
-                        MessageResponse<ScrobbleResponse>
-                    >({
-                        action: 'scrobble',
-                        params: {
-                            progress: watchPercentage
-                        }
-                    })
-                    .then(handleScrobbleResponse)
-                    .catch((err) => {
-                        console.error('Error sending scrobble:', err);
-                    });
+                // Send scrobble request to background script
+                scrobbleMedia(watchPercentage);
             }
         } catch (error) {
             console.error('Error in video monitoring:', error);
@@ -120,43 +112,84 @@ function startVideoMonitoring() {
     return monitorVideoInterval;
 }
 
-function handleScrobbleResponse(resp: MessageResponse<ScrobbleResponse>) {
-    if (resp.success) {
-        console.log('Scrobble response:', resp.data);
-
-        if (!resp.data) {
-            return;
-        }
-
-        const traktHistoryId = resp.data.traktHistoryId;
-
-        const undoScrobble = confirm('Scrobble complete! Undo scrobble?');
-
-        if (undoScrobble) {
-            chrome.runtime
-                .sendMessage({
-                    action: 'undoScrobble',
-                    params: {
-                        historyId: traktHistoryId
-                    }
-                })
-                .then((resp) => {
-                    if (resp.success) {
-                        console.log('Undo scrobble response:', resp);
-                    } else {
-                        console.error('Error undoing scrobble:', resp.error);
-                    }
-                })
-                .catch((err) => {
-                    console.error('Error undoing scrobble:', err);
-                });
-        }
-    } else {
-        console.error('Error sending scrobble:', resp.error);
-    }
+function scrobbleMedia(
+    progress?: number
+): Promise<MessageResponse<ScrobbleResponse>> {
+    return chrome.runtime
+        .sendMessage<ScrobbleRequest, MessageResponse<ScrobbleResponse>>({
+            action: 'scrobble',
+            params: {
+                progress: progress || 100
+            }
+        })
+        .then(handleScrobbleResponse)
+        .catch((err: Error) => {
+            console.error('Error sending scrobble:', err);
+            return { success: false, error: err.message };
+        });
 }
 
-async function getMediaInfo() {
+function undoScrobbleMedia(
+    historyId: number
+): Promise<MessageResponse<unknown>> {
+    return chrome.runtime
+        .sendMessage<UndoScrobbleRequest, MessageResponse<unknown>>({
+            action: 'undoScrobble',
+            params: {
+                historyId: historyId
+            }
+        })
+        .then((resp: MessageResponse<unknown>) => {
+            if (resp.success) {
+                console.log('Undo scrobble response:', resp);
+            } else {
+                console.error('Error undoing scrobble:', resp.error);
+            }
+            return resp;
+        })
+        .catch((err: Error) => {
+            console.error('Error undoing scrobble:', err);
+            return { success: false, error: err.message };
+        });
+}
+
+function handleScrobbleResponse(
+    resp: MessageResponse<ScrobbleResponse>
+): MessageResponse<ScrobbleResponse> {
+    if (!resp.success) {
+        console.error('Error sending scrobble:', resp.error);
+        return resp;
+    }
+
+    console.log('Scrobble response:', resp.data);
+    if (!resp.data) return resp;
+
+    const traktHistoryId = resp.data.traktHistoryId;
+
+    // Store the scrobble state globally
+    isScrobbled = true;
+    currentTraktHistoryId = traktHistoryId;
+
+    // Handle iframe communication or update UI
+    if (isIframe) {
+        // Send message to parent window
+        window.top?.postMessage(
+            {
+                type: 'TMSYNC_SCROBBLE_EVENT',
+                traktHistoryId: traktHistoryId
+            },
+            '*'
+        );
+        console.log('Sent scrobble event to parent:', traktHistoryId);
+    } else if (currentMediaInfo) {
+        // Re-render notification with updated state
+        injectReactApp(currentMediaInfo);
+    }
+
+    return resp;
+}
+
+async function getMediaInfo(): Promise<MediaInfoResponse | null | undefined> {
     if (!siteConfig) return null;
 
     try {
@@ -193,21 +226,79 @@ async function getMediaInfo() {
     }
 }
 
-async function processCurrentPage() {
+function injectReactApp(mediaInfo: ScrobbleNotificationMediaType): void {
+    // Create container if it doesn't exist
+    let container = document.getElementById('tmsync-container');
+
+    if (!container) {
+        const body = document.querySelector('body');
+        container = document.createElement('div');
+        container.id = 'tmsync-container';
+
+        if (body) {
+            body.append(container);
+        }
+    }
+
+    // Create or reuse the React root
+    if (!reactRoot && container) {
+        reactRoot = createRoot(container);
+    }
+
+    // Define callbacks to update the global state
+    const handleScrobble = async (): Promise<
+        MessageResponse<ScrobbleResponse>
+    > => {
+        const response = await scrobbleMedia();
+        // State update is handled in handleScrobbleResponse
+        return response;
+    };
+
+    const handleUndoScrobble = async (
+        historyId: number
+    ): Promise<MessageResponse<unknown>> => {
+        const response = await undoScrobbleMedia(historyId);
+        if (response.success) {
+            // Reset scrobble state
+            isScrobbled = false;
+            currentTraktHistoryId = null;
+            // Re-render with updated state
+            if (reactRoot && mediaInfo) {
+                injectReactApp(mediaInfo);
+            }
+        }
+        return response;
+    };
+
+    // Render the notification component with the media info and current state
+    if (reactRoot) {
+        reactRoot.render(
+            <ScrobbleNotification
+                mediaInfo={mediaInfo}
+                isScrobbled={isScrobbled}
+                traktHistoryId={currentTraktHistoryId}
+                onScrobble={handleScrobble}
+                onUndoScrobble={handleUndoScrobble}
+            />
+        );
+    }
+}
+
+async function processCurrentPage(): Promise<void> {
     if (!siteConfig || !siteConfig.isWatchPage(url) || !urlIdentifier) {
         return;
     }
 
     // Check if we already have media info for this URL
     chrome.storage.local.get(urlIdentifier).then(async (mediaInfoGet) => {
-        let mediaInfo = null;
+        let mediaInfo: ScrobbleNotificationMediaType | null | undefined = null;
 
         if (urlIdentifier && mediaInfoGet[urlIdentifier]) {
             console.log(
                 'Media info already stored:',
                 mediaInfoGet[urlIdentifier]
             );
-            mediaInfo = mediaInfoGet[urlIdentifier];
+            mediaInfo = mediaInfoGet[urlIdentifier] as MediaInfoResponse;
         } else {
             mediaInfo = await getMediaInfo();
         }
@@ -216,40 +307,53 @@ async function processCurrentPage() {
             return;
         }
 
+        if (siteConfig.isWatchPage(url)) {
+            const seasonEpisode = siteConfig.getSeasonEpisodeObj(url);
+            if (seasonEpisode) {
+                mediaInfo = {
+                    ...mediaInfo,
+                    ...seasonEpisode
+                };
+            }
+        }
+
+        // Store media info for use in the component
+        currentMediaInfo = mediaInfo;
+
+        // Inject or update the React notification
+        injectReactApp(mediaInfo);
+
+        // Start monitoring video progress
         startVideoMonitoring();
     });
 }
 
 // Initialize the content script
-function initialize() {
+function initialize(): (() => void) | undefined {
+    // Set up message listener for iframe communication
+    if (!isIframe) {
+        // Only the parent page needs to listen for messages
+        window.addEventListener('message', (event) => {
+            const data = event.data;
+            if (data && data.type === 'TMSYNC_SCROBBLE_EVENT') {
+                console.log('Received scrobble event from iframe:', data);
+                isScrobbled = true;
+                currentTraktHistoryId = data.traktHistoryId;
+
+                // Update the UI if we have media info
+                if (currentMediaInfo) {
+                    injectReactApp(currentMediaInfo);
+                }
+            }
+        });
+    }
+
     // Start monitoring for page changes (for SPAs)
     const pageChangeInterval = monitorPageChanges();
 
     // Process the current page
     if (siteConfig && siteConfig.isWatchPage(url)) {
         processCurrentPage();
-
-        function injectReactApp() {
-            // Create container
-            const body = document.querySelector('body');
-            const app = document.createElement('div');
-
-            app.id = 'tmsync-container';
-
-            if (body) {
-                body.prepend(app);
-            }
-
-            const container = document.getElementById('tmsync-container');
-
-            if (container) {
-                const root = createRoot(container);
-                root.render(<ScrobbleNotification />);
-            }
-        }
-
-        // Only inject the UI when needed
-        injectReactApp();
     }
 
     if (isIframe) {
@@ -258,7 +362,7 @@ function initialize() {
 
     // Return cleanup function for future use
     return () => {
-        if (pageChangeInterval) clearInterval(pageChangeInterval);
+        if (pageChangeInterval) window.clearInterval(pageChangeInterval);
     };
 }
 

@@ -161,7 +161,7 @@ interface UrlMediaPath {
     };
 }
 
-interface SeasonEpisodeObj {
+export interface SeasonEpisodeObj {
     season: number;
     number: number;
 }
@@ -181,3 +181,7 @@ export interface MediaInfoConfig {
 export type ConfigsType = {
     [key in HostnameType]: MediaInfoConfig;
 };
+
+export type ScrobbleNotificationMediaType =
+    | MediaInfoResponse
+    | (MediaInfoResponse & SeasonEpisodeObj);
