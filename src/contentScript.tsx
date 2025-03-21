@@ -14,6 +14,8 @@ import {
     ScrobbleResponse,
     UndoScrobbleRequest
 } from './utils/types';
+// import { callApi } from './utils/api';
+// import { TraktShowWatchedProgress } from './utils/types/traktApi';
 
 // Get current URL information
 let url = location.href;
@@ -32,6 +34,7 @@ let urlIdentifier = siteConfig ? siteConfig.getUrlIdentifier(url) : null;
 
 // Store media info and scrobble state
 let currentMediaInfo: MediaInfoResponse | null = null;
+// let currentShowProgress: TraktShowWatchedProgress | null = null;
 let reactRoot: Root | null = null;
 let isScrobbled: boolean = false;
 let currentTraktHistoryId: number | null = null;
@@ -320,6 +323,14 @@ async function processCurrentPage(): Promise<void> {
         // Store media info for use in the component
         currentMediaInfo = mediaInfo;
 
+        // if (currentMediaInfo.type === 'show' && 'show' in currentMediaInfo) {
+        //     currentShowProgress = await callApi(
+        //         `https://api.trakt.tv/shows/${currentMediaInfo.show.ids.trakt}/progress/watched`
+        //     );
+        //     console.log('WOOOOW');
+        //     console.log(currentShowProgress);
+        // }
+
         // Inject or update the React notification
         injectReactApp(mediaInfo);
 
@@ -353,7 +364,16 @@ function initialize(): (() => void) | undefined {
 
     // Process the current page
     if (siteConfig && siteConfig.isWatchPage(url)) {
-        processCurrentPage();
+        if (hostname === 'www.cineby.app' && document.title === 'Cineby') {
+            const damn = window.setInterval(() => {
+                if (document.title !== 'Cineby') {
+                    processCurrentPage();
+                    clearInterval(damn);
+                }
+            }, 1000);
+        } else {
+            processCurrentPage();
+        }
     }
 
     if (isIframe) {

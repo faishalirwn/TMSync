@@ -16,22 +16,43 @@ function getElementByXpath(path: string): Element | null {
 export function waitForElm(
     selector: string,
     isXPath: boolean = false,
-    duration: number = 1000
-): Promise<Element | null> {
-    return new Promise((resolve) => {
-        const interval = setInterval(() => {
-            if (isXPath) {
-                const element = getElementByXpath(selector);
+    checkInterval: number = 100,
+    maxWaitTime: number = 5000
+): Promise<Element> {
+    return new Promise((resolve, reject) => {
+        const startTime = Date.now();
+
+        const checkForElement = () => {
+            if (Date.now() - startTime > maxWaitTime) {
+                clearInterval(intervalId);
+                reject(
+                    new Error(
+                        `Element ${selector} not found within ${maxWaitTime}ms`
+                    )
+                );
+                return;
+            }
+
+            try {
+                let element = null;
+                if (isXPath) {
+                    element = getElementByXpath(selector);
+                } else {
+                    element = document.querySelector(selector);
+                }
+
                 if (element) {
-                    clearInterval(interval);
+                    clearInterval(intervalId);
                     resolve(element);
                 }
-            } else {
-                if (document.querySelector(selector)) {
-                    clearInterval(interval);
-                    resolve(document.querySelector(selector));
-                }
+            } catch (error) {
+                clearInterval(intervalId);
+                reject(error);
             }
-        }, duration);
+        };
+
+        const intervalId = setInterval(checkForElement, checkInterval);
+
+        checkForElement();
     });
 }

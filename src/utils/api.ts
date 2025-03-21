@@ -2,7 +2,7 @@ import { traktHeaders } from './config';
 
 export const callApi = async (
     url: string,
-    method: string,
+    method: RequestInit['method'] = '',
     body: BodyInit | string = '',
     isAuth: boolean = true
 ) => {

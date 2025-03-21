@@ -1,3 +1,5 @@
+import './traktApi';
+
 export interface MovieMediaInfo {
     type: string;
     score: number;

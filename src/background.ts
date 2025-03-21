@@ -125,6 +125,16 @@ chrome.runtime.onMessage.addListener(
                         'GET'
                     );
                     const mediaInfo: MovieMediaInfo | ShowMediaInfo = result[0];
+
+                    if (!mediaInfo) {
+                        const response: MessageResponse<null> = {
+                            success: false,
+                            error: 'fail search dawg'
+                        };
+                        sendResponse(response);
+                        return;
+                    }
+
                     // IMPORTANT: we store the info in local storage so we can use it in a site that uses iframe as video player.
                     // global variable content script won't work because the parent website is different from the iframe website.
                     // they have their own content script, they trigger independently.
