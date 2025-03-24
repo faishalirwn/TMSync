@@ -27,8 +27,7 @@ let siteConfig = getCurrentSiteConfig(hostname as HostnameType);
 const isIframe = window.self !== window.top;
 
 // Track page changes for SPA sites
-let title = document.title;
-let titleChanged = false;
+let titleNotCineby = false;
 let urlChanged = false;
 let urlIdentifier = siteConfig ? siteConfig.getUrlIdentifier(url) : null;
 
@@ -39,6 +38,13 @@ let reactRoot: Root | null = null;
 let isScrobbled: boolean = false;
 let currentTraktHistoryId: number | null = null;
 
+const titleObserver = new window.MutationObserver(() => {
+    if (document.title !== 'Cineby') {
+        titleNotCineby = true;
+    }
+});
+const titleElement = document.querySelector('title');
+
 // Monitor for page changes in Single Page Applications
 function monitorPageChanges(): number | undefined {
     if (isIframe || !siteConfig) {
@@ -46,38 +52,44 @@ function monitorPageChanges(): number | undefined {
     }
 
     const SPAPageChangeInterval = window.setInterval(() => {
-        const newUrl = location.href;
-        if (newUrl !== url) {
-            url = newUrl;
+        if (location.href !== url) {
+            url = location.href;
             urlIdentifier = siteConfig!.getUrlIdentifier(url);
             urlObj = new URL(url);
             hostname = urlObj.hostname;
             urlChanged = true;
         }
 
-        const newTitle = document.title;
-        if (newTitle !== title) {
-            title = newTitle;
-            titleChanged = true;
+        if (hostname === 'www.cineby.app' && titleElement) {
+            titleObserver.observe(titleElement, { childList: true });
         }
 
-        // Check if we're on a watch page to trigger processing
-        if (siteConfig && siteConfig.isWatchPage(url)) {
-            // Handle different site-specific triggers
-            if (hostname === 'www.cineby.app' && titleChanged && urlChanged) {
-                titleChanged = false;
-                urlChanged = false;
-
-                if (document.title !== 'Cineby') {
-                    processCurrentPage();
+        if (siteConfig.isWatchPage(url)) {
+            if (hostname === 'www.cineby.app' && titleNotCineby && urlChanged) {
+                if (currentMediaInfo) {
+                    injectReactApp(currentMediaInfo, true);
                 }
+                urlChanged = false;
+                titleNotCineby = false;
+
+                processCurrentPage();
             } else if (hostname === 'freek.to' && urlChanged) {
+                if (currentMediaInfo) {
+                    injectReactApp(currentMediaInfo, true);
+                }
                 urlChanged = false;
                 processCurrentPage();
-            } else if (urlChanged) {
-                // Generic handler for other sites
+            } else if (hostname !== 'www.cineby.app' && urlChanged) {
+                if (currentMediaInfo) {
+                    injectReactApp(currentMediaInfo, true);
+                }
                 urlChanged = false;
                 processCurrentPage();
+            }
+        } else {
+            if (urlChanged && currentMediaInfo) {
+                injectReactApp(currentMediaInfo, true);
+                urlChanged = false;
             }
         }
     }, 1000);
@@ -229,7 +241,10 @@ async function getMediaInfo(): Promise<MediaInfoResponse | null | undefined> {
     }
 }
 
-function injectReactApp(mediaInfo: ScrobbleNotificationMediaType): void {
+function injectReactApp(
+    mediaInfo: ScrobbleNotificationMediaType,
+    hidden: boolean = false
+): void {
     // Create container if it doesn't exist
     let container = document.getElementById('tmsync-container');
 
@@ -277,6 +292,7 @@ function injectReactApp(mediaInfo: ScrobbleNotificationMediaType): void {
     if (reactRoot) {
         reactRoot.render(
             <ScrobbleNotification
+                hidden={hidden}
                 mediaInfo={mediaInfo}
                 isScrobbled={isScrobbled}
                 traktHistoryId={currentTraktHistoryId}
@@ -310,14 +326,12 @@ async function processCurrentPage(): Promise<void> {
             return;
         }
 
-        if (siteConfig.isWatchPage(url)) {
-            const seasonEpisode = siteConfig.getSeasonEpisodeObj(url);
-            if (seasonEpisode) {
-                mediaInfo = {
-                    ...mediaInfo,
-                    ...seasonEpisode
-                };
-            }
+        const seasonEpisode = siteConfig.getSeasonEpisodeObj(url);
+        if (seasonEpisode) {
+            mediaInfo = {
+                ...mediaInfo,
+                ...seasonEpisode
+            };
         }
 
         // Store media info for use in the component
@@ -365,10 +379,10 @@ function initialize(): (() => void) | undefined {
     // Process the current page
     if (siteConfig && siteConfig.isWatchPage(url)) {
         if (hostname === 'www.cineby.app' && document.title === 'Cineby') {
-            const damn = window.setInterval(() => {
+            const waitCinebyTitleInterval = window.setInterval(() => {
                 if (document.title !== 'Cineby') {
                     processCurrentPage();
-                    clearInterval(damn);
+                    clearInterval(waitCinebyTitleInterval);
                 }
             }, 1000);
         } else {

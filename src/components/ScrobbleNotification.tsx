@@ -50,6 +50,7 @@ const styles: Record<string, CSSProperties> = {
 };
 
 interface ScrobbleNotificationProps {
+    hidden?: boolean;
     mediaInfo: ScrobbleNotificationMediaType;
     isScrobbled?: boolean;
     traktHistoryId?: number | null;
@@ -58,6 +59,7 @@ interface ScrobbleNotificationProps {
 }
 
 export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
+    hidden = false,
     mediaInfo,
     isScrobbled: initialIsScrobbled = false,
     traktHistoryId: initialTraktHistoryId = null,
@@ -149,7 +151,7 @@ export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
         isShow && 'number' in mediaInfo ? mediaInfo.number : undefined;
 
     return (
-        <div style={styles.container}>
+        <div style={{ ...styles.container, display: hidden ? 'none' : 'flex' }}>
             <div
                 style={{
                     ...styles.notification,
@@ -184,10 +186,11 @@ export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
                         </div>
                     ) : (
                         <button style={styles.button} onClick={handleScrobble}>
-                            Add{' '}
+                            Add
+                            <br />
                             {isShow
-                                ? `Season ${season} Episode ${episode}`
-                                : title}{' '}
+                                ? `${title} (${year}) Season ${season} Episode ${episode}`
+                                : `${title} (${year})`}{' '}
                             to Trakt.tv history
                         </button>
                     )}
