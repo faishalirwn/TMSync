@@ -9,7 +9,8 @@ export type SiteConfigMap = Record<string, SiteConfigBase>;
 export const siteConfigs: SiteConfigMap = {
     'www.cineby.app': cinebyConfig,
     'freek.to': freekConfig,
-    'hydrahd.me': hydraConfig
+    'hydrahd.me': hydraConfig,
+    'hydrahd.ac': hydraConfig
 };
 
 // Helper to get config for current site
