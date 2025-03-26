@@ -1,12 +1,13 @@
 const path = require('path');
 const CopyPlugin = require('copy-webpack-plugin');
 const Dotenv = require('dotenv-webpack');
+const MiniCssExtractPlugin = require('mini-css-extract-plugin');
+
 const srcDir = path.join(__dirname, '..', 'src');
 
 module.exports = {
     entry: {
         popup: path.join(srcDir, 'popup.tsx'),
-        //   options: path.join(srcDir, 'options.tsx'),
         background: path.join(srcDir, 'background.ts'),
         contentScript: path.join(srcDir, 'contentScript.tsx')
     },
@@ -31,7 +32,11 @@ module.exports = {
             },
             {
                 test: /\.css$/,
-                use: ['style-loader', 'css-loader', 'postcss-loader']
+                use: [
+                    MiniCssExtractPlugin.loader,
+                    'css-loader',
+                    'postcss-loader'
+                ]
             }
         ]
     },
@@ -41,8 +46,10 @@ module.exports = {
     plugins: [
         new Dotenv(),
         new CopyPlugin({
-            patterns: [{ from: '.', to: '../', context: 'public' }],
-            options: {}
+            patterns: [{ from: '.', to: '../', context: 'public' }]
+        }),
+        new MiniCssExtractPlugin({
+            filename: '../css/[name].css' // Extract CSS files for Shadow DOM use
         })
     ]
 };

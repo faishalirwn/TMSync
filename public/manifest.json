@@ -35,6 +35,12 @@
             "all_frames": true
         }
     ],
+    "web_accessible_resources": [
+        {
+            "resources": ["css/contentScript.css"],
+            "matches": ["<all_urls>"]
+        }
+    ],
     "background": {
         "service_worker": "js/background.js"
     },
