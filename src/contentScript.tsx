@@ -14,6 +14,7 @@ import {
     ScrobbleResponse,
     UndoScrobbleRequest
 } from './utils/types';
+import { ScrobbleManager } from './components/ScrobbleManager';
 // import { callApi } from './utils/api';
 // import { TraktShowWatchedProgress } from './utils/types/traktApi';
 
@@ -46,56 +47,56 @@ const titleObserver = new window.MutationObserver(() => {
 const titleElement = document.querySelector('title');
 
 // Monitor for page changes in Single Page Applications
-function monitorPageChanges(): number | undefined {
-    if (isIframe || !siteConfig) {
-        return;
-    }
+// function monitorPageChanges(): number | undefined {
+//     if (isIframe || !siteConfig) {
+//         return;
+//     }
 
-    const SPAPageChangeInterval = window.setInterval(() => {
-        if (location.href !== url) {
-            url = location.href;
-            urlIdentifier = siteConfig!.getUrlIdentifier(url);
-            urlObj = new URL(url);
-            hostname = urlObj.hostname;
-            urlChanged = true;
-        }
+//     const SPAPageChangeInterval = window.setInterval(() => {
+//         if (location.href !== url) {
+//             url = location.href;
+//             urlIdentifier = siteConfig!.getUrlIdentifier(url);
+//             urlObj = new URL(url);
+//             hostname = urlObj.hostname;
+//             urlChanged = true;
+//         }
 
-        if (hostname === 'www.cineby.app' && titleElement) {
-            titleObserver.observe(titleElement, { childList: true });
-        }
+//         if (hostname === 'www.cineby.app' && titleElement) {
+//             titleObserver.observe(titleElement, { childList: true });
+//         }
 
-        if (siteConfig.isWatchPage(url)) {
-            if (hostname === 'www.cineby.app' && titleNotCineby && urlChanged) {
-                if (currentMediaInfo) {
-                    injectReactApp(currentMediaInfo, true);
-                }
-                urlChanged = false;
-                titleNotCineby = false;
+//         if (siteConfig.isWatchPage(url)) {
+//             if (hostname === 'www.cineby.app' && titleNotCineby && urlChanged) {
+//                 if (currentMediaInfo) {
+//                     injectReactApp(currentMediaInfo, true);
+//                 }
+//                 urlChanged = false;
+//                 titleNotCineby = false;
 
-                processCurrentPage();
-            } else if (hostname === 'freek.to' && urlChanged) {
-                if (currentMediaInfo) {
-                    injectReactApp(currentMediaInfo, true);
-                }
-                urlChanged = false;
-                processCurrentPage();
-            } else if (hostname !== 'www.cineby.app' && urlChanged) {
-                if (currentMediaInfo) {
-                    injectReactApp(currentMediaInfo, true);
-                }
-                urlChanged = false;
-                processCurrentPage();
-            }
-        } else {
-            if (urlChanged && currentMediaInfo) {
-                injectReactApp(currentMediaInfo, true);
-                urlChanged = false;
-            }
-        }
-    }, 1000);
+//                 processCurrentPage();
+//             } else if (hostname === 'freek.to' && urlChanged) {
+//                 if (currentMediaInfo) {
+//                     injectReactApp(currentMediaInfo, true);
+//                 }
+//                 urlChanged = false;
+//                 processCurrentPage();
+//             } else if (hostname !== 'www.cineby.app' && urlChanged) {
+//                 if (currentMediaInfo) {
+//                     injectReactApp(currentMediaInfo, true);
+//                 }
+//                 urlChanged = false;
+//                 processCurrentPage();
+//             }
+//         } else {
+//             if (urlChanged && currentMediaInfo) {
+//                 injectReactApp(currentMediaInfo, true);
+//                 urlChanged = false;
+//             }
+//         }
+//     }, 1000);
 
-    return SPAPageChangeInterval;
-}
+//     return SPAPageChangeInterval;
+// }
 
 function startVideoMonitoring(): number {
     let isWatched = false;
@@ -117,7 +118,7 @@ function startVideoMonitoring(): number {
                 window.clearInterval(monitorVideoInterval);
 
                 // Send scrobble request to background script
-                scrobbleMedia(watchPercentage);
+                // scrobbleMedia(watchPercentage);
             }
         } catch (error) {
             console.error('Error in video monitoring:', error);
@@ -127,82 +128,82 @@ function startVideoMonitoring(): number {
     return monitorVideoInterval;
 }
 
-function scrobbleMedia(
-    progress?: number
-): Promise<MessageResponse<ScrobbleResponse>> {
-    return chrome.runtime
-        .sendMessage<ScrobbleRequest, MessageResponse<ScrobbleResponse>>({
-            action: 'scrobble',
-            params: {
-                progress: progress || 100
-            }
-        })
-        .then(handleScrobbleResponse)
-        .catch((err: Error) => {
-            console.error('Error sending scrobble:', err);
-            return { success: false, error: err.message };
-        });
-}
+// function scrobbleMedia(
+//     progress?: number
+// ): Promise<MessageResponse<ScrobbleResponse>> {
+//     return chrome.runtime
+//         .sendMessage<ScrobbleRequest, MessageResponse<ScrobbleResponse>>({
+//             action: 'scrobble',
+//             params: {
+//                 progress: progress || 100
+//             }
+//         })
+//         .then(handleScrobbleResponse)
+//         .catch((err: Error) => {
+//             console.error('Error sending scrobble:', err);
+//             return { success: false, error: err.message };
+//         });
+// }
 
-function undoScrobbleMedia(
-    historyId: number
-): Promise<MessageResponse<unknown>> {
-    return chrome.runtime
-        .sendMessage<UndoScrobbleRequest, MessageResponse<unknown>>({
-            action: 'undoScrobble',
-            params: {
-                historyId: historyId
-            }
-        })
-        .then((resp: MessageResponse<unknown>) => {
-            if (resp.success) {
-                console.log('Undo scrobble response:', resp);
-            } else {
-                console.error('Error undoing scrobble:', resp.error);
-            }
-            return resp;
-        })
-        .catch((err: Error) => {
-            console.error('Error undoing scrobble:', err);
-            return { success: false, error: err.message };
-        });
-}
+// function undoScrobbleMedia(
+//     historyId: number
+// ): Promise<MessageResponse<unknown>> {
+//     return chrome.runtime
+//         .sendMessage<UndoScrobbleRequest, MessageResponse<unknown>>({
+//             action: 'undoScrobble',
+//             params: {
+//                 historyId: historyId
+//             }
+//         })
+//         .then((resp: MessageResponse<unknown>) => {
+//             if (resp.success) {
+//                 console.log('Undo scrobble response:', resp);
+//             } else {
+//                 console.error('Error undoing scrobble:', resp.error);
+//             }
+//             return resp;
+//         })
+//         .catch((err: Error) => {
+//             console.error('Error undoing scrobble:', err);
+//             return { success: false, error: err.message };
+//         });
+// }
 
-function handleScrobbleResponse(
-    resp: MessageResponse<ScrobbleResponse>
-): MessageResponse<ScrobbleResponse> {
-    if (!resp.success) {
-        console.error('Error sending scrobble:', resp.error);
-        return resp;
-    }
+// function handleScrobbleResponse(
+//     resp: MessageResponse<ScrobbleResponse>
+// ): MessageResponse<ScrobbleResponse> {
+//     if (!resp.success) {
+//         console.error('Error sending scrobble:', resp.error);
+//         return resp;
+//     }
 
-    console.log('Scrobble response:', resp.data);
-    if (!resp.data) return resp;
+//     console.log('Scrobble response:', resp.data);
+//     if (!resp.data) return resp;
 
-    const traktHistoryId = resp.data.traktHistoryId;
+//     const traktHistoryId = resp.data.traktHistoryId;
 
-    // Store the scrobble state globally
-    isScrobbled = true;
-    currentTraktHistoryId = traktHistoryId;
+//     // Store the scrobble state globally
+//     isScrobbled = true;
+//     currentTraktHistoryId = traktHistoryId;
 
-    // Handle iframe communication or update UI
-    if (isIframe) {
-        // Send message to parent window
-        window.top?.postMessage(
-            {
-                type: 'TMSYNC_SCROBBLE_EVENT',
-                traktHistoryId: traktHistoryId
-            },
-            '*'
-        );
-        console.log('Sent scrobble event to parent:', traktHistoryId);
-    } else if (currentMediaInfo) {
-        // Re-render notification with updated state
-        injectReactApp(currentMediaInfo);
-    }
+//     // Handle iframe communication or update UI
+//     if (isIframe) {
+//         // Send message to parent window
+//         window.top?.postMessage(
+//             {
+//                 type: 'TMSYNC_SCROBBLE_EVENT',
+//                 traktHistoryId: traktHistoryId
+//             },
+//             '*'
+//         );
+//         console.log('Sent scrobble event to parent:', traktHistoryId);
+//     } else if (currentMediaInfo) {
+//         // Re-render notification with updated state
+//         injectReactApp(currentMediaInfo);
+//     }
 
-    return resp;
-}
+//     return resp;
+// }
 
 async function getMediaInfo(): Promise<MediaInfoResponse | null | undefined> {
     if (!siteConfig) return null;
@@ -242,7 +243,8 @@ async function getMediaInfo(): Promise<MediaInfoResponse | null | undefined> {
 }
 
 function injectReactApp(
-    mediaInfo: ScrobbleNotificationMediaType,
+    // tbr: to be removed
+    mediaInfo: ScrobbleNotificationMediaType | null,
     hidden: boolean = false
 ): void {
     // Create container if it doesn't exist
@@ -296,141 +298,149 @@ function injectReactApp(
         reactRoot = createRoot(shadow);
     }
 
-    // Define callbacks to update the global state
-    const handleScrobble = async (): Promise<
-        MessageResponse<ScrobbleResponse>
-    > => {
-        const response = await scrobbleMedia();
-        // State update is handled in handleScrobbleResponse
-        return response;
-    };
+    // // Define callbacks to update the global state
+    // const handleScrobble = async (): Promise<
+    //     MessageResponse<ScrobbleResponse>
+    // > => {
+    //     const response = await scrobbleMedia();
+    //     // State update is handled in handleScrobbleResponse
+    //     return response;
+    // };
 
-    const handleUndoScrobble = async (
-        historyId: number
-    ): Promise<MessageResponse<unknown>> => {
-        const response = await undoScrobbleMedia(historyId);
-        if (response.success) {
-            // Reset scrobble state
-            isScrobbled = false;
-            currentTraktHistoryId = null;
-            // Re-render with updated state
-            if (reactRoot && mediaInfo) {
-                injectReactApp(mediaInfo);
-            }
-        }
-        return response;
-    };
+    // const handleUndoScrobble = async (
+    //     historyId: number
+    // ): Promise<MessageResponse<unknown>> => {
+    //     const response = await undoScrobbleMedia(historyId);
+    //     if (response.success) {
+    //         // Reset scrobble state
+    //         isScrobbled = false;
+    //         currentTraktHistoryId = null;
+    //         // Re-render with updated state
+    //         if (reactRoot && mediaInfo) {
+    //             injectReactApp(mediaInfo);
+    //         }
+    //     }
+    //     return response;
+    // };
 
     // Render the notification component with the media info and current state
     if (reactRoot) {
         reactRoot.render(
-            <ScrobbleNotification
-                hidden={hidden}
-                mediaInfo={mediaInfo}
-                isScrobbled={isScrobbled}
-                traktHistoryId={currentTraktHistoryId}
-                onScrobble={handleScrobble}
-                onUndoScrobble={handleUndoScrobble}
-            />
+            <>
+                <div className="top-0 fixed w-[200px] h-[50px] bg-amber-800">
+                    {/* <ScrobbleManager /> */}
+                </div>
+                {/* <ScrobbleNotification
+                    hidden={hidden}
+                    mediaInfo={mediaInfo}
+                    isScrobbled={isScrobbled}
+                    traktHistoryId={currentTraktHistoryId}
+                    onScrobble={handleScrobble}
+                    onUndoScrobble={handleUndoScrobble}
+                /> */}
+            </>
         );
     }
 }
 
-async function processCurrentPage(): Promise<void> {
-    if (!siteConfig || !siteConfig.isWatchPage(url) || !urlIdentifier) {
-        return;
-    }
+// async function processCurrentPage(): Promise<void> {
+//     if (!siteConfig || !siteConfig.isWatchPage(url) || !urlIdentifier) {
+//         return;
+//     }
 
-    // Check if we already have media info for this URL
-    chrome.storage.local.get(urlIdentifier).then(async (mediaInfoGet) => {
-        let mediaInfo: ScrobbleNotificationMediaType | null | undefined = null;
+// // Check if we already have media info for this URL
+// chrome.storage.local.get(urlIdentifier).then(async (mediaInfoGet) => {
+//     let mediaInfo: ScrobbleNotificationMediaType | null | undefined = null;
 
-        if (urlIdentifier && mediaInfoGet[urlIdentifier]) {
-            console.log(
-                'Media info already stored:',
-                mediaInfoGet[urlIdentifier]
-            );
-            mediaInfo = mediaInfoGet[urlIdentifier] as MediaInfoResponse;
-        } else {
-            mediaInfo = await getMediaInfo();
-        }
+//     if (urlIdentifier && mediaInfoGet[urlIdentifier]) {
+//         console.log(
+//             'Media info already stored:',
+//             mediaInfoGet[urlIdentifier]
+//         );
+//         mediaInfo = mediaInfoGet[urlIdentifier] as MediaInfoResponse;
+//     } else {
+//         mediaInfo = await getMediaInfo();
+//     }
 
-        if (!mediaInfo) {
-            return;
-        }
+//     if (!mediaInfo) {
+//         return;
+//     }
 
-        const seasonEpisode = siteConfig.getSeasonEpisodeObj(url);
-        if (seasonEpisode) {
-            mediaInfo = {
-                ...mediaInfo,
-                ...seasonEpisode
-            };
-        }
+//     const seasonEpisode = siteConfig.getSeasonEpisodeObj(url);
+//     if (seasonEpisode) {
+//         mediaInfo = {
+//             ...mediaInfo,
+//             ...seasonEpisode
+//         };
+//     }
 
-        // Store media info for use in the component
-        currentMediaInfo = mediaInfo;
+//     // Store media info for use in the component
+//     currentMediaInfo = mediaInfo;
 
-        // if (currentMediaInfo.type === 'show' && 'show' in currentMediaInfo) {
-        //     currentShowProgress = await callApi(
-        //         `https://api.trakt.tv/shows/${currentMediaInfo.show.ids.trakt}/progress/watched`
-        //     );
-        //     console.log('WOOOOW');
-        //     console.log(currentShowProgress);
-        // }
+//     // if (currentMediaInfo.type === 'show' && 'show' in currentMediaInfo) {
+//     //     currentShowProgress = await callApi(
+//     //         `https://api.trakt.tv/shows/${currentMediaInfo.show.ids.trakt}/progress/watched`
+//     //     );
+//     //     console.log('WOOOOW');
+//     //     console.log(currentShowProgress);
+//     // }
 
-        // Inject or update the React notification
-        injectReactApp(mediaInfo);
+//     // Inject or update the React notification
+//     injectReactApp(currentMediaInfo);
 
-        // Start monitoring video progress
-        startVideoMonitoring();
-    });
-}
+//     // Start monitoring video progress
+//     startVideoMonitoring();
+// });
+// injectReactApp(currentMediaInfo);
+// }
 
 // Initialize the content script
-function initialize(): (() => void) | undefined {
+// function initialize(): (() => void) | undefined {
+function initialize() {
     // Set up message listener for iframe communication
-    if (!isIframe) {
-        // Only the parent page needs to listen for messages
-        window.addEventListener('message', (event) => {
-            const data = event.data;
-            if (data && data.type === 'TMSYNC_SCROBBLE_EVENT') {
-                console.log('Received scrobble event from iframe:', data);
-                isScrobbled = true;
-                currentTraktHistoryId = data.traktHistoryId;
+    // if (!isIframe) {
+    //     // Only the parent page needs to listen for messages
+    //     window.addEventListener('message', (event) => {
+    //         const data = event.data;
+    //         if (data && data.type === 'TMSYNC_SCROBBLE_EVENT') {
+    //             console.log('Received scrobble event from iframe:', data);
+    //             isScrobbled = true;
+    //             currentTraktHistoryId = data.traktHistoryId;
 
-                // Update the UI if we have media info
-                if (currentMediaInfo) {
-                    injectReactApp(currentMediaInfo);
-                }
-            }
-        });
-    }
+    //             // Update the UI if we have media info
+    //             if (currentMediaInfo) {
+    //                 injectReactApp(currentMediaInfo);
+    //             }
+    //         }
+    //     });
+    // }
 
     // Start monitoring for page changes (for SPAs)
-    const pageChangeInterval = monitorPageChanges();
+    // const pageChangeInterval = monitorPageChanges();
 
     // Process the current page
-    if (siteConfig && siteConfig.isWatchPage(url)) {
-        if (hostname === 'www.cineby.app' && document.title === 'Cineby') {
-            const waitCinebyTitleInterval = window.setInterval(() => {
-                if (document.title !== 'Cineby') {
-                    processCurrentPage();
-                    clearInterval(waitCinebyTitleInterval);
-                }
-            }, 1000);
-        } else {
-            processCurrentPage();
-        }
-    }
+    // if (siteConfig && siteConfig.isWatchPage(url)) {
+    //     if (hostname === 'www.cineby.app' && document.title === 'Cineby') {
+    //         const waitCinebyTitleInterval = window.setInterval(() => {
+    //             if (document.title !== 'Cineby') {
+    //                 injectReactApp(currentMediaInfo);
+    //                 clearInterval(waitCinebyTitleInterval);
+    //             }
+    //         }, 1000);
+    //     } else {
+    //         injectReactApp(currentMediaInfo);
+    //     }
+    // }
+    injectReactApp(currentMediaInfo);
 
     if (isIframe) {
         startVideoMonitoring();
     }
 
-    // Return cleanup function for future use
-    return () => {
-        if (pageChangeInterval) window.clearInterval(pageChangeInterval);
-    };
+    // // Return cleanup function for future use
+    // return () => {
+    //     if (pageChangeInterval) window.clearInterval(pageChangeInterval);
+    // };
 }
 
 // Start the content script

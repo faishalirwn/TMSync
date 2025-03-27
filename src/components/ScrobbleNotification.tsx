@@ -1,53 +1,9 @@
-import React, { useState, useEffect, useRef, CSSProperties } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
     MessageResponse,
     ScrobbleNotificationMediaType,
     ScrobbleResponse
 } from '../utils/types';
-
-// Define styles object with correct TypeScript types
-const styles: Record<string, CSSProperties> = {
-    container: {
-        width: '100%',
-        display: 'flex',
-        justifyContent: 'center',
-        zIndex: 999999999,
-        position: 'fixed',
-        bottom: 0
-    },
-    notification: {
-        backgroundColor: 'white',
-        width: '300px',
-        fontSize: '1.25rem',
-        lineHeight: '1.75rem',
-        textAlign: 'center',
-        overflow: 'hidden',
-        transition: 'all 0.3s ease'
-    },
-    title: {
-        fontSize: '1.25rem',
-        lineHeight: '1.75rem',
-        margin: '0',
-        padding: '0',
-        color: 'black'
-    },
-    episodeInfo: {
-        fontSize: '1.25rem',
-        lineHeight: '1.75rem',
-        margin: '0',
-        padding: '0',
-        color: 'black'
-    },
-    button: {
-        color: 'red',
-        padding: '4px 8px',
-        borderRadius: '4px',
-        border: 'none',
-        cursor: 'pointer',
-        margin: '8px 0',
-        fontSize: '1rem'
-    }
-};
 
 interface ScrobbleNotificationProps {
     hidden?: boolean;
@@ -74,46 +30,32 @@ export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
     const contentRef = useRef<HTMLDivElement>(null);
     const [contentHeight, setContentHeight] = useState<number>(0);
 
-    // Update state if props change
     useEffect(() => {
         setIsScrobbled(initialIsScrobbled);
         setTraktHistoryId(initialTraktHistoryId);
 
-        // Auto-expand notification when it changes to scrobbled state
         if (initialIsScrobbled && !isScrobbled) {
             setIsExpanded(true);
-
-            // Auto-collapse after 5 seconds
             setTimeout(() => {
                 setIsExpanded(false);
             }, 5000);
         }
     }, [initialIsScrobbled, initialTraktHistoryId, isScrobbled]);
 
-    // Measure content height when content changes
     useEffect(() => {
         if (contentRef.current) {
             setContentHeight(contentRef.current.scrollHeight);
         }
     }, [isScrobbled, mediaInfo]);
 
-    // Handle manual scrobble
     const handleScrobble = () => {
-        onScrobble()
-            .then((response: MessageResponse<ScrobbleResponse>) => {
-                if (response.success && response.data) {
-                    // The state will be updated by the parent component
-                }
-            })
-            .catch((error: Error) => {
-                console.error('Error during manual scrobble:', error);
-            });
+        onScrobble().catch((error: Error) => {
+            console.error('Error during manual scrobble:', error);
+        });
     };
 
-    // Handle undo scrobble
     const handleUndoScrobble = () => {
         if (!traktHistoryId) return;
-
         onUndoScrobble(traktHistoryId).catch((error: Error) => {
             console.error('Error undoing scrobble:', error);
         });
@@ -121,7 +63,6 @@ export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
 
     if (!mediaInfo) return null;
 
-    // Extract media type-specific information
     const getMediaTitle = (): string => {
         if ('movie' in mediaInfo) {
             return mediaInfo.movie.title;
@@ -143,49 +84,44 @@ export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
     const title = getMediaTitle();
     const year = getMediaYear();
     const isShow = 'show' in mediaInfo;
-
-    // Extract episode information
     const season =
         isShow && 'season' in mediaInfo ? mediaInfo.season : undefined;
     const episode =
         isShow && 'number' in mediaInfo ? mediaInfo.number : undefined;
 
     return (
-        <div style={{ ...styles.container, display: hidden ? 'none' : 'flex' }}>
+        <div
+            className={`fixed bottom-0 w-full flex justify-center z-[999999999] ${hidden ? 'hidden' : 'flex'}`}
+        >
             <div
-                style={{
-                    ...styles.notification,
-                    height: isExpanded ? `${contentHeight}px` : '8px'
-                }}
+                className={`bg-white w-72 text-xl text-center overflow-hidden transition-all duration-300 ease-in-out ${isExpanded ? `h-[${contentHeight}px]` : 'h-2'}`}
                 onMouseEnter={() => setIsExpanded(true)}
                 onMouseLeave={() => setIsExpanded(false)}
             >
-                <div
-                    ref={contentRef}
-                    style={{
-                        padding: '10px 0'
-                    }}
-                >
+                <div ref={contentRef} className="py-2">
                     {isScrobbled ? (
                         <div>
-                            <p style={styles.title}>Added</p>
-                            <p style={styles.title}>
+                            <p className="text-black text-xl m-0 p-0">Added</p>
+                            <p className="text-black text-xl m-0 p-0">
                                 {title} ({year})
                             </p>
                             {isShow && (
-                                <p style={styles.episodeInfo}>
+                                <p className="text-black text-xl m-0 p-0">
                                     Season: {season} Episode: {episode}
                                 </p>
                             )}
                             <button
-                                style={styles.button}
+                                className="text-red-500 px-2 py-1 rounded border-none cursor-pointer my-2 text-base"
                                 onClick={handleUndoScrobble}
                             >
                                 Undo?
                             </button>
                         </div>
                     ) : (
-                        <button style={styles.button} onClick={handleScrobble}>
+                        <button
+                            className="text-red-500 px-2 py-1 rounded border-none cursor-pointer my-2 text-base"
+                            onClick={handleScrobble}
+                        >
                             Add
                             <br />
                             {isShow
