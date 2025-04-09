@@ -1,65 +1,137 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { getCurrentSiteConfig } from '../utils/siteConfigs';
+import { SiteConfigBase } from '../utils/siteConfigs/baseConfig';
+import {
+    MediaInfoRequest,
+    MediaInfoResponse,
+    MessageResponse,
+    ScrobbleNotificationMediaType
+} from '../utils/types';
 
-// async function getMediaInfo(): Promise<MediaInfoResponse | null | undefined> {
-async function getMediaInfo() {
-    // if (!siteConfig) return null;
+async function getMediaInfo(siteConfig: SiteConfigBase, url: string) {
+    const urlIdentifier = siteConfig.getUrlIdentifier(url);
 
-    // try {
-    //     const title = await siteConfig.getTitle(url);
-    //     const year = await siteConfig.getYear(url);
-    //     const mediaType = siteConfig.getMediaType(url);
+    async function fetchMediaInfo() {
+        try {
+            const title = await siteConfig.getTitle(url);
+            const year = await siteConfig.getYear(url);
+            const mediaType = siteConfig.getMediaType(url);
 
-    //     if (!title || !year || !mediaType) {
-    //         console.error('Title, year, or media type not found');
-    //         return null;
-    //     }
+            if (!title || !year || !mediaType) {
+                console.error('Title, year, or media type not found');
+                return null;
+            }
 
-    //     return chrome.runtime
-    //         .sendMessage<MediaInfoRequest, MessageResponse<MediaInfoResponse>>({
-    //             action: 'mediaInfo',
-    //             params: {
-    //                 type: mediaType,
-    //                 query: title,
-    //                 years: year
-    //             }
-    //         })
-    //         .then((resp) => {
-    //             if (resp.success) {
-    //                 console.log('Media info response:', resp.data);
-    //                 return resp.data;
-    //             } else {
-    //                 console.error('Error sending media info:', resp.error);
-    //                 return null;
-    //             }
-    //         });
-    // } catch (error) {
-    //     console.error('Error getting media info:', error);
-    //     return null;
-    // }
-    return {
-        lol: 'waw'
-    };
+            return chrome.runtime
+                .sendMessage<
+                    MediaInfoRequest,
+                    MessageResponse<MediaInfoResponse>
+                >({
+                    action: 'mediaInfo',
+                    params: {
+                        type: mediaType,
+                        query: title,
+                        years: year
+                    }
+                })
+                .then((resp) => {
+                    if (resp.success) {
+                        console.log('Media info response:', resp.data);
+                        return resp.data;
+                    } else {
+                        console.error('Error sending media info:', resp.error);
+                        return null;
+                    }
+                });
+        } catch (error) {
+            console.error('Error getting media info:', error);
+            return null;
+        }
+    }
+
+    let mediaInfo: ScrobbleNotificationMediaType | null | undefined = null;
+
+    try {
+        const mediaInfoGet = await chrome.storage.local.get(urlIdentifier);
+        if (urlIdentifier && mediaInfoGet[urlIdentifier]) {
+            console.log(
+                'Media info already stored:',
+                mediaInfoGet[urlIdentifier]
+            );
+            mediaInfo = mediaInfoGet[urlIdentifier] as MediaInfoResponse;
+        } else {
+            mediaInfo = await fetchMediaInfo();
+        }
+
+        if (!mediaInfo) {
+            return;
+        }
+
+        const seasonEpisode = siteConfig.getSeasonEpisodeObj(url);
+        if (seasonEpisode) {
+            mediaInfo = {
+                ...mediaInfo,
+                ...seasonEpisode
+            };
+        }
+
+        return mediaInfo;
+    } catch (error) {
+        console.error('Error getMediaInfo', error);
+        return null;
+    }
 }
 
 export const ScrobbleManager = () => {
     const [pageChanged, setPageChanged] = useState(false);
-    const [mediaInfo, setMediaInfo] = useState({});
+    const [mediaInfo, setMediaInfo] = useState<
+        MediaInfoResponse | null | undefined
+    >(null);
 
-    const isWatchPage = true;
+    const url = window.location.href;
+    const hostname = new URL(url).hostname;
+    const siteConfig = getCurrentSiteConfig(hostname);
+    const isWatchPage = siteConfig.isWatchPage(url);
 
-    const pageUrl = useRef(window.location.href);
-    if (window.location.href !== pageUrl.current) {
-        alert('wow');
-        setPageChanged(true);
-    }
+    useEffect(() => {
+        let lastHref = window.location.href;
 
-    if (pageChanged || isWatchPage) {
-        const mediaInfo = getMediaInfo();
-        setMediaInfo(mediaInfo);
-    }
+        const interval = setInterval(() => {
+            const currentHref = window.location.href;
+            if (currentHref !== lastHref) {
+                lastHref = currentHref;
+                setPageChanged(true);
+            } else {
+                setPageChanged(false);
+            }
+        }, 500);
 
-    if (!mediaInfo) {
-        return null;
+        return () => clearInterval(interval);
+    }, []);
+
+    useEffect(() => {
+        async function changeMediaInfo() {
+            const newMediaInfo = await getMediaInfo(siteConfig, url);
+            setMediaInfo(newMediaInfo);
+            setPageChanged(false);
+        }
+
+        if ((pageChanged && isWatchPage) || (isWatchPage && !mediaInfo)) {
+            if (hostname === 'www.cineby.app' && document.title === 'Cineby') {
+                const waitCinebyTitleInterval = window.setInterval(() => {
+                    if (document.title !== 'Cineby') {
+                        clearInterval(waitCinebyTitleInterval);
+                        changeMediaInfo();
+                    }
+                }, 1000);
+            } else {
+                changeMediaInfo();
+            }
+        }
+    }, [pageChanged, isWatchPage]);
+
+    if (!isWatchPage) {
+        return <h1>get out</h1>;
     } else {
         return <h1>{JSON.stringify(mediaInfo)}</h1>;
     }

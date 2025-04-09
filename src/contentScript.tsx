@@ -328,7 +328,7 @@ function injectReactApp(
         reactRoot.render(
             <>
                 <div className="top-0 fixed w-[200px] h-[50px] bg-amber-800">
-                    {/* <ScrobbleManager /> */}
+                    <ScrobbleManager />
                 </div>
                 {/* <ScrobbleNotification
                     hidden={hidden}
@@ -431,10 +431,11 @@ function initialize() {
     //         injectReactApp(currentMediaInfo);
     //     }
     // }
-    injectReactApp(currentMediaInfo);
 
     if (isIframe) {
         startVideoMonitoring();
+    } else {
+        injectReactApp(currentMediaInfo);
     }
 
     // // Return cleanup function for future use
