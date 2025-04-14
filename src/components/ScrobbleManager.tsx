@@ -5,8 +5,12 @@ import {
     MediaInfoRequest,
     MediaInfoResponse,
     MessageResponse,
-    ScrobbleNotificationMediaType
+    ScrobbleNotificationMediaType,
+    ScrobbleRequest,
+    ScrobbleResponse,
+    UndoScrobbleRequest
 } from '../utils/types';
+import { ScrobbleNotification } from './ScrobbleNotification';
 
 async function getMediaInfo(siteConfig: SiteConfigBase, url: string) {
     const urlIdentifier = siteConfig.getUrlIdentifier(url);
@@ -67,12 +71,14 @@ async function getMediaInfo(siteConfig: SiteConfigBase, url: string) {
             return;
         }
 
-        const seasonEpisode = siteConfig.getSeasonEpisodeObj(url);
-        if (seasonEpisode) {
-            mediaInfo = {
-                ...mediaInfo,
-                ...seasonEpisode
-            };
+        if (siteConfig.isShowPage(url)) {
+            const seasonEpisode = siteConfig.getSeasonEpisodeObj(url);
+            if (seasonEpisode) {
+                mediaInfo = {
+                    ...mediaInfo,
+                    ...seasonEpisode
+                };
+            }
         }
 
         return mediaInfo;
@@ -82,16 +88,117 @@ async function getMediaInfo(siteConfig: SiteConfigBase, url: string) {
     }
 }
 
+function scrobbleMedia(
+    progress?: number
+): Promise<MessageResponse<ScrobbleResponse>> {
+    return chrome.runtime
+        .sendMessage<ScrobbleRequest, MessageResponse<ScrobbleResponse>>({
+            action: 'scrobble',
+            params: {
+                progress: progress || 100
+            }
+        })
+        .then((resp) => {
+            if (!resp.success) {
+                console.error('Error sending scrobble:', resp.error);
+                return resp;
+            }
+
+            console.log('Scrobble response:', resp.data);
+            if (!resp.data) return resp;
+
+            return resp;
+        })
+        .catch((err: Error) => {
+            console.error('Error sending scrobble:', err);
+            return { success: false, error: err.message };
+        });
+}
+
+function undoScrobbleMedia(
+    historyId: number
+): Promise<MessageResponse<unknown>> {
+    return chrome.runtime
+        .sendMessage<UndoScrobbleRequest, MessageResponse<unknown>>({
+            action: 'undoScrobble',
+            params: {
+                historyId: historyId
+            }
+        })
+        .then((resp: MessageResponse<unknown>) => {
+            if (resp.success) {
+                console.log('Undo scrobble response:', resp);
+            } else {
+                console.error('Error undoing scrobble:', resp.error);
+            }
+            return resp;
+        })
+        .catch((err: Error) => {
+            console.error('Error undoing scrobble:', err);
+            return { success: false, error: err.message };
+        });
+}
+
 export const ScrobbleManager = () => {
     const [pageChanged, setPageChanged] = useState(false);
     const [mediaInfo, setMediaInfo] = useState<
         MediaInfoResponse | null | undefined
     >(null);
+    const [isScrobbled, setIsScrobbled] = useState(false);
+
+    const traktHistoryIdRef = useRef<number | null>(null);
+    const oldTitle = useRef<string | null>(null);
+    const undoPressed = useRef(false);
 
     const url = window.location.href;
-    const hostname = new URL(url).hostname;
+    const urlObject = new URL(url);
+    const hostname = urlObject.hostname;
     const siteConfig = getCurrentSiteConfig(hostname);
     const isWatchPage = siteConfig.isWatchPage(url);
+
+    const handleScrobble = async () => {
+        const scrobbleResponse = await scrobbleMedia();
+        const traktHistoryId = scrobbleResponse.data?.traktHistoryId;
+        if (traktHistoryId) {
+            traktHistoryIdRef.current = traktHistoryId;
+            setIsScrobbled(true);
+        }
+    };
+
+    const handleUndoScrobble = async () => {
+        if (!traktHistoryIdRef.current) return;
+        const response = await undoScrobbleMedia(traktHistoryIdRef.current);
+        if (response.success) {
+            setIsScrobbled(false);
+            traktHistoryIdRef.current = null;
+            undoPressed.current = true;
+        }
+    };
+
+    useEffect(() => {
+        if (isScrobbled || undoPressed.current) return;
+
+        const monitorVideoInterval = window.setInterval(() => {
+            try {
+                const video = document.querySelector('video');
+                if (!video) return;
+
+                const watchPercentage =
+                    (video.currentTime / video.duration) * 100;
+
+                if (watchPercentage >= 80) {
+                    handleScrobble();
+                    window.clearInterval(monitorVideoInterval);
+                }
+            } catch (error) {
+                console.error('Error in video monitoring:', error);
+            }
+        }, 1000);
+
+        return () => {
+            window.clearInterval(monitorVideoInterval);
+        };
+    }, [isScrobbled, handleScrobble]);
 
     useEffect(() => {
         let lastHref = window.location.href;
@@ -113,27 +220,86 @@ export const ScrobbleManager = () => {
         async function changeMediaInfo() {
             const newMediaInfo = await getMediaInfo(siteConfig, url);
             setMediaInfo(newMediaInfo);
+
+            if (newMediaInfo) {
+                if ('show' in newMediaInfo) {
+                    oldTitle.current = newMediaInfo.show.title;
+                } else if ('movie' in newMediaInfo) {
+                    oldTitle.current = newMediaInfo.movie.title;
+                }
+            }
+
             setPageChanged(false);
         }
 
         if ((pageChanged && isWatchPage) || (isWatchPage && !mediaInfo)) {
-            if (hostname === 'www.cineby.app' && document.title === 'Cineby') {
-                const waitCinebyTitleInterval = window.setInterval(() => {
-                    if (document.title !== 'Cineby') {
+            undoPressed.current = false;
+            setIsScrobbled(false);
+
+            if (hostname === 'www.cineby.app') {
+                if (
+                    document.title === 'Cineby' ||
+                    document.title === oldTitle.current
+                ) {
+                    const waitCinebyTitleInterval = window.setInterval(() => {
+                        if (document.title !== 'Cineby') {
+                            clearInterval(waitCinebyTitleInterval);
+                            changeMediaInfo();
+                        }
+                    }, 1000);
+                    setTimeout(() => {
                         clearInterval(waitCinebyTitleInterval);
-                        changeMediaInfo();
-                    }
-                }, 1000);
+                    }, 5000);
+                }
+
+                if (siteConfig.isShowPage(url) && mediaInfo) {
+                    const seasonEpisode = siteConfig.getSeasonEpisodeObj(url);
+                    setMediaInfo({
+                        ...mediaInfo,
+                        ...seasonEpisode
+                    });
+                } else {
+                    changeMediaInfo();
+                }
             } else {
                 changeMediaInfo();
             }
         }
     }, [pageChanged, isWatchPage]);
 
+    useEffect(() => {
+        function handleIframeScrobble(event: MessageEvent) {
+            const data = event.data;
+            if (data && data.type === 'TMSYNC_SCROBBLE_EVENT') {
+                console.log('Received scrobble event from iframe:', data);
+
+                if (!isScrobbled) {
+                    handleScrobble();
+                }
+            }
+        }
+
+        window.addEventListener('message', handleIframeScrobble);
+        return () =>
+            window.removeEventListener('message', handleIframeScrobble);
+    }, []);
+
     if (!isWatchPage) {
-        return <h1>get out</h1>;
+        return null;
+    }
+
+    if (mediaInfo) {
+        return (
+            <ScrobbleNotification
+                mediaInfo={mediaInfo}
+                isScrobbled={isScrobbled}
+                traktHistoryId={traktHistoryIdRef.current}
+                onScrobble={handleScrobble}
+                onUndoScrobble={handleUndoScrobble}
+            />
+        );
     } else {
-        return <h1>{JSON.stringify(mediaInfo)}</h1>;
+        return null;
     }
 };
 

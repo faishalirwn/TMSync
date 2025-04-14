@@ -1,46 +1,33 @@
 import React, { useState, useEffect, useRef } from 'react';
-import {
-    MessageResponse,
-    ScrobbleNotificationMediaType,
-    ScrobbleResponse
-} from '../utils/types';
+import { ScrobbleNotificationMediaType } from '../utils/types';
 
 interface ScrobbleNotificationProps {
-    hidden?: boolean;
     mediaInfo: ScrobbleNotificationMediaType;
     isScrobbled?: boolean;
     traktHistoryId?: number | null;
-    onScrobble: () => Promise<MessageResponse<ScrobbleResponse>>;
-    onUndoScrobble: (historyId: number) => Promise<MessageResponse<unknown>>;
+    onScrobble: () => Promise<void>;
+    onUndoScrobble: () => Promise<void>;
 }
 
 export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
-    hidden = false,
     mediaInfo,
-    isScrobbled: initialIsScrobbled = false,
-    traktHistoryId: initialTraktHistoryId = null,
+    isScrobbled,
+    traktHistoryId,
     onScrobble,
     onUndoScrobble
 }) => {
     const [isExpanded, setIsExpanded] = useState<boolean>(false);
-    const [isScrobbled, setIsScrobbled] = useState<boolean>(initialIsScrobbled);
-    const [traktHistoryId, setTraktHistoryId] = useState<number | null>(
-        initialTraktHistoryId
-    );
     const contentRef = useRef<HTMLDivElement>(null);
     const [contentHeight, setContentHeight] = useState<number>(0);
 
     useEffect(() => {
-        setIsScrobbled(initialIsScrobbled);
-        setTraktHistoryId(initialTraktHistoryId);
-
-        if (initialIsScrobbled && !isScrobbled) {
+        if (isScrobbled) {
             setIsExpanded(true);
             setTimeout(() => {
                 setIsExpanded(false);
             }, 5000);
         }
-    }, [initialIsScrobbled, initialTraktHistoryId, isScrobbled]);
+    }, [traktHistoryId, isScrobbled]);
 
     useEffect(() => {
         if (contentRef.current) {
@@ -49,16 +36,12 @@ export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
     }, [isScrobbled, mediaInfo]);
 
     const handleScrobble = () => {
-        onScrobble().catch((error: Error) => {
-            console.error('Error during manual scrobble:', error);
-        });
+        onScrobble();
     };
 
     const handleUndoScrobble = () => {
         if (!traktHistoryId) return;
-        onUndoScrobble(traktHistoryId).catch((error: Error) => {
-            console.error('Error undoing scrobble:', error);
-        });
+        onUndoScrobble();
     };
 
     if (!mediaInfo) return null;
@@ -91,7 +74,9 @@ export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
 
     return (
         <div
-            className={`fixed bottom-0 w-full flex justify-center z-[999999999] ${hidden ? 'hidden' : 'flex'}`}
+            className={
+                'fixed bottom-0 w-full flex justify-center z-[999999999]'
+            }
         >
             <div
                 className={`bg-white w-72 text-xl text-center overflow-hidden transition-all duration-300 ease-in-out ${isExpanded ? `h-[${contentHeight}px]` : 'h-2'}`}
