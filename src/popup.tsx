@@ -1,169 +1,104 @@
-// src/popup.tsx
-import { clientId, clientSecret, traktHeaders } from './utils/config';
-import { useEffect, useState } from 'react'; // Assuming you might want React state later
+import React, { useState, useEffect, useCallback } from 'react';
+import { createRoot } from 'react-dom/client';
+import './styles/index.css';
 
-let isLoggedin = false; // Simple flag, consider React state for dynamic UI updates
+const Popup: React.FC = () => {
+    const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
+    const [username, setUsername] = useState<string | null>(null);
+    const [isLoading, setIsLoading] = useState<boolean>(true);
 
-function updateLoginStatus(loggedIn: boolean) {
-    isLoggedin = loggedIn;
-    const p = document.querySelector('p');
-    const button = document.querySelector('button');
-    if (p) {
-        p.textContent = loggedIn ? 'Logged in' : 'Not logged in';
-    }
-    if (button) {
-        button.textContent = loggedIn
-            ? 'Logged In (Click to Logout - WIP)'
-            : 'Login with Trakt';
-        button.disabled = loggedIn; // Disable button after login for simplicity, or change behavior
-    }
-}
-
-async function checkLoggedIn() {
-    // IMPORTANT: Use chrome.storage.local for tokens
-    const result = await chrome.storage.local.get([
-        'traktAccessToken',
-        'traktTokenExpiresAt'
-    ]);
-    const loggedIn =
-        !!result.traktAccessToken && Date.now() < result.traktTokenExpiresAt;
-    updateLoginStatus(loggedIn);
-}
-
-// Run check when popup opens
-checkLoggedIn();
-
-const button = document.querySelector('button');
-
-if (button) {
-    button.addEventListener('click', async () => {
-        // Make the listener async
-        if (isLoggedin) {
-            // Optional: Implement logout here (clear tokens from storage)
-            // await chrome.storage.local.remove(['traktAccessToken', 'traktRefreshToken', 'traktTokenExpiresAt']);
-            // updateLoginStatus(false);
-            console.log('Logout functionality not fully implemented yet.');
-            return;
-        }
-
-        // 1. Get the dynamic redirect URI
-        let redirectUri: string | undefined;
+    const checkStatus = useCallback(async () => {
         try {
-            // NOTE: getRedirectURL() needs the manifest permission "identity"
-            // It expects a path relative to the base URL it generates,
-            // often just "/" or an empty string is sufficient. Let's try with undefined first.
-            // If Trakt requires a path, you might use getRedirectURL("callback") -> https://<ID>.chromiumapp.org/callback
-            redirectUri = chrome.identity.getRedirectURL();
-            // If Trakt *strictly* requires no path and getRedirectURL adds one, manual construction might be needed,
-            // but typically getRedirectURL() is the correct approach. Test what Trakt accepts.
-            // const extensionId = chrome.runtime.id;
-            // redirectUri = `https://${extensionId}.chromiumapp.org/`; // Manual alternative if needed
+            const data = await chrome.storage.local.get([
+                'traktAccessToken',
+                'traktTokenExpiresAt',
+                'traktUsername'
+            ]);
+            const token = data.traktAccessToken;
+            const expires = data.traktTokenExpiresAt || 0;
+            const name = data.traktUsername;
 
-            if (!redirectUri) {
-                console.error(
-                    "Could not get redirect URL. Ensure 'identity' permission is set."
-                );
-                alert('Error: Could not configure authentication redirect.');
-                return;
+            if (token && Date.now() < expires && name) {
+                setIsLoggedIn(true);
+                setUsername(name);
+            } else {
+                setIsLoggedIn(false);
+                setUsername(null);
             }
-            console.log('Using redirect URI:', redirectUri); // Log for debugging
-        } catch (error) {
-            console.error('Error getting redirect URL:', error);
-            alert('Error: Could not configure authentication redirect.');
-            return;
+        } catch (err) {
+            console.error('Error checking status in popup:', err);
+            setIsLoggedIn(false);
+            setUsername(null);
+        } finally {
+            setIsLoading(false);
         }
+    }, []);
 
-        // 2. Construct the authorization URL
-        const authUrl = `https://trakt.tv/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code`;
+    useEffect(() => {
+        checkStatus();
 
-        // 3. Launch the auth flow
-        try {
-            const redirectUrlResponse = await chrome.identity.launchWebAuthFlow(
-                {
-                    url: authUrl,
-                    interactive: true
-                }
-            );
-
-            if (chrome.runtime.lastError || !redirectUrlResponse) {
-                console.error(
-                    'OAuth flow failed:',
-                    chrome.runtime.lastError?.message || 'No response URL'
-                );
-                alert(
-                    `Login failed: ${chrome.runtime.lastError?.message || 'Authentication cancelled or failed.'}`
-                );
-                return;
+        const handleStorageChange = (
+            changes: { [key: string]: chrome.storage.StorageChange },
+            areaName: string
+        ) => {
+            if (
+                areaName === 'local' &&
+                (changes.traktAccessToken ||
+                    changes.traktTokenExpiresAt ||
+                    changes.traktUsername)
+            ) {
+                console.log('Detected storage change, re-checking status...');
+                checkStatus();
             }
+        };
 
-            console.log('OAuth Redirect URL:', redirectUrlResponse);
-            const url = new URL(redirectUrlResponse);
-            const code = url.searchParams.get('code');
+        chrome.storage.onChanged.addListener(handleStorageChange);
 
-            if (!code) {
-                console.error(
-                    'OAuth flow succeeded but no code found in redirect URL.'
-                );
-                alert(
-                    'Login failed: Could not get authorization code from Trakt.'
-                );
-                return;
-            }
+        return () => {
+            chrome.storage.onChanged.removeListener(handleStorageChange);
+        };
+    }, [checkStatus]);
 
-            // 4. Exchange code for tokens
-            console.log('Exchanging code for token...');
-            const tokenResponse = await fetch(
-                'https://api.trakt.tv/oauth/token',
-                {
-                    method: 'POST',
-                    // Ensure traktHeaders includes 'Content-Type': 'application/json'
-                    headers: traktHeaders,
-                    body: JSON.stringify({
-                        code: code,
-                        client_id: clientId,
-                        client_secret: clientSecret, // Ensure this is loaded correctly (e.g., from env vars via webpack)
-                        redirect_uri: redirectUri, // Use the SAME dynamic redirect URI here
-                        grant_type: 'authorization_code'
-                    })
-                }
-            );
+    const openOptionsPage = () => {
+        chrome.runtime.openOptionsPage();
+    };
 
-            if (!tokenResponse.ok) {
-                const errorData = await tokenResponse.json();
-                console.error(
-                    'Token exchange failed:',
-                    tokenResponse.status,
-                    errorData
-                );
-                alert(
-                    `Login failed: Could not exchange code for token. ${errorData.error_description || ''}`
-                );
-                return;
-            }
+    return (
+        <div className="p-4 bg-white rounded-md shadow min-w-[280px] text-sm">
+            <h1 className="text-lg font-semibold text-center mb-3 text-gray-800">
+                TMSync
+            </h1>
 
-            const tokenData = await tokenResponse.json();
-            console.log('Token data received:', tokenData);
+            {isLoading ? (
+                <div className="flex justify-center items-center h-10">
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-gray-500"></div>
+                </div>
+            ) : isLoggedIn && username ? (
+                <div className="text-center space-y-2">
+                    <p className="text-green-700">
+                        Logged in as:{' '}
+                        <strong className="font-medium">{username}</strong>
+                    </p>
+                </div>
+            ) : (
+                <p className="text-center text-red-700">Not logged in.</p>
+            )}
 
-            // 5. Store tokens securely (access, refresh, expiry) in chrome.storage.local
-            const expiresAt = Date.now() + tokenData.expires_in * 1000;
-            await chrome.storage.local.set({
-                traktAccessToken: tokenData.access_token,
-                traktRefreshToken: tokenData.refresh_token,
-                traktTokenExpiresAt: expiresAt
-            });
+            <button
+                onClick={openOptionsPage}
+                className="mt-4 w-full bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-2 px-4 rounded text-xs focus:outline-none focus:shadow-outline transition duration-150 ease-in-out"
+            >
+                {isLoggedIn ? 'Open Settings' : 'Login / Open Settings'}
+            </button>
+        </div>
+    );
+};
 
-            console.log('Tokens stored successfully.');
-            updateLoginStatus(true); // Update UI to show logged-in state
-        } catch (error) {
-            // Catch errors from launchWebAuthFlow or fetch
-            console.error('Error during OAuth process:', error);
-            alert(
-                `An error occurred during login: ${error instanceof Error ? error.message : String(error)}`
-            );
-        }
-    });
+// --- Render the React component ---
+const container = document.getElementById('root');
+if (container) {
+    const root = createRoot(container);
+    root.render(<Popup />);
+} else {
+    console.error("Target container 'root' not found for Popup.");
 }
-
-// Note: This popup script runs every time the popup is opened.
-// State is not preserved between openings unless stored in chrome.storage.
-// For more complex UI state, consider using React within the popup (as you might have intended with the .tsx extension).

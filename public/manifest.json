@@ -5,6 +5,7 @@
     "action": {
         "default_popup": "popup.html"
     },
+    "options_page": "options.html",
     "permissions": ["identity", "storage"],
     "host_permissions": ["https://api.trakt.tv/*/"],
     "content_scripts": [

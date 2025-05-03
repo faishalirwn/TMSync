@@ -102,12 +102,6 @@ function injectReactApp(): void {
 }
 
 async function initialize() {
-    const syncStorage = await chrome.storage.sync.get(['access_token']);
-    if (!syncStorage.access_token) {
-        alert('auth first');
-        return;
-    }
-
     if (isIframe) {
         startVideoMonitoring();
     } else {
