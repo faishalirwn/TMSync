@@ -38,7 +38,6 @@ export interface ScrobbleBody {
     progress: number;
 }
 
-// Basic ID interfaces
 interface TraktMovieIds {
     trakt?: number;
     slug?: string;
@@ -60,7 +59,6 @@ interface TraktEpisodeIds extends TraktSeasonIds {
     imdb?: string;
 }
 
-// Movie interfaces
 interface HistoryMovie {
     watched_at?: string;
     title?: string;
@@ -68,7 +66,6 @@ interface HistoryMovie {
     ids: TraktMovieIds;
 }
 
-// Show interfaces
 interface HistoryEpisode {
     watched_at?: string;
     number: number;
@@ -88,7 +85,6 @@ interface HistoryShow {
     seasons?: HistorySeason[];
 }
 
-// Standalone season and episode interfaces
 interface StandaloneSeason {
     watched_at?: string;
     ids: TraktSeasonIds;
@@ -99,7 +95,6 @@ interface StandaloneEpisode {
     ids: TraktEpisodeIds;
 }
 
-// Main history body interface
 export interface HistoryBody {
     movies?: HistoryMovie[];
     shows?: HistoryShow[];
@@ -107,7 +102,12 @@ export interface HistoryBody {
     episodes?: StandaloneEpisode[];
 }
 
-// Request types sent from content script
+export interface MediaInfoActionResult {
+    mediaInfo: MediaInfoResponse | null;
+    confidence: 'high' | 'low';
+    originalQuery: { type: string; query: string; years: string };
+}
+
 export interface MediaInfoRequest {
     action: 'mediaInfo';
     params: {
@@ -132,26 +132,40 @@ export interface VideoMonitorRequest {
     params?: { tabId: number };
 }
 
-// Define a union of all possible request types
+export interface ManualSearchRequest {
+    action: 'manualSearch';
+    params: {
+        type: string;
+        query: string;
+    };
+}
+
+export interface ConfirmMediaRequest {
+    action: 'confirmMedia';
+    params: MediaInfoResponse;
+}
+
 export type MessageRequest =
     | MediaInfoRequest
     | ScrobbleRequest
     | UndoScrobbleRequest
-    | VideoMonitorRequest;
+    | VideoMonitorRequest
+    | ManualSearchRequest
+    | ConfirmMediaRequest;
 
-// Define the response type
 export interface MessageResponse<T> {
     success: boolean;
     data?: T;
     error?: string;
 }
 
-// Response data types for specific actions
 export type MediaInfoResponse = MovieMediaInfo | ShowMediaInfo;
 
 export interface ScrobbleResponse {
     traktHistoryId: number;
 }
+
+export type MediaInfoMessageResponse = MessageResponse<MediaInfoActionResult>;
 
 export type HostnameType = 'www.cineby.app' | 'freek.to';
 

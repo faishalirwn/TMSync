@@ -1,90 +1,91 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { getCurrentSiteConfig } from '../utils/siteConfigs';
 import { SiteConfigBase } from '../utils/siteConfigs/baseConfig';
 import {
+    MediaInfoActionResult,
     MediaInfoRequest,
     MediaInfoResponse,
+    MessageRequest,
     MessageResponse,
     ScrobbleNotificationMediaType,
     ScrobbleRequest,
     ScrobbleResponse,
+    SeasonEpisodeObj,
     UndoScrobbleRequest
 } from '../utils/types';
 import { ScrobbleNotification } from './ScrobbleNotification';
+import { ManualSearchPrompt } from './ManualSearchPrompt';
+import { LoadingIndicator } from './LoadingIndicator';
+import { isShowMediaInfo } from '../utils/typeGuards';
 
-async function getMediaInfo(siteConfig: SiteConfigBase, url: string) {
-    const urlIdentifier = siteConfig.getUrlIdentifier(url);
+async function getMediaInfoAndConfidence(
+    siteConfig: SiteConfigBase,
+    url: string,
+    tabUrlIdentifier: string
+) {
+    try {
+        const mediaInfoGet = await chrome.storage.local.get(tabUrlIdentifier);
+        if (
+            tabUrlIdentifier &&
+            mediaInfoGet[tabUrlIdentifier] &&
+            mediaInfoGet[tabUrlIdentifier].confidence === 'high'
+        ) {
+            console.log(
+                'Using high-confidence cached mediaInfo from storage:',
+                mediaInfoGet[tabUrlIdentifier].mediaInfo
+            );
 
-    async function fetchMediaInfo() {
-        try {
-            const title = await siteConfig.getTitle(url);
-            const year = await siteConfig.getYear(url);
-            const mediaType = siteConfig.getMediaType(url);
-
-            if (!title || !year || !mediaType) {
-                console.error('Title, year, or media type not found');
-                return null;
-            }
-
-            return chrome.runtime
-                .sendMessage<
-                    MediaInfoRequest,
-                    MessageResponse<MediaInfoResponse>
-                >({
-                    action: 'mediaInfo',
-                    params: {
-                        type: mediaType,
-                        query: title,
-                        years: year
-                    }
-                })
-                .then((resp) => {
-                    if (resp.success) {
-                        console.log('Media info response:', resp.data);
-                        return resp.data;
-                    } else {
-                        console.error('Error sending media info:', resp.error);
-                        return null;
-                    }
-                });
-        } catch (error) {
-            console.error('Error getting media info:', error);
-            return null;
+            return {
+                success: true,
+                data: {
+                    mediaInfo: mediaInfoGet[tabUrlIdentifier]
+                        .mediaInfo as MediaInfoResponse,
+                    confidence: 'high' as const,
+                    originalQuery:
+                        mediaInfoGet[tabUrlIdentifier].originalQuery || null
+                }
+            };
         }
+    } catch (e) {
+        console.error('Error reading cache in ScrobbleManager:', e);
     }
 
-    let mediaInfo: ScrobbleNotificationMediaType | null | undefined = null;
-
     try {
-        const mediaInfoGet = await chrome.storage.local.get(urlIdentifier);
-        if (urlIdentifier && mediaInfoGet[urlIdentifier]) {
-            console.log(
-                'Media info already stored:',
-                mediaInfoGet[urlIdentifier]
-            );
-            mediaInfo = mediaInfoGet[urlIdentifier] as MediaInfoResponse;
-        } else {
-            mediaInfo = await fetchMediaInfo();
+        const title = await siteConfig.getTitle(url);
+        const year = await siteConfig.getYear(url);
+        const mediaType = siteConfig.getMediaType(url);
+
+        if (!title || !year || !mediaType) {
+            console.error('Title, year, or media type not found by siteConfig');
+            return {
+                success: false,
+                error: 'Failed to extract media details from page.'
+            };
         }
 
-        if (!mediaInfo) {
-            return;
-        }
-
-        if (siteConfig.isShowPage(url)) {
-            const seasonEpisode = siteConfig.getSeasonEpisodeObj(url);
-            if (seasonEpisode) {
-                mediaInfo = {
-                    ...mediaInfo,
-                    ...seasonEpisode
-                };
+        const resp = await chrome.runtime.sendMessage<
+            MediaInfoRequest,
+            MessageResponse<MediaInfoActionResult>
+        >({
+            action: 'mediaInfo',
+            params: {
+                type: mediaType,
+                query: title,
+                years: year
             }
-        }
+        });
 
-        return mediaInfo;
+        console.log('Background mediaInfo response:', resp);
+        return resp;
     } catch (error) {
-        console.error('Error getMediaInfo', error);
-        return null;
+        console.error('Error requesting media info:', error);
+        return {
+            success: false,
+            error:
+                error instanceof Error
+                    ? error.message
+                    : 'Unknown error getting media info'
+        };
     }
 }
 
@@ -140,132 +141,374 @@ function undoScrobbleMedia(
 }
 
 export const ScrobbleManager = () => {
-    const [pageChanged, setPageChanged] = useState(false);
-    const [mediaInfo, setMediaInfo] = useState<
-        MediaInfoResponse | null | undefined
-    >(null);
+    const [mediaInfo, setMediaInfo] = useState<MediaInfoResponse | null>(null);
     const [isScrobbled, setIsScrobbled] = useState(false);
+    const [needsManualConfirmation, setNeedsManualConfirmation] =
+        useState(false);
+    const [originalMediaQuery, setOriginalMediaQuery] = useState<{
+        type: string;
+        query: string;
+        years: string;
+    } | null>(null);
+    const [showEpisodeInfo, setShowEpisodeInfo] =
+        useState<SeasonEpisodeObj | null>(null);
+    const [currentUrl, setCurrentUrl] = useState(window.location.href);
+
+    const [isLoadingMediaInfo, setIsLoadingMediaInfo] = useState(false);
+    const [isScrobbling, setIsScrobbling] = useState(false);
 
     const traktHistoryIdRef = useRef<number | null>(null);
-    const oldTitle = useRef<string | null>(null);
+    const previousUrlRef = useRef<string | null>(null);
+    const waitTitleIntervalRef = useRef<number | null>(null);
+    const waitTitleTimeoutRef = useRef<number | null>(null);
+    const lastFetchedTitleRef = useRef<string | null>(null);
     const undoPressed = useRef(false);
 
     const url = window.location.href;
-    const urlObject = new URL(url);
+    const urlObject = new URL(currentUrl);
     const hostname = urlObject.hostname;
     const siteConfig = getCurrentSiteConfig(hostname);
-    const isWatchPage = siteConfig.isWatchPage(url);
+    const isWatchPage = siteConfig?.isWatchPage(currentUrl) ?? false;
+    const tabUrlIdentifier = siteConfig?.getUrlIdentifier(currentUrl) ?? '';
 
-    const handleScrobble = async () => {
-        const scrobbleResponse = await scrobbleMedia();
-        const traktHistoryId = scrobbleResponse.data?.traktHistoryId;
-        if (traktHistoryId) {
-            traktHistoryIdRef.current = traktHistoryId;
-            setIsScrobbled(true);
+    const handleScrobble = useCallback(async () => {
+        if (!mediaInfo || !tabUrlIdentifier || isScrobbling) {
+            console.warn(
+                'Scrobble prevented: Missing info or already scrobbling.'
+            );
+            return;
         }
-    };
 
-    const handleUndoScrobble = async () => {
-        if (!traktHistoryIdRef.current) return;
-        const response = await undoScrobbleMedia(traktHistoryIdRef.current);
-        if (response.success) {
-            setIsScrobbled(false);
-            traktHistoryIdRef.current = null;
-            undoPressed.current = true;
+        setIsScrobbling(true);
+        console.log('Initiating scrobble...');
+
+        try {
+            const scrobbleResponse = await scrobbleMedia();
+            const traktHistoryId = scrobbleResponse.data?.traktHistoryId;
+            if (traktHistoryId) {
+                traktHistoryIdRef.current = traktHistoryId;
+                setIsScrobbled(true);
+                setNeedsManualConfirmation(false);
+                console.log('Scrobble successful, History ID:', traktHistoryId);
+            } else {
+                console.error(
+                    'Scrobble action did not return history ID.',
+                    scrobbleResponse.error
+                );
+            }
+        } catch (error) {
+            console.error('Error during scrobble execution:', error);
+        } finally {
+            setIsScrobbling(false);
         }
-    };
+    }, [mediaInfo, tabUrlIdentifier, isScrobbling]);
+
+    const handleUndoScrobble = useCallback(async () => {
+        if (!traktHistoryIdRef.current || isScrobbling) return;
+
+        console.log('Initiating undo scrobble...');
+        try {
+            const response = await undoScrobbleMedia(traktHistoryIdRef.current);
+            if (response.success) {
+                setIsScrobbled(false);
+                traktHistoryIdRef.current = null;
+                undoPressed.current = true;
+                console.log('Undo successful.');
+            } else {
+                console.error('Undo failed:', response.error);
+            }
+        } catch (error) {
+            console.error('Error during undo execution:', error);
+        }
+    }, [isScrobbling]);
+
+    const handleConfirmMedia = useCallback(
+        async (confirmedMedia: MediaInfoResponse) => {
+            console.log('Handling confirmed media in manager:', confirmedMedia);
+            setIsLoadingMediaInfo(true);
+            setMediaInfo(confirmedMedia);
+            setNeedsManualConfirmation(false);
+            setOriginalMediaQuery(null);
+
+            if (isShowMediaInfo(confirmedMedia)) {
+                const epInfo = siteConfig?.getSeasonEpisodeObj(currentUrl);
+                setShowEpisodeInfo(epInfo || null);
+            } else {
+                setShowEpisodeInfo(null);
+            }
+
+            try {
+                await chrome.runtime.sendMessage<
+                    MessageRequest,
+                    MessageResponse<null>
+                >({
+                    action: 'confirmMedia',
+                    params: confirmedMedia
+                });
+                console.log('Confirmed media saved to background cache.');
+            } catch (error) {
+                console.error(
+                    'Failed to send media confirmation to background:',
+                    error
+                );
+
+                setMediaInfo(null);
+                setNeedsManualConfirmation(true);
+            } finally {
+                setIsLoadingMediaInfo(false);
+            }
+        },
+        [siteConfig, currentUrl]
+    );
+
+    const handleCancelManualSearch = useCallback(() => {
+        setNeedsManualConfirmation(false);
+        setOriginalMediaQuery(null);
+        console.log('Manual identification cancelled.');
+    }, []);
+
+    const clearWaitTitleTimers = useCallback(() => {
+        if (waitTitleIntervalRef.current !== null) {
+            clearInterval(waitTitleIntervalRef.current);
+            waitTitleIntervalRef.current = null;
+        }
+        if (waitTitleTimeoutRef.current !== null) {
+            clearTimeout(waitTitleTimeoutRef.current);
+            waitTitleTimeoutRef.current = null;
+        }
+    }, []);
 
     useEffect(() => {
-        if (isScrobbled || undoPressed.current) return;
+        if (
+            !mediaInfo ||
+            isLoadingMediaInfo ||
+            isScrobbled ||
+            isScrobbling ||
+            undoPressed.current ||
+            needsManualConfirmation
+        ) {
+            return;
+        }
 
+        console.log('Setting up video monitor for auto-scrobble check.');
         const monitorVideoInterval = window.setInterval(() => {
             try {
                 const video = document.querySelector('video');
-                if (!video) return;
+
+                if (
+                    !video ||
+                    video.readyState < 3 ||
+                    video.duration === 0 ||
+                    isNaN(video.duration)
+                )
+                    return;
 
                 const watchPercentage =
                     (video.currentTime / video.duration) * 100;
 
-                if (watchPercentage >= 80) {
+                if (
+                    mediaInfo &&
+                    !isScrobbled &&
+                    !isScrobbling &&
+                    watchPercentage >= 80
+                ) {
+                    console.log(
+                        `Watch percentage ${watchPercentage.toFixed(1)}% >= 80%. Triggering auto-scrobble.`
+                    );
                     handleScrobble();
                     window.clearInterval(monitorVideoInterval);
                 }
             } catch (error) {
                 console.error('Error in video monitoring:', error);
             }
-        }, 1000);
+        }, 3000);
 
         return () => {
             window.clearInterval(monitorVideoInterval);
         };
-    }, [isScrobbled, handleScrobble]);
+    }, [
+        mediaInfo,
+        isScrobbled,
+        needsManualConfirmation,
+        handleScrobble,
+        isScrobbling,
+        isLoadingMediaInfo
+    ]);
 
     useEffect(() => {
         let lastHref = window.location.href;
+
+        previousUrlRef.current = lastHref;
+        setCurrentUrl(lastHref);
 
         const interval = setInterval(() => {
             const currentHref = window.location.href;
             if (currentHref !== lastHref) {
                 lastHref = currentHref;
-                setPageChanged(true);
-            } else {
-                setPageChanged(false);
+
+                previousUrlRef.current = currentUrl;
+                setCurrentUrl(currentHref);
             }
         }, 500);
-
         return () => clearInterval(interval);
     }, []);
 
     useEffect(() => {
-        async function changeMediaInfo() {
-            const newMediaInfo = await getMediaInfo(siteConfig, url);
-            setMediaInfo(newMediaInfo);
+        console.log(`Main effect running for URL: ${currentUrl}`);
 
-            if (newMediaInfo) {
-                if ('show' in newMediaInfo) {
-                    oldTitle.current = newMediaInfo.show.title;
-                } else if ('movie' in newMediaInfo) {
-                    oldTitle.current = newMediaInfo.movie.title;
-                }
-            }
+        clearWaitTitleTimers();
 
-            setPageChanged(false);
+        const previousUrl = previousUrlRef.current;
+        const isNavigation = currentUrl !== previousUrl && previousUrl !== null;
+
+        if (!isWatchPage) {
+            console.log('Not on a watch page, resetting state.');
+
+            setMediaInfo(null);
+            setIsScrobbled(false);
+            setNeedsManualConfirmation(false);
+            setOriginalMediaQuery(null);
+            setShowEpisodeInfo(null);
+            setIsLoadingMediaInfo(false);
+            setIsScrobbling(false);
+            traktHistoryIdRef.current = null;
+            undoPressed.current = false;
+            lastFetchedTitleRef.current = null;
+            return;
         }
 
-        if ((pageChanged && isWatchPage) || (isWatchPage && !mediaInfo)) {
-            undoPressed.current = false;
-            setIsScrobbled(false);
+        console.log('On watch page, initiating fetch process.');
+        setIsLoadingMediaInfo(true);
+        setMediaInfo(null);
+        setIsScrobbled(false);
+        setNeedsManualConfirmation(false);
+        setOriginalMediaQuery(null);
+        setShowEpisodeInfo(null);
+        traktHistoryIdRef.current = null;
+        undoPressed.current = false;
 
-            if (hostname === 'www.cineby.app') {
-                if (
-                    document.title === 'Cineby' ||
-                    document.title === oldTitle.current
-                ) {
-                    const waitCinebyTitleInterval = window.setInterval(() => {
-                        if (document.title !== 'Cineby') {
-                            clearInterval(waitCinebyTitleInterval);
-                            changeMediaInfo();
-                        }
-                    }, 1000);
-                    setTimeout(() => {
-                        clearInterval(waitCinebyTitleInterval);
-                    }, 5000);
-                }
+        const fetchAndSetMediaInfo = async () => {
+            if (!siteConfig || !tabUrlIdentifier) {
+                console.error(
+                    'Fetch aborted: siteConfig or tabUrlIdentifier missing.'
+                );
+                setIsLoadingMediaInfo(false);
+                return;
+            }
+            console.log('Executing getMediaInfoAndConfidence...');
 
-                if (siteConfig.isShowPage(url) && mediaInfo) {
-                    const seasonEpisode = siteConfig.getSeasonEpisodeObj(url);
-                    setMediaInfo({
-                        ...mediaInfo,
-                        ...seasonEpisode
-                    });
+            const response = await getMediaInfoAndConfidence(
+                siteConfig,
+                currentUrl,
+                tabUrlIdentifier
+            );
+
+            if (currentUrl !== window.location.href) {
+                console.warn(
+                    'URL changed during fetch, discarding result for:',
+                    currentUrl
+                );
+                setIsLoadingMediaInfo(false);
+
+                return;
+            }
+
+            if (response.success && response.data) {
+                const {
+                    mediaInfo: fetchedMediaInfo,
+                    confidence,
+                    originalQuery
+                } = response.data;
+                if (isShowMediaInfo(fetchedMediaInfo)) {
+                    setShowEpisodeInfo(
+                        siteConfig.getSeasonEpisodeObj(currentUrl) || null
+                    );
                 } else {
-                    changeMediaInfo();
+                    setShowEpisodeInfo(null);
+                }
+                if (confidence === 'high' && fetchedMediaInfo) {
+                    setMediaInfo(fetchedMediaInfo);
+                    setNeedsManualConfirmation(false);
+                    setOriginalMediaQuery(null);
+                } else {
+                    setMediaInfo(null);
+                    setNeedsManualConfirmation(true);
+                    setOriginalMediaQuery(originalQuery);
                 }
             } else {
-                changeMediaInfo();
+                console.error('Failed to get media info:', response);
+                setMediaInfo(null);
+                setNeedsManualConfirmation(false);
+                setOriginalMediaQuery(null);
             }
+
+            lastFetchedTitleRef.current = document.title;
+            setIsLoadingMediaInfo(false);
+        };
+
+        if (hostname === 'www.cineby.app') {
+            const currentTitle = document.title;
+            const previousFetchedTitle = lastFetchedTitleRef.current;
+            const isTitleStale =
+                isNavigation &&
+                currentTitle === previousFetchedTitle &&
+                currentTitle !== 'Cineby';
+            const isTitleGeneric = currentTitle === 'Cineby';
+            const needsToWait = isTitleGeneric || isTitleStale;
+
+            console.log(
+                `Cineby Check: current='${currentTitle}', lastFetched='${previousFetchedTitle}', isNavigation=${isNavigation}, isStale=${isTitleStale}, isGeneric=${isTitleGeneric}, needsWait=${needsToWait}`
+            );
+
+            if (needsToWait) {
+                console.log(`Cineby: Waiting for title update...`);
+                setIsLoadingMediaInfo(true);
+
+                waitTitleIntervalRef.current = window.setInterval(() => {
+                    const newTitle = document.title;
+                    const newIsTitleStale =
+                        isNavigation &&
+                        newTitle === previousFetchedTitle &&
+                        newTitle !== 'Cineby';
+                    const newIsTitleGeneric = newTitle === 'Cineby';
+
+                    if (!newIsTitleGeneric && !newIsTitleStale) {
+                        console.log(
+                            `Cineby: Title updated to '${newTitle}'. Fetching.`
+                        );
+                        clearWaitTitleTimers();
+                        fetchAndSetMediaInfo();
+                    }
+                }, 500);
+
+                waitTitleTimeoutRef.current = window.setTimeout(() => {
+                    console.warn(`Cineby: Timeout waiting for title update.`);
+                    clearWaitTitleTimers();
+                    console.log('Cineby: Fetching after timeout.');
+                    fetchAndSetMediaInfo();
+                }, 5000);
+            } else {
+                console.log(
+                    `Cineby: Title '${currentTitle}' looks ready. Fetching immediately.`
+                );
+
+                fetchAndSetMediaInfo();
+            }
+        } else {
+            console.log(`Hostname ${hostname}: Fetching immediately.`);
+            fetchAndSetMediaInfo();
         }
-    }, [pageChanged, isWatchPage]);
+
+        return () => {
+            clearWaitTitleTimers();
+        };
+    }, [
+        currentUrl,
+        isWatchPage,
+        siteConfig,
+        tabUrlIdentifier,
+        clearWaitTitleTimers
+    ]);
 
     useEffect(() => {
         function handleIframeScrobble(event: MessageEvent) {
@@ -273,53 +516,71 @@ export const ScrobbleManager = () => {
             if (data && data.type === 'TMSYNC_SCROBBLE_EVENT') {
                 console.log('Received scrobble event from iframe:', data);
 
-                if (!isScrobbled) {
+                if (
+                    mediaInfo &&
+                    !isScrobbled &&
+                    !needsManualConfirmation &&
+                    !isScrobbling
+                ) {
+                    console.log('Triggering scrobble from iframe event.');
                     handleScrobble();
+                } else {
+                    console.log('Ignoring iframe event (conditions not met).');
                 }
             }
         }
-
         window.addEventListener('message', handleIframeScrobble);
         return () =>
             window.removeEventListener('message', handleIframeScrobble);
-    }, []);
+    }, [
+        mediaInfo,
+        isScrobbled,
+        needsManualConfirmation,
+        handleScrobble,
+        isScrobbling
+    ]);
+
+    let notificationMediaInfo: ScrobbleNotificationMediaType | null = null;
+    if (mediaInfo) {
+        notificationMediaInfo = { ...mediaInfo };
+        if (isShowMediaInfo(mediaInfo) && showEpisodeInfo) {
+            notificationMediaInfo = {
+                ...notificationMediaInfo,
+                ...showEpisodeInfo
+            };
+        }
+    }
 
     if (!isWatchPage) {
         return null;
     }
 
-    if (mediaInfo) {
-        return (
-            <ScrobbleNotification
-                mediaInfo={mediaInfo}
-                isScrobbled={isScrobbled}
-                traktHistoryId={traktHistoryIdRef.current}
-                onScrobble={handleScrobble}
-                onUndoScrobble={handleUndoScrobble}
-            />
-        );
-    } else {
-        return null;
-    }
+    return (
+        <>
+            {isLoadingMediaInfo && <LoadingIndicator text="Finding media..." />}
+
+            {!isLoadingMediaInfo &&
+                needsManualConfirmation &&
+                originalMediaQuery && (
+                    <ManualSearchPrompt
+                        originalQuery={originalMediaQuery}
+                        onConfirmMedia={handleConfirmMedia}
+                        onCancel={handleCancelManualSearch}
+                    />
+                )}
+
+            {!isLoadingMediaInfo &&
+                !needsManualConfirmation &&
+                notificationMediaInfo && (
+                    <ScrobbleNotification
+                        mediaInfo={notificationMediaInfo}
+                        isScrobbled={isScrobbled}
+                        traktHistoryId={traktHistoryIdRef.current}
+                        onScrobble={handleScrobble}
+                        onUndoScrobble={handleUndoScrobble}
+                        isScrobbling={isScrobbling}
+                    />
+                )}
+        </>
+    );
 };
-
-/*
-what will you be brother?
-i see that i'm going to manage everything:
-- page change
-- bringing all sort of stuff to scrobblenotif:
-    - the mediainfo itself
-        - that means the everchanging mediainfo i'll to manage that state
-    - the handler for scrobble button
-    - determine if you are hidden or not -> from if mediainfo is null and shit. and mediainfo will be null every page change because of reinit.
-    - manage by this component himself:
-        - for undo: trakt history id and isscrobbled. undo scrobble button handler
-- for the upcoming components:
-    - manual search prompt / wrong entry prompt
-        - what he'll manage himself:
-            - searchbar and search value state.
-        - mediainfo, shared state with scrobblenotif. or rather mediainfo will be handled here first just in case mediainfo is not accurate
-
-takeaways:
-- it's all about shared state. yes every component could just handle page change themselves but what does that page change joutai essentially is for? to fetch mediainfo, and mediainfo is going to be used in multiple components and they need to be in sync so it's better we delegate that function to a parent component.
-*/

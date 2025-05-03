@@ -5,8 +5,8 @@ export const hydraConfig = createSiteConfig({
     name: 'HydraHD',
     selectorType: 'css',
     urlPatterns: {
-        moviePage: /^\/movie\/.+/,
-        showPage: /^\/watchseries\/.+-online-free\/season\/.*\/episode\/.*/
+        moviePage: /\/movie\/.+/,
+        showPage: /\/watchseries\/.+-online-free\/season\/.*\/episode\/.*/
     },
     selectors: {
         movie: {

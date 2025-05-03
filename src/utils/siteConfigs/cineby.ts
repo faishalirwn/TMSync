@@ -4,8 +4,8 @@ export const cinebyConfig = createSiteConfig({
     name: 'Cineby',
     selectorType: 'css',
     urlPatterns: {
-        moviePage: /^\/movie\/.+/,
-        showPage: /^\/tv\/.+/
+        moviePage: /\/movie\/.+/,
+        showPage: /\/tv\/.+/
     },
     selectors: {
         movie: {

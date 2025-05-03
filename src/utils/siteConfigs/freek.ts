@@ -4,8 +4,8 @@ export const freekConfig = createSiteConfig({
     name: 'Freek',
     selectorType: 'xpath',
     urlPatterns: {
-        moviePage: /^\/watch\/movie\/.+/,
-        showPage: /^\/watch\/tv\/.+/
+        moviePage: /\/watch\/movie\/.+/,
+        showPage: /\/watch\/tv\/.+/
     },
     selectors: {
         movie: {
