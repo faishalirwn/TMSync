@@ -50,7 +50,7 @@ module.exports = {
             patterns: [{ from: '.', to: '../', context: 'public' }]
         }),
         new MiniCssExtractPlugin({
-            filename: '../css/[name].css' // Extract CSS files for Shadow DOM use
+            filename: '../css/styles.css'
         })
     ]
 };

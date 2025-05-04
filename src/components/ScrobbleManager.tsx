@@ -2,27 +2,82 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { getCurrentSiteConfig } from '../utils/siteConfigs';
 import { SiteConfigBase } from '../utils/siteConfigs/baseConfig';
 import {
-    MediaInfoActionResult,
     MediaInfoRequest,
     MediaInfoResponse,
+    MediaStatusPayload,
     MessageRequest,
     MessageResponse,
+    RatingInfo,
     ScrobbleNotificationMediaType,
     ScrobbleRequest,
     ScrobbleResponse,
     SeasonEpisodeObj,
-    UndoScrobbleRequest
+    UndoScrobbleRequest,
+    WatchStatusInfo
 } from '../utils/types';
 import { ScrobbleNotification } from './ScrobbleNotification';
 import { ManualSearchPrompt } from './ManualSearchPrompt';
 import { LoadingIndicator } from './LoadingIndicator';
 import { isShowMediaInfo } from '../utils/typeGuards';
+import { TraktShowWatchedProgress } from '../utils/types/traktApi';
+import { StartWatchPrompt } from './StartWatchPrompt';
+import { RewatchPrompt } from './RewatchPrompt';
+
+// Helper function to manage local rewatch storage (can be moved to utils)
+const REWATCH_STORAGE_KEY = 'tmsync_rewatch_progress';
+type LocalRewatchProgress = {
+    [traktShowId: number]: {
+        season: number;
+        number: number;
+        timestamp: number;
+    };
+};
+
+async function getLocalRewatchProgress(
+    showId: number
+): Promise<{ season: number; number: number } | null> {
+    try {
+        const data = await chrome.storage.local.get(REWATCH_STORAGE_KEY);
+        const allProgress: LocalRewatchProgress =
+            data[REWATCH_STORAGE_KEY] || {};
+        const showProgress = allProgress[showId];
+        return showProgress
+            ? { season: showProgress.season, number: showProgress.number }
+            : null;
+    } catch (error) {
+        console.error('Error getting local rewatch progress:', error);
+        return null;
+    }
+}
+
+async function saveLocalRewatchProgress(
+    showId: number,
+    season: number,
+    episode: number
+): Promise<void> {
+    try {
+        const data = await chrome.storage.local.get(REWATCH_STORAGE_KEY);
+        const allProgress: LocalRewatchProgress =
+            data[REWATCH_STORAGE_KEY] || {};
+        allProgress[showId] = {
+            season: season,
+            number: episode,
+            timestamp: Date.now()
+        };
+        await chrome.storage.local.set({ [REWATCH_STORAGE_KEY]: allProgress });
+        console.log(
+            `Saved local rewatch progress for ${showId}: S${season}E${episode}`
+        );
+    } catch (error) {
+        console.error('Error saving local rewatch progress:', error);
+    }
+}
 
 async function getMediaInfoAndConfidence(
     siteConfig: SiteConfigBase,
     url: string,
     tabUrlIdentifier: string
-): Promise<MessageResponse<MediaInfoActionResult>> {
+): Promise<MessageResponse<MediaStatusPayload>> {
     try {
         const mediaInfoGet = await chrome.storage.local.get(tabUrlIdentifier);
         if (
@@ -103,7 +158,7 @@ async function getMediaInfoAndConfidence(
         console.log('Sending mediaInfo message with params:', messageParams);
         const resp = await chrome.runtime.sendMessage<
             MediaInfoRequest,
-            MessageResponse<MediaInfoActionResult>
+            MessageResponse<MediaStatusPayload>
         >({
             action: 'mediaInfo',
             params: messageParams
@@ -175,21 +230,41 @@ function undoScrobbleMedia(
 }
 
 export const ScrobbleManager = () => {
+    // --- State Variables ---
     const [mediaInfo, setMediaInfo] = useState<MediaInfoResponse | null>(null);
-    const [isScrobbled, setIsScrobbled] = useState(false);
-    const [needsManualConfirmation, setNeedsManualConfirmation] =
-        useState(false);
     const [originalMediaQuery, setOriginalMediaQuery] = useState<{
         type: string;
         query: string;
         years: string;
     } | null>(null);
     const [showEpisodeInfo, setShowEpisodeInfo] =
-        useState<SeasonEpisodeObj | null>(null);
+        useState<SeasonEpisodeObj | null>(null); // S/E of *current* page
     const [currentUrl, setCurrentUrl] = useState(window.location.href);
 
+    // Status State
+    const [watchStatus, setWatchStatus] = useState<WatchStatusInfo | null>(
+        null
+    );
+    const [progressInfo, setProgressInfo] =
+        useState<TraktShowWatchedProgress | null>(null);
+    const [ratingInfo, setRatingInfo] = useState<RatingInfo | null>(null);
+
+    // UI / Flow Control State
     const [isLoadingMediaInfo, setIsLoadingMediaInfo] = useState(false);
+    const [isScrobbled, setIsScrobbled] = useState(false);
     const [isScrobbling, setIsScrobbling] = useState(false);
+    const [needsManualConfirmation, setNeedsManualConfirmation] =
+        useState(false);
+    const [showStartPrompt, setShowStartPrompt] = useState(false); // New
+    const [showRewatchPrompt, setShowRewatchPrompt] = useState(false); // New
+    const [userConfirmedAction, setUserConfirmedAction] = useState(false); // New - Gate for actions requiring prompt
+    const [isRewatchSession, setIsRewatchSession] = useState(false); // New - Tracks if current session is confirmed rewatch
+
+    // Local Rewatch State
+    const [localRewatchLastEpisode, setLocalRewatchLastEpisode] = useState<{
+        season: number;
+        number: number;
+    } | null>(null); // New
 
     const traktHistoryIdRef = useRef<number | null>(null);
     const previousUrlRef = useRef<string | null>(null);
@@ -198,7 +273,6 @@ export const ScrobbleManager = () => {
     const lastFetchedTitleRef = useRef<string | null>(null);
     const undoPressed = useRef(false);
 
-    const url = window.location.href;
     const urlObject = new URL(currentUrl);
     const hostname = urlObject.hostname;
     const siteConfig = getCurrentSiteConfig(hostname);
@@ -206,10 +280,24 @@ export const ScrobbleManager = () => {
     const tabUrlIdentifier = siteConfig?.getUrlIdentifier(currentUrl) ?? '';
 
     const handleScrobble = useCallback(async () => {
-        if (!mediaInfo || !tabUrlIdentifier || isScrobbling) {
-            console.warn(
-                'Scrobble prevented: Missing info or already scrobbling.'
-            );
+        // Gate checks: Ensure media is confirmed, not already scrobbling/scrobbled,
+        // and user has confirmed action if it was required (first watch/rewatch)
+        const isFirstWatch = !watchStatus?.isInHistory; // Determine based on fetched status
+        if (
+            !mediaInfo ||
+            !tabUrlIdentifier ||
+            isScrobbling ||
+            isScrobbled ||
+            ((showStartPrompt || showRewatchPrompt) && !userConfirmedAction)
+        ) {
+            console.warn('Scrobble prevented:', {
+                mediaInfo: !!mediaInfo,
+                tabUrlIdentifier: !!tabUrlIdentifier,
+                isScrobbling,
+                isScrobbled,
+                needsPrompt: showStartPrompt || showRewatchPrompt,
+                confirmed: userConfirmedAction
+            });
             return;
         }
 
@@ -222,8 +310,28 @@ export const ScrobbleManager = () => {
             if (traktHistoryId) {
                 traktHistoryIdRef.current = traktHistoryId;
                 setIsScrobbled(true);
-                setNeedsManualConfirmation(false);
+                setNeedsManualConfirmation(false); // Scrobbling implies confirmation
                 console.log('Scrobble successful, History ID:', traktHistoryId);
+
+                // --- Handle Local Rewatch Update ---
+                if (
+                    isRewatchSession &&
+                    isShowMediaInfo(mediaInfo) &&
+                    showEpisodeInfo
+                ) {
+                    await saveLocalRewatchProgress(
+                        mediaInfo.show.ids.trakt,
+                        showEpisodeInfo.season,
+                        showEpisodeInfo.number
+                    );
+                    // Update local state to reflect the newly watched episode for highlighting
+                    setLocalRewatchLastEpisode(showEpisodeInfo);
+                }
+
+                // --- Potentially Fetch Updated Rating ---
+                // Decide if fetching the rating again immediately after scrobble is needed.
+                // Usually not, unless the rating UI needs instant feedback after adding history.
+                // We'll handle rating separately via its own action.
             } else {
                 console.error(
                     'Scrobble action did not return history ID.',
@@ -235,7 +343,18 @@ export const ScrobbleManager = () => {
         } finally {
             setIsScrobbling(false);
         }
-    }, [mediaInfo, tabUrlIdentifier, isScrobbling]);
+    }, [
+        mediaInfo,
+        tabUrlIdentifier,
+        isScrobbling,
+        isScrobbled,
+        watchStatus,
+        showStartPrompt,
+        showRewatchPrompt,
+        userConfirmedAction,
+        isRewatchSession,
+        showEpisodeInfo
+    ]);
 
     const handleUndoScrobble = useCallback(async () => {
         if (!traktHistoryIdRef.current || isScrobbling) return;
@@ -259,19 +378,23 @@ export const ScrobbleManager = () => {
     const handleConfirmMedia = useCallback(
         async (confirmedMedia: MediaInfoResponse) => {
             console.log('Handling confirmed media in manager:', confirmedMedia);
-            setIsLoadingMediaInfo(true);
+            setIsLoadingMediaInfo(true); // Show loading while confirming/caching and fetching status
             setMediaInfo(confirmedMedia);
             setNeedsManualConfirmation(false);
             setOriginalMediaQuery(null);
 
-            if (isShowMediaInfo(confirmedMedia)) {
-                const epInfo = siteConfig?.getSeasonEpisodeObj(currentUrl);
-                setShowEpisodeInfo(epInfo || null);
-            } else {
-                setShowEpisodeInfo(null);
-            }
+            // Clear previous status before fetching new one
+            setWatchStatus(null);
+            setProgressInfo(null);
+            setRatingInfo(null);
+            setLocalRewatchLastEpisode(null);
+            setIsRewatchSession(false);
+            setShowStartPrompt(false);
+            setShowRewatchPrompt(false);
+            setUserConfirmedAction(false); // Reset confirmation
 
             try {
+                // Send confirmation to background to cache it as 'high' confidence
                 await chrome.runtime.sendMessage<
                     MessageRequest,
                     MessageResponse<null>
@@ -280,25 +403,161 @@ export const ScrobbleManager = () => {
                     params: confirmedMedia
                 });
                 console.log('Confirmed media saved to background cache.');
-            } catch (error) {
-                console.error(
-                    'Failed to send media confirmation to background:',
-                    error
-                );
 
+                // --- Now Fetch Status Details for the Confirmed Media ---
+                const currentUrl = window.location.href; // Get fresh URL
+                const urlObject = new URL(currentUrl);
+                const siteConfig = getCurrentSiteConfig(urlObject.hostname);
+                const tabUrlIdentifier =
+                    siteConfig?.getUrlIdentifier(currentUrl) ?? '';
+
+                if (siteConfig && tabUrlIdentifier) {
+                    console.log(
+                        'Fetching status details after manual confirmation...'
+                    );
+                    // Re-use the background 'mediaInfo' action logic, but we know it's high confidence now
+                    // We primarily need the status details part of the payload
+                    const statusResponse = await chrome.runtime.sendMessage<
+                        MediaInfoRequest, // Sending like a mediaInfo request again
+                        MessageResponse<MediaStatusPayload>
+                    >({
+                        action: 'mediaInfo',
+                        // Send minimal params, background will use cached mediaInfo if available
+                        params: {
+                            type: confirmedMedia.type,
+                            query: '',
+                            years: ''
+                        }
+                    });
+
+                    if (
+                        statusResponse.success &&
+                        statusResponse.data?.confidence === 'high'
+                    ) {
+                        console.log(
+                            'Received status details after confirmation:',
+                            statusResponse.data
+                        );
+                        await processMediaStatus(statusResponse.data); // Use helper to set state
+                    } else {
+                        console.error(
+                            'Failed to fetch status details after confirmation:',
+                            statusResponse.error
+                        );
+                        // Handle error - maybe show defaults?
+                    }
+                }
+            } catch (error) {
+                console.error('Failed during confirmMedia processing:', error);
+                // Reset state?
                 setMediaInfo(null);
-                setNeedsManualConfirmation(true);
+                setNeedsManualConfirmation(true); // Go back to prompt?
             } finally {
                 setIsLoadingMediaInfo(false);
             }
         },
-        [siteConfig, currentUrl]
+        [siteConfig] // Dependency might need adjustment
     );
 
     const handleCancelManualSearch = useCallback(() => {
         setNeedsManualConfirmation(false);
         setOriginalMediaQuery(null);
         console.log('Manual identification cancelled.');
+    }, []);
+
+    // --- New Prompt Handlers ---
+    const handleConfirmStartWatching = useCallback(() => {
+        console.log('User confirmed Start Watching.');
+        setUserConfirmedAction(true);
+        setShowStartPrompt(false);
+        // Auto-scrobble check will now proceed if video is playing past threshold
+    }, []);
+
+    const handleConfirmRewatch = useCallback(() => {
+        console.log('User confirmed Rewatch.');
+        setUserConfirmedAction(true);
+        setIsRewatchSession(true); // Mark this as a rewatch session
+        setShowRewatchPrompt(false);
+        // Fetch local progress again maybe? Or rely on initial fetch.
+        // Auto-scrobble check will now proceed.
+    }, []);
+
+    // --- Rating Handler ---
+    const handleRateItem = useCallback(
+        async (rating: number) => {
+            if (!mediaInfo || rating < 1 || rating > 10) {
+                console.warn(
+                    'Cannot rate: Missing media info or invalid rating.'
+                );
+                return;
+            }
+            console.log(`Submitting rating: ${rating}`);
+            // Optionally show a 'Saving rating...' state
+            try {
+                const response = await chrome.runtime.sendMessage<
+                    MessageRequest,
+                    MessageResponse<null>
+                >({
+                    action: 'rateItem',
+                    params: { mediaInfo, rating }
+                });
+                if (response.success) {
+                    console.log('Rating submitted successfully.');
+                    // Update local rating state immediately for better UX
+                    setRatingInfo((prev) => ({
+                        ...prev,
+                        userRating: rating,
+                        ratedAt: new Date().toISOString()
+                    }));
+                } else {
+                    console.error('Failed to submit rating:', response.error);
+                    // Show error to user?
+                }
+            } catch (error) {
+                console.error('Error sending rating message:', error);
+                // Show error to user?
+            }
+        },
+        [mediaInfo]
+    );
+
+    // --- Helper to process fetched media status ---
+    const processMediaStatus = useCallback(async (data: MediaStatusPayload) => {
+        setWatchStatus(data.watchStatus || null);
+        setProgressInfo(data.progressInfo || null);
+        setRatingInfo(data.ratingInfo || null);
+
+        // Determine flow state based on status
+        const isFirst = !data.watchStatus?.isInHistory;
+        // Define rewatch: progress exists and is completed, or simply isInHistory and not first watch?
+        // Let's use: Has history AND (Trakt progress is complete OR Trakt progress missing/stuck but history exists)
+        const traktProgressComplete =
+            !!data.progressInfo &&
+            data.progressInfo.aired > 0 &&
+            data.progressInfo.aired === data.progressInfo.completed;
+        const isLikelyRewatch = !!data.watchStatus?.isInHistory && !isFirst; // Simpler: if it's in history, it's potentially a rewatch
+
+        console.log('Processing Status:', {
+            isFirst,
+            isLikelyRewatch,
+            traktProgressComplete
+        });
+
+        setShowStartPrompt(isFirst);
+        setShowRewatchPrompt(isLikelyRewatch);
+        setUserConfirmedAction(false); // Require confirmation for new session
+        setIsRewatchSession(false); // Reset rewatch session flag initially
+
+        // If it's potentially a rewatch, fetch local progress
+        if (isLikelyRewatch && isShowMediaInfo(data.mediaInfo)) {
+            const localProgress = await getLocalRewatchProgress(
+                data.mediaInfo.show.ids.trakt
+            );
+            console.log('Fetched local rewatch progress:', localProgress);
+            setLocalRewatchLastEpisode(localProgress);
+        } else {
+            setLocalRewatchLastEpisode(null);
+        }
     }, []);
 
     const clearWaitTitleTimers = useCallback(() => {
@@ -311,6 +570,211 @@ export const ScrobbleManager = () => {
             waitTitleTimeoutRef.current = null;
         }
     }, []);
+
+    useEffect(() => {
+        let lastHref = window.location.href;
+
+        previousUrlRef.current = lastHref;
+        setCurrentUrl(lastHref);
+
+        const interval = setInterval(() => {
+            const currentHref = window.location.href;
+            if (currentHref !== lastHref) {
+                lastHref = currentHref;
+
+                previousUrlRef.current = currentUrl;
+                setCurrentUrl(currentHref);
+            }
+        }, 500);
+        return () => clearInterval(interval);
+    }, []);
+
+    useEffect(() => {
+        console.log(`Main effect running for URL: ${currentUrl}`);
+        clearWaitTitleTimers();
+        const previousUrl = previousUrlRef.current;
+        previousUrlRef.current = currentUrl; // Update previous URL ref *after* using it
+
+        if (!isWatchPage) {
+            // Reset all state if not on watch page
+            setIsLoadingMediaInfo(false);
+            setMediaInfo(null);
+            setIsScrobbled(false);
+            setNeedsManualConfirmation(false);
+            setOriginalMediaQuery(null);
+            setShowEpisodeInfo(null);
+            setWatchStatus(null);
+            setProgressInfo(null);
+            setRatingInfo(null);
+            setShowStartPrompt(false);
+            setShowRewatchPrompt(false);
+            setUserConfirmedAction(false);
+            setIsRewatchSession(false);
+            setLocalRewatchLastEpisode(null);
+            traktHistoryIdRef.current = null;
+            undoPressed.current = false;
+            lastFetchedTitleRef.current = null;
+            return;
+        }
+
+        // --- On Watch Page ---
+        setIsLoadingMediaInfo(true);
+        // Reset transient state *before* fetch
+        setMediaInfo(null);
+        setIsScrobbled(false);
+        setNeedsManualConfirmation(false);
+        setOriginalMediaQuery(null);
+        setShowEpisodeInfo(null);
+        setWatchStatus(null);
+        setProgressInfo(null);
+        setRatingInfo(null);
+        setShowStartPrompt(false);
+        setShowRewatchPrompt(false);
+        setUserConfirmedAction(false);
+        setIsRewatchSession(false);
+        setLocalRewatchLastEpisode(null);
+        traktHistoryIdRef.current = null;
+        undoPressed.current = false;
+
+        const fetchAndProcess = async () => {
+            if (!siteConfig || !tabUrlIdentifier) {
+                setIsLoadingMediaInfo(false);
+                return;
+            }
+
+            const response = await getMediaInfoAndConfidence(
+                siteConfig,
+                currentUrl,
+                tabUrlIdentifier
+            );
+
+            // Check if URL changed during async fetch
+            if (currentUrl !== window.location.href) {
+                console.warn(
+                    'URL changed during fetch, discarding result for:',
+                    currentUrl
+                );
+                setIsLoadingMediaInfo(false);
+                return;
+            }
+
+            if (response.success && response.data) {
+                const {
+                    mediaInfo: fetchedMediaInfo,
+                    confidence,
+                    originalQuery,
+                    ...statusDetails
+                } = response.data;
+
+                if (confidence === 'high' && fetchedMediaInfo) {
+                    setMediaInfo(fetchedMediaInfo);
+                    setNeedsManualConfirmation(false);
+                    setOriginalMediaQuery(null);
+                    // Determine current S/E for shows
+                    if (isShowMediaInfo(fetchedMediaInfo)) {
+                        setShowEpisodeInfo(
+                            siteConfig.getSeasonEpisodeObj(currentUrl) || null
+                        );
+                    } else {
+                        setShowEpisodeInfo(null);
+                    }
+                    // Process the status details received from background
+                    await processMediaStatus(response.data); // Pass the whole payload
+                } else {
+                    // Low confidence
+                    setMediaInfo(null);
+                    setNeedsManualConfirmation(true);
+                    setOriginalMediaQuery(originalQuery);
+                    // Reset status details on low confidence
+                    setWatchStatus(null);
+                    setProgressInfo(null);
+                    setRatingInfo(null);
+                    setShowStartPrompt(false);
+                    setShowRewatchPrompt(false);
+                    setUserConfirmedAction(false);
+                    setIsRewatchSession(false);
+                    setLocalRewatchLastEpisode(null);
+                }
+            } else {
+                console.error('Failed to get media info:', response.error);
+                // Reset all state on failure
+                setMediaInfo(null);
+                setNeedsManualConfirmation(false);
+                setOriginalMediaQuery(null);
+                setShowEpisodeInfo(null);
+                setWatchStatus(null);
+                setProgressInfo(null);
+                setRatingInfo(null);
+                setShowStartPrompt(false);
+                setShowRewatchPrompt(false);
+                setUserConfirmedAction(false);
+                setIsRewatchSession(false);
+                setLocalRewatchLastEpisode(null);
+            }
+            lastFetchedTitleRef.current = document.title;
+            setIsLoadingMediaInfo(false);
+        };
+
+        // --- Site-specific logic (Cineby) ---
+        if (hostname === 'www.cineby.app') {
+            // ... Keep Cineby timer logic, calling fetchAndProcess() when ready ...
+            // Ensure setIsLoadingMediaInfo(false) is called within fetchAndProcess
+            // Start loading indicator immediately if waiting
+            const currentTitle = document.title;
+            const previousFetchedTitle = lastFetchedTitleRef.current;
+            const isNavigation =
+                currentUrl !== previousUrl && previousUrl !== null;
+            const isTitleStale =
+                isNavigation &&
+                currentTitle === previousFetchedTitle &&
+                currentTitle !== 'Cineby';
+            const isTitleGeneric = currentTitle === 'Cineby';
+            const needsToWait = isTitleGeneric || isTitleStale;
+
+            if (needsToWait) {
+                console.log(`Cineby: Waiting for title update...`);
+                setIsLoadingMediaInfo(true);
+
+                waitTitleIntervalRef.current = window.setInterval(() => {
+                    const newTitle = document.title;
+                    const newIsTitleStale =
+                        isNavigation &&
+                        newTitle === previousFetchedTitle &&
+                        newTitle !== 'Cineby';
+                    const newIsTitleGeneric = newTitle === 'Cineby';
+
+                    if (!newIsTitleGeneric && !newIsTitleStale) {
+                        console.log(
+                            `Cineby: Title updated to '${newTitle}'. Fetching.`
+                        );
+                        clearWaitTitleTimers();
+                        fetchAndProcess();
+                    }
+                }, 500);
+
+                waitTitleTimeoutRef.current = window.setTimeout(() => {
+                    console.warn(`Cineby: Timeout waiting for title update.`);
+                    clearWaitTitleTimers();
+                    console.log('Cineby: Fetching after timeout.');
+                    fetchAndProcess();
+                }, 5000);
+            } else {
+                fetchAndProcess();
+            }
+        } else {
+            fetchAndProcess(); // Fetch immediately for other sites
+        }
+
+        return () => {
+            clearWaitTitleTimers();
+        };
+    }, [
+        currentUrl,
+        isWatchPage,
+        siteConfig,
+        tabUrlIdentifier,
+        clearWaitTitleTimers
+    ]);
 
     useEffect(() => {
         if (
@@ -370,181 +834,6 @@ export const ScrobbleManager = () => {
     ]);
 
     useEffect(() => {
-        let lastHref = window.location.href;
-
-        previousUrlRef.current = lastHref;
-        setCurrentUrl(lastHref);
-
-        const interval = setInterval(() => {
-            const currentHref = window.location.href;
-            if (currentHref !== lastHref) {
-                lastHref = currentHref;
-
-                previousUrlRef.current = currentUrl;
-                setCurrentUrl(currentHref);
-            }
-        }, 500);
-        return () => clearInterval(interval);
-    }, []);
-
-    useEffect(() => {
-        console.log(`Main effect running for URL: ${currentUrl}`);
-
-        clearWaitTitleTimers();
-
-        const previousUrl = previousUrlRef.current;
-        const isNavigation = currentUrl !== previousUrl && previousUrl !== null;
-
-        if (!isWatchPage) {
-            console.log('Not on a watch page, resetting state.');
-
-            setMediaInfo(null);
-            setIsScrobbled(false);
-            setNeedsManualConfirmation(false);
-            setOriginalMediaQuery(null);
-            setShowEpisodeInfo(null);
-            setIsLoadingMediaInfo(false);
-            setIsScrobbling(false);
-            traktHistoryIdRef.current = null;
-            undoPressed.current = false;
-            lastFetchedTitleRef.current = null;
-            return;
-        }
-
-        console.log('On watch page, initiating fetch process.');
-        setIsLoadingMediaInfo(true);
-        setMediaInfo(null);
-        setIsScrobbled(false);
-        setNeedsManualConfirmation(false);
-        setOriginalMediaQuery(null);
-        setShowEpisodeInfo(null);
-        traktHistoryIdRef.current = null;
-        undoPressed.current = false;
-
-        const fetchAndSetMediaInfo = async () => {
-            if (!siteConfig || !tabUrlIdentifier) {
-                console.error(
-                    'Fetch aborted: siteConfig or tabUrlIdentifier missing.'
-                );
-                setIsLoadingMediaInfo(false);
-                return;
-            }
-            console.log('Executing getMediaInfoAndConfidence...');
-
-            const response = await getMediaInfoAndConfidence(
-                siteConfig,
-                currentUrl,
-                tabUrlIdentifier
-            );
-
-            if (currentUrl !== window.location.href) {
-                console.warn(
-                    'URL changed during fetch, discarding result for:',
-                    currentUrl
-                );
-                setIsLoadingMediaInfo(false);
-
-                return;
-            }
-
-            if (response.success && response.data) {
-                const {
-                    mediaInfo: fetchedMediaInfo,
-                    confidence,
-                    originalQuery
-                } = response.data;
-                if (isShowMediaInfo(fetchedMediaInfo)) {
-                    setShowEpisodeInfo(
-                        siteConfig.getSeasonEpisodeObj(currentUrl) || null
-                    );
-                } else {
-                    setShowEpisodeInfo(null);
-                }
-                if (confidence === 'high' && fetchedMediaInfo) {
-                    setMediaInfo(fetchedMediaInfo);
-                    setNeedsManualConfirmation(false);
-                    setOriginalMediaQuery(null);
-                } else {
-                    setMediaInfo(null);
-                    setNeedsManualConfirmation(true);
-                    setOriginalMediaQuery(originalQuery);
-                }
-            } else {
-                console.error('Failed to get media info:', response);
-                setMediaInfo(null);
-                setNeedsManualConfirmation(false);
-                setOriginalMediaQuery(null);
-            }
-
-            lastFetchedTitleRef.current = document.title;
-            setIsLoadingMediaInfo(false);
-        };
-
-        if (hostname === 'www.cineby.app') {
-            const currentTitle = document.title;
-            const previousFetchedTitle = lastFetchedTitleRef.current;
-            const isTitleStale =
-                isNavigation &&
-                currentTitle === previousFetchedTitle &&
-                currentTitle !== 'Cineby';
-            const isTitleGeneric = currentTitle === 'Cineby';
-            const needsToWait = isTitleGeneric || isTitleStale;
-
-            console.log(
-                `Cineby Check: current='${currentTitle}', lastFetched='${previousFetchedTitle}', isNavigation=${isNavigation}, isStale=${isTitleStale}, isGeneric=${isTitleGeneric}, needsWait=${needsToWait}`
-            );
-
-            if (needsToWait) {
-                console.log(`Cineby: Waiting for title update...`);
-                setIsLoadingMediaInfo(true);
-
-                waitTitleIntervalRef.current = window.setInterval(() => {
-                    const newTitle = document.title;
-                    const newIsTitleStale =
-                        isNavigation &&
-                        newTitle === previousFetchedTitle &&
-                        newTitle !== 'Cineby';
-                    const newIsTitleGeneric = newTitle === 'Cineby';
-
-                    if (!newIsTitleGeneric && !newIsTitleStale) {
-                        console.log(
-                            `Cineby: Title updated to '${newTitle}'. Fetching.`
-                        );
-                        clearWaitTitleTimers();
-                        fetchAndSetMediaInfo();
-                    }
-                }, 500);
-
-                waitTitleTimeoutRef.current = window.setTimeout(() => {
-                    console.warn(`Cineby: Timeout waiting for title update.`);
-                    clearWaitTitleTimers();
-                    console.log('Cineby: Fetching after timeout.');
-                    fetchAndSetMediaInfo();
-                }, 5000);
-            } else {
-                console.log(
-                    `Cineby: Title '${currentTitle}' looks ready. Fetching immediately.`
-                );
-
-                fetchAndSetMediaInfo();
-            }
-        } else {
-            console.log(`Hostname ${hostname}: Fetching immediately.`);
-            fetchAndSetMediaInfo();
-        }
-
-        return () => {
-            clearWaitTitleTimers();
-        };
-    }, [
-        currentUrl,
-        isWatchPage,
-        siteConfig,
-        tabUrlIdentifier,
-        clearWaitTitleTimers
-    ]);
-
-    useEffect(() => {
         function handleIframeScrobble(event: MessageEvent) {
             const data = event.data;
             if (data && data.type === 'TMSYNC_SCROBBLE_EVENT') {
@@ -585,7 +874,8 @@ export const ScrobbleManager = () => {
         }
     }
 
-    if (!isWatchPage) {
+    if (!isWatchPage && !isLoadingMediaInfo) {
+        // Don't render anything if not on watch page (unless loading initial state)
         return null;
     }
 
@@ -603,9 +893,22 @@ export const ScrobbleManager = () => {
                     />
                 )}
 
+            {/* --- New Prompts --- */}
+            {!isLoadingMediaInfo && showStartPrompt && !userConfirmedAction && (
+                <StartWatchPrompt onConfirm={handleConfirmStartWatching} />
+            )}
+            {!isLoadingMediaInfo &&
+                showRewatchPrompt &&
+                !userConfirmedAction && (
+                    <RewatchPrompt onConfirm={handleConfirmRewatch} />
+                )}
+
+            {/* Show Scrobble Notification if media is confirmed AND user action confirmed (if needed) */}
             {!isLoadingMediaInfo &&
                 !needsManualConfirmation &&
-                notificationMediaInfo && (
+                notificationMediaInfo &&
+                ((!showStartPrompt && !showRewatchPrompt) ||
+                    userConfirmedAction) && ( // Only show if prompts not needed or action confirmed
                     <ScrobbleNotification
                         mediaInfo={notificationMediaInfo}
                         isScrobbled={isScrobbled}
@@ -613,6 +916,9 @@ export const ScrobbleManager = () => {
                         onScrobble={handleScrobble}
                         onUndoScrobble={handleUndoScrobble}
                         isScrobbling={isScrobbling}
+                        // Pass rating info down
+                        ratingInfo={ratingInfo}
+                        onRate={handleRateItem}
                     />
                 )}
         </>

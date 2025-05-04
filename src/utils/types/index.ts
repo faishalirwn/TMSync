@@ -1,4 +1,5 @@
 import './traktApi';
+import { TraktShowWatchedProgress } from './traktApi';
 
 export interface MovieMediaInfo {
     type: string;
@@ -102,10 +103,30 @@ export interface HistoryBody {
     episodes?: StandaloneEpisode[];
 }
 
-export interface MediaInfoActionResult {
+export interface TraktRating {
+    rated_at: string;
+    rating: number;
+    type: 'movie' | 'show' | 'season' | 'episode';
+}
+
+export interface WatchStatusInfo {
+    isInHistory: boolean;
+    lastWatchedAt?: string;
+    isCompleted?: boolean;
+}
+
+export interface RatingInfo {
+    userRating: number | null;
+    ratedAt?: string;
+}
+
+export interface MediaStatusPayload {
     mediaInfo: MediaInfoResponse | null;
-    confidence: 'high' | 'low';
     originalQuery: { type: string; query: string; years: string };
+    confidence: 'high' | 'low';
+    watchStatus?: WatchStatusInfo;
+    progressInfo?: TraktShowWatchedProgress | null;
+    ratingInfo?: RatingInfo;
 }
 
 export interface MediaInfoRequest {
@@ -145,14 +166,22 @@ export interface ConfirmMediaRequest {
     params: MediaInfoResponse;
 }
 
+export interface RateItemRequest {
+    action: 'rateItem';
+    params: {
+        mediaInfo: MediaInfoResponse; // Info to identify the item
+        rating: number; // The rating (1-10)
+    };
+}
+
 export type MessageRequest =
     | MediaInfoRequest
     | ScrobbleRequest
     | UndoScrobbleRequest
     | VideoMonitorRequest
     | ManualSearchRequest
-    | ConfirmMediaRequest;
-
+    | ConfirmMediaRequest
+    | RateItemRequest; // <-- Add RateItemRequest
 export interface MessageResponse<T> {
     success: boolean;
     data?: T;
@@ -165,7 +194,7 @@ export interface ScrobbleResponse {
     traktHistoryId: number;
 }
 
-export type MediaInfoMessageResponse = MessageResponse<MediaInfoActionResult>;
+export type MediaInfoMessageResponse = MessageResponse<MediaStatusPayload>;
 
 export type HostnameType = 'www.cineby.app' | 'freek.to';
 

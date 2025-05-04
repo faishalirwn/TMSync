@@ -64,7 +64,7 @@ function injectReactApp(): void {
 
         async function createStyle() {
             try {
-                const cssUrl = chrome.runtime.getURL('css/contentScript.css');
+                const cssUrl = chrome.runtime.getURL('css/styles.css');
 
                 const response = await fetch(cssUrl);
 

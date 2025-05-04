@@ -33,14 +33,15 @@
                 "https://vid3c.site/*",
                 "https://*.moviesapi.club/*",
                 "https://stre4mplay.one/*",
-                "https://hexa.watch/*"
+                "https://hexa.watch/*",
+                "https://xprime.tv/*"
             ],
             "all_frames": true
         }
     ],
     "web_accessible_resources": [
         {
-            "resources": ["css/contentScript.css"],
+            "resources": ["css/styles.css"],
             "matches": ["<all_urls>"]
         }
     ],

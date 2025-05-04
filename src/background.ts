@@ -1,18 +1,22 @@
 import { callApi } from './utils/api';
 import { getCurrentSiteConfig } from './utils/siteConfigs';
-import { SiteConfigBase } from './utils/siteConfigs/baseConfig';
+import { MediaType, SiteConfigBase } from './utils/siteConfigs/baseConfig';
 import { isMovieMediaInfo, isShowMediaInfo } from './utils/typeGuards';
 import {
     HistoryBody,
     HostnameType,
-    MediaInfoActionResult,
     MediaInfoResponse,
+    MediaStatusPayload,
     MessageRequest,
     MessageResponse,
     MovieMediaInfo,
+    RatingInfo,
     ScrobbleResponse,
-    ShowMediaInfo
+    ShowMediaInfo,
+    TraktRating,
+    WatchStatusInfo
 } from './utils/types';
+import { TraktShowWatchedProgress } from './utils/types/traktApi';
 
 function getTitleSimilarity(queryTitle: string, resultTitle: string): number {
     const q = queryTitle.toLowerCase().trim();
@@ -100,6 +104,10 @@ chrome.runtime.onMessage.addListener(
                 let confidence: 'high' | 'low' = 'low';
                 let lookupMethod: 'tmdb_id' | 'text_search' | 'cache' = 'cache';
 
+                let watchStatus: WatchStatusInfo | undefined = undefined;
+                let progressInfo: TraktShowWatchedProgress | null = null;
+                let ratingInfo: RatingInfo | undefined = undefined;
+
                 try {
                     const cachedData =
                         await chrome.storage.local.get(tabUrlIdentifier);
@@ -112,158 +120,447 @@ chrome.runtime.onMessage.addListener(
                             cachedData[tabUrlIdentifier].mediaInfo;
                         confidence = 'high';
                         lookupMethod = 'cache';
-
-                        sendResponse({
-                            success: true,
-                            data: {
-                                mediaInfo: mediaInfoResult,
-                                confidence: confidence,
-                                originalQuery: originalQuery
-                            }
-                        });
-                        return true;
                     }
                 } catch (e) {
                     console.error('Error checking cache:', e);
                 }
 
-                if (siteConfig.usesTmdbId) {
-                    lookupMethod = 'tmdb_id';
-                    console.log('Attempting TMDB ID lookup...');
-                    const tmdbId = siteConfig.getTmdbId?.(url);
-                    const mediaType = siteConfig.getMediaType(url);
+                if (confidence !== 'high') {
+                    // Only lookup if not already high confidence from cache
+                    let attemptedTmdbLookup = false; // Flag to know if we tried TMDB
 
-                    if (tmdbId && mediaType) {
-                        try {
-                            const lookupUrl = `https://api.trakt.tv/search/tmdb/${tmdbId}?type=${mediaType}&extended=full`;
-                            const lookupResults: (
-                                | MovieMediaInfo
-                                | ShowMediaInfo
-                            )[] = await callApi(lookupUrl, 'GET');
+                    // --- 2a. Try TMDB ID Lookup ---
+                    if (siteConfig.usesTmdbId) {
+                        attemptedTmdbLookup = true;
+                        lookupMethod = 'tmdb_id'; // Explicitly set method
+                        console.log('Attempting TMDB ID lookup...');
+                        const tmdbId = siteConfig.getTmdbId?.(url);
+                        let mediaTypeGuess = siteConfig.getMediaType(url); // Initial guess
 
-                            if (lookupResults && lookupResults.length > 0) {
-                                mediaInfoResult = lookupResults[0];
-                                confidence = 'high';
-                                console.log(
-                                    `TMDB ID lookup successful for ${tmdbId}:`,
-                                    mediaInfoResult
-                                );
-                            } else {
-                                console.log(
-                                    `TMDB ID lookup for ${tmdbId} returned no results. Falling back.`
-                                );
-                                lookupMethod = 'text_search';
-                            }
-                        } catch (error) {
-                            console.error(
-                                `Error during TMDB ID lookup for ${tmdbId}:`,
-                                error
-                            );
-                            lookupMethod = 'text_search';
-                        }
-                    } else {
-                        console.log(
-                            'TMDB ID not found by site config. Falling back.'
-                        );
-                        lookupMethod = 'text_search';
-                    }
-                } else {
-                    console.log(
-                        'Site config does not use TMDB ID. Proceeding with text search.'
-                    );
-                    lookupMethod = 'text_search';
-                }
+                        if (tmdbId) {
+                            try {
+                                let lookupResults: MediaInfoResponse[] | null =
+                                    null;
 
-                if (lookupMethod === 'text_search') {
-                    console.log('Attempting text search fallback...');
-                    try {
-                        const fallbackTitle = await siteConfig.getTitle(url);
-                        const fallbackYear = await siteConfig.getYear(url);
-                        const mediaType = siteConfig.getMediaType(url);
-
-                        if (fallbackTitle && mediaType) {
-                            const searchParams = new URLSearchParams({
-                                query: fallbackTitle
-                            });
-
-                            const searchUrl = `https://api.trakt.tv/search/${mediaType}?${searchParams.toString()}&extended=full`;
-                            const searchResults: (
-                                | MovieMediaInfo
-                                | ShowMediaInfo
-                            )[] = await callApi(searchUrl, 'GET');
-
-                            if (searchResults && searchResults.length > 0) {
-                                const scoredResults: ScoredMediaInfo[] =
-                                    searchResults
-                                        .map((result) => ({
-                                            ...result,
-                                            confidenceScore:
-                                                calculateConfidence(
-                                                    result,
-                                                    fallbackTitle,
-                                                    fallbackYear
-                                                )
-                                        }))
-                                        .sort(
-                                            (a, b) =>
-                                                b.confidenceScore -
-                                                a.confidenceScore
+                                // --- Handle Ambiguous Type ---
+                                if (mediaTypeGuess === null) {
+                                    console.log(
+                                        `Media type ambiguous for ID ${tmdbId}, trying both...`
+                                    );
+                                    try {
+                                        lookupResults = await callApi<
+                                            MediaInfoResponse[]
+                                        >(
+                                            `/search/tmdb/${tmdbId}?type=movie&extended=full`,
+                                            'GET'
                                         );
+                                    } catch (movieError: any) {
+                                        if (
+                                            movieError?.message?.includes('404')
+                                        )
+                                            console.log(
+                                                `TMDB movie lookup 404 for ${tmdbId}`
+                                            );
+                                        else
+                                            console.warn(
+                                                `TMDB movie lookup failed for ${tmdbId}:`,
+                                                movieError
+                                            );
+                                    }
+                                    if (
+                                        !lookupResults ||
+                                        lookupResults.length === 0
+                                    ) {
+                                        console.log(
+                                            `TMDB movie lookup failed or empty, trying show...`
+                                        );
+                                        try {
+                                            lookupResults = await callApi<
+                                                MediaInfoResponse[]
+                                            >(
+                                                `/search/tmdb/${tmdbId}?type=show&extended=full`,
+                                                'GET'
+                                            );
+                                        } catch (showError: any) {
+                                            if (
+                                                showError?.message?.includes(
+                                                    '404'
+                                                )
+                                            )
+                                                console.log(
+                                                    `TMDB show lookup 404 for ${tmdbId}`
+                                                );
+                                            else
+                                                console.warn(
+                                                    `TMDB show lookup failed for ${tmdbId}:`,
+                                                    showError
+                                                );
+                                        }
+                                    }
+                                } else {
+                                    // Single lookup based on guessed type
+                                    console.log(
+                                        `Performing TMDB lookup for ID ${tmdbId} as type '${mediaTypeGuess}'...`
+                                    );
+                                    try {
+                                        lookupResults = await callApi<
+                                            MediaInfoResponse[]
+                                        >(
+                                            `/search/tmdb/${tmdbId}?type=${mediaTypeGuess}&extended=full`,
+                                            'GET'
+                                        );
+                                    } catch (lookupError: any) {
+                                        if (
+                                            lookupError?.message?.includes(
+                                                '404'
+                                            )
+                                        )
+                                            console.log(
+                                                `TMDB lookup 404 for ${tmdbId} as ${mediaTypeGuess}`
+                                            );
+                                        else
+                                            console.error(
+                                                `Error during TMDB ID lookup for ${tmdbId} as ${mediaTypeGuess}:`,
+                                                lookupError
+                                            );
+                                    }
+                                }
+                                // --- End Ambiguous Type Handling ---
 
-                                const bestMatch = scoredResults[0];
-                                const CONFIDENCE_THRESHOLD = 70;
-                                if (
-                                    bestMatch.confidenceScore >=
-                                    CONFIDENCE_THRESHOLD
-                                ) {
-                                    mediaInfoResult = bestMatch;
+                                if (lookupResults && lookupResults.length > 0) {
+                                    mediaInfoResult = lookupResults[0];
                                     confidence = 'high';
                                     console.log(
-                                        `Text search high confidence match (${bestMatch.confidenceScore}):`,
-                                        bestMatch
+                                        `TMDB ID lookup successful for ${tmdbId}:`,
+                                        mediaInfoResult
                                     );
                                 } else {
-                                    mediaInfoResult = null;
-                                    confidence = 'low';
                                     console.log(
-                                        `Text search low confidence match (${bestMatch.confidenceScore}).`
+                                        `TMDB ID lookup for ${tmdbId} returned no results.`
+                                    );
+                                    // Don't fall back to text search *yet*, let the next block handle it
+                                }
+                            } catch (error) {
+                                // Catch errors from the callApi calls themselves
+                                console.error(
+                                    `Error during TMDB ID lookup API calls for ${tmdbId}:`,
+                                    error
+                                );
+                            }
+                        } else {
+                            console.log('TMDB ID not found by site config.');
+                        }
+                    } // End TMDB ID check
+
+                    // --- 2b. Fallback to Text Search ---
+                    // Execute if:
+                    // 1. Site doesn't use TMDB ID OR
+                    // 2. Site uses TMDB ID, but lookup was attempted and failed (mediaInfoResult is still null)
+                    if (
+                        !siteConfig.usesTmdbId ||
+                        (attemptedTmdbLookup && mediaInfoResult === null)
+                    ) {
+                        lookupMethod = 'text_search'; // Set method
+                        console.log('Attempting text search fallback...');
+                        try {
+                            // Use the original query params sent from content script
+                            const fallbackTitle = originalQuery.query;
+                            const fallbackYear = originalQuery.years;
+                            // Use the original type guess, or try detecting again if it was null
+                            const mediaType =
+                                originalQuery.type ||
+                                siteConfig.getMediaType(url);
+
+                            if (fallbackTitle && mediaType) {
+                                // ... (The existing text search + scoring logic) ...
+                                const searchParams = new URLSearchParams({
+                                    query: fallbackTitle
+                                });
+                                const searchUrl = `https://api.trakt.tv/search/${mediaType}?${searchParams.toString()}&extended=full`;
+                                const searchResults = await callApi<
+                                    MediaInfoResponse[]
+                                >(searchUrl, 'GET');
+                                if (searchResults && searchResults.length > 0) {
+                                    const scoredResults: ScoredMediaInfo[] =
+                                        searchResults
+                                            .map(
+                                                (
+                                                    result:
+                                                        | MovieMediaInfo
+                                                        | ShowMediaInfo
+                                                ): ScoredMediaInfo => ({
+                                                    ...result,
+                                                    confidenceScore:
+                                                        calculateConfidence(
+                                                            result,
+                                                            fallbackTitle,
+                                                            fallbackYear
+                                                        )
+                                                })
+                                            )
+                                            .sort(
+                                                (
+                                                    a: ScoredMediaInfo,
+                                                    b: ScoredMediaInfo
+                                                ) =>
+                                                    b.confidenceScore -
+                                                    a.confidenceScore
+                                            );
+
+                                    const bestMatch = scoredResults[0];
+                                    const CONFIDENCE_THRESHOLD = 70;
+                                    if (
+                                        bestMatch.confidenceScore >=
+                                        CONFIDENCE_THRESHOLD
+                                    ) {
+                                        mediaInfoResult = bestMatch;
+                                        confidence = 'high';
+                                        console.log(
+                                            `Text search high confidence match (${bestMatch.confidenceScore}):`,
+                                            mediaInfoResult
+                                        );
+                                    } else {
+                                        mediaInfoResult = null; // Explicitly null
+                                        confidence = 'low';
+                                        console.log(
+                                            `Text search low confidence match (${bestMatch.confidenceScore}).`
+                                        );
+                                    }
+                                } else {
+                                    console.log(
+                                        'Text search returned no results.'
                                     );
                                 }
                             } else {
-                                console.log('Text search returned no results.');
+                                console.error(
+                                    'Fallback failed: Missing title/type for text search.'
+                                );
                             }
-                        } else {
+                        } catch (error) {
                             console.error(
-                                'Fallback failed: Could not extract title/type for text search.'
+                                'Error during text search fallback:',
+                                error
                             );
                         }
-                    } catch (error) {
-                        console.error(
-                            'Error during text search fallback:',
-                            error
-                        );
-                    }
-                }
+                    } // End Text Search Fallback
+                } // End Lookup block
 
                 if (confidence === 'high' && mediaInfoResult) {
-                    await chrome.storage.local.set({
-                        [tabUrlIdentifier]: {
-                            mediaInfo: mediaInfoResult,
-                            confidence: 'high',
-                            lookupMethod: lookupMethod
+                    console.log(
+                        'High confidence match. Fetching status details...'
+                    );
+
+                    watchStatus = { isInHistory: false, isCompleted: false };
+                    ratingInfo = { userRating: null };
+                    progressInfo = null;
+
+                    try {
+                        let traktId: number | undefined = undefined;
+                        if (isMovieMediaInfo(mediaInfoResult)) {
+                            traktId = mediaInfoResult.movie.ids?.trakt;
+                        } else if (isShowMediaInfo(mediaInfoResult)) {
+                            traktId = mediaInfoResult.show.ids?.trakt;
                         }
-                    });
+
+                        if (traktId) {
+                            if (isShowMediaInfo(mediaInfoResult)) {
+                                try {
+                                    progressInfo =
+                                        await callApi<TraktShowWatchedProgress>(
+                                            `/shows/${traktId}/progress/watched?hidden=false&specials=false`,
+                                            'GET'
+                                        );
+                                    if (progressInfo) {
+                                        if (progressInfo.last_watched_at) {
+                                            watchStatus.isInHistory = true;
+                                            watchStatus.lastWatchedAt =
+                                                progressInfo.last_watched_at;
+                                        }
+
+                                        watchStatus.isCompleted =
+                                            progressInfo.aired > 0 &&
+                                            progressInfo.aired ===
+                                                progressInfo.completed;
+                                    }
+                                } catch (progError) {
+                                    console.error(
+                                        'Failed to fetch show progress:',
+                                        progError
+                                    );
+                                }
+                            } else if (isMovieMediaInfo(mediaInfoResult)) {
+                                try {
+                                    const movieHistory = await callApi<any[]>(
+                                        `/sync/history/movies/${traktId}?limit=1`,
+                                        'GET'
+                                    );
+                                    if (
+                                        movieHistory &&
+                                        movieHistory.length > 0
+                                    ) {
+                                        watchStatus.isInHistory = true;
+                                        watchStatus.lastWatchedAt =
+                                            movieHistory[0]?.watched_at;
+                                    }
+                                } catch (histError) {
+                                    console.error(
+                                        'Failed to fetch movie history:',
+                                        histError
+                                    );
+                                }
+                            }
+
+                            try {
+                                const itemTypeForRating = isShowMediaInfo(
+                                    mediaInfoResult
+                                )
+                                    ? 'shows'
+                                    : 'movies';
+
+                                const ratingResult = await callApi<
+                                    TraktRating[]
+                                >(
+                                    `/sync/ratings/${itemTypeForRating}/${traktId}`,
+                                    'GET'
+                                );
+                                if (
+                                    ratingResult &&
+                                    ratingResult.length > 0 &&
+                                    ratingResult[0].rating
+                                ) {
+                                    ratingInfo.userRating =
+                                        ratingResult[0].rating;
+                                    ratingInfo.ratedAt =
+                                        ratingResult[0].rated_at;
+                                }
+                            } catch (rateError) {
+                                console.error(
+                                    'Failed to fetch rating:',
+                                    rateError
+                                );
+                            }
+                        } else {
+                            console.warn(
+                                'Could not get Trakt ID from mediaInfoResult to fetch status.'
+                            );
+                        }
+
+                        console.log('Fetched Status Details:', {
+                            watchStatus,
+                            progressInfo,
+                            ratingInfo
+                        });
+
+                        await chrome.storage.local.set({
+                            [tabUrlIdentifier]: {
+                                mediaInfo: mediaInfoResult,
+                                confidence: 'high',
+                                lookupMethod: lookupMethod
+                            }
+                        });
+                    } catch (error) {
+                        console.error('Error fetching status details:', error);
+
+                        watchStatus = undefined;
+                        progressInfo = null;
+                        ratingInfo = undefined;
+                    }
                 }
 
-                const response: MessageResponse<MediaInfoActionResult> = {
+                const responsePayload: MediaStatusPayload = {
+                    mediaInfo: mediaInfoResult,
+                    confidence: confidence,
+                    originalQuery: originalQuery,
+                    watchStatus: watchStatus,
+                    progressInfo: progressInfo,
+                    ratingInfo: ratingInfo
+                };
+                const response: MessageResponse<MediaStatusPayload> = {
                     success: true,
-                    data: {
-                        mediaInfo: mediaInfoResult,
-                        confidence: confidence,
-                        originalQuery: originalQuery
-                    }
+                    data: responsePayload
                 };
                 sendResponse(response);
+                return true;
+            }
+
+            if (request.action === 'rateItem') {
+                const params = request.params as {
+                    mediaInfo: MediaInfoResponse;
+                    rating: number;
+                };
+                console.log(
+                    `Received rateItem request: Rating ${params.rating}`
+                );
+                try {
+                    const body: {
+                        movies?: any[];
+                        shows?: any[];
+                        episodes?: any[];
+                    } = {};
+                    const mediaType = params.mediaInfo.type;
+
+                    if (params.rating < 1 || params.rating > 10) {
+                        throw new Error(
+                            'Invalid rating value. Must be between 1 and 10.'
+                        );
+                    }
+
+                    let traktId: number | undefined = undefined;
+                    if (isMovieMediaInfo(params.mediaInfo)) {
+                        traktId = params.mediaInfo.movie.ids?.trakt;
+                    } else if (isShowMediaInfo(params.mediaInfo)) {
+                        traktId = params.mediaInfo.show.ids?.trakt;
+                    }
+
+                    if (!traktId) {
+                        throw new Error(
+                            'Could not extract Trakt ID to rate item.'
+                        );
+                    }
+
+                    if (mediaType === 'movie') {
+                        body.movies = [
+                            { ids: { trakt: traktId }, rating: params.rating }
+                        ];
+                    } else if (mediaType === 'show') {
+                        body.shows = [
+                            { ids: { trakt: traktId }, rating: params.rating }
+                        ];
+                    } else {
+                        throw new Error(
+                            `Rating type '${mediaType}' not currently supported directly.`
+                        );
+                    }
+
+                    console.log('Submitting rating to Trakt:', body);
+                    const ratingResponse = await callApi(
+                        `/sync/ratings`,
+                        'POST',
+                        body
+                    );
+                    console.log('Trakt rating response:', ratingResponse);
+
+                    if (
+                        ratingResponse?.not_found &&
+                        (ratingResponse.not_found.movies?.length ||
+                            ratingResponse.not_found.shows?.length)
+                    ) {
+                        console.warn(
+                            'Trakt reported item not found during rating.'
+                        );
+                    }
+
+                    sendResponse({ success: true });
+                } catch (error) {
+                    console.error('Error submitting rating:', error);
+                    sendResponse({
+                        success: false,
+                        error:
+                            error instanceof Error
+                                ? error.message
+                                : 'Failed to submit rating.'
+                    });
+                }
                 return true;
             }
 

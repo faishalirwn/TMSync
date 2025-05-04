@@ -6,7 +6,7 @@ interface MediaInfoSelectors {
     year: string;
 }
 
-type MediaType = 'movie' | 'show' | null;
+export type MediaType = 'movie' | 'show' | null;
 
 export interface SiteConfigBase {
     name: string;
