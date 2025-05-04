@@ -96,140 +96,174 @@ chrome.runtime.onMessage.addListener(
 
             if (request.action === 'mediaInfo') {
                 const originalQuery = request.params;
-                console.log('Received mediaInfo request:', originalQuery);
+                let mediaInfoResult: MediaInfoResponse | null = null;
+                let confidence: 'high' | 'low' = 'low';
+                let lookupMethod: 'tmdb_id' | 'text_search' | 'cache' = 'cache';
 
                 try {
                     const cachedData =
                         await chrome.storage.local.get(tabUrlIdentifier);
-                    if (
-                        cachedData[tabUrlIdentifier] &&
-                        cachedData[tabUrlIdentifier].confidence === 'high'
-                    ) {
+                    if (cachedData[tabUrlIdentifier]?.confidence === 'high') {
                         console.log(
                             'Using high-confidence cached mediaInfo:',
                             cachedData[tabUrlIdentifier].mediaInfo
                         );
-                        const response: MessageResponse<MediaInfoActionResult> =
-                            {
-                                success: true,
-                                data: {
-                                    mediaInfo:
-                                        cachedData[tabUrlIdentifier].mediaInfo,
-                                    confidence: 'high',
-                                    originalQuery: originalQuery
-                                }
-                            };
-                        sendResponse(response);
+                        mediaInfoResult =
+                            cachedData[tabUrlIdentifier].mediaInfo;
+                        confidence = 'high';
+                        lookupMethod = 'cache';
+
+                        sendResponse({
+                            success: true,
+                            data: {
+                                mediaInfo: mediaInfoResult,
+                                confidence: confidence,
+                                originalQuery: originalQuery
+                            }
+                        });
                         return true;
                     }
                 } catch (e) {
                     console.error('Error checking cache:', e);
                 }
 
-                try {
-                    const searchParams = new URLSearchParams({
-                        query: originalQuery.query
-                    });
-                    const searchUrl = `https://api.trakt.tv/search/${originalQuery.type}?${searchParams.toString()}&extended=full`;
-                    const searchResults: (MovieMediaInfo | ShowMediaInfo)[] =
-                        await callApi(searchUrl, 'GET');
+                if (siteConfig.usesTmdbId) {
+                    lookupMethod = 'tmdb_id';
+                    console.log('Attempting TMDB ID lookup...');
+                    const tmdbId = siteConfig.getTmdbId?.(url);
+                    const mediaType = siteConfig.getMediaType(url);
 
-                    if (!searchResults || searchResults.length === 0) {
-                        console.log('No results from Trakt search.');
-                        const response: MessageResponse<MediaInfoActionResult> =
-                            {
-                                success: true,
-                                data: {
-                                    mediaInfo: null,
-                                    confidence: 'low',
-                                    originalQuery: originalQuery
-                                }
-                            };
-                        sendResponse(response);
-                        return true;
-                    }
+                    if (tmdbId && mediaType) {
+                        try {
+                            const lookupUrl = `https://api.trakt.tv/search/tmdb/${tmdbId}?type=${mediaType}&extended=full`;
+                            const lookupResults: (
+                                | MovieMediaInfo
+                                | ShowMediaInfo
+                            )[] = await callApi(lookupUrl, 'GET');
 
-                    const scoredResults: ScoredMediaInfo[] = searchResults
-                        .map((result) => ({
-                            ...result,
-                            confidenceScore: calculateConfidence(
-                                result,
-                                originalQuery.query,
-                                originalQuery.years
-                            )
-                        }))
-                        .sort((a, b) => b.confidenceScore - a.confidenceScore);
-
-                    console.log(
-                        'Scored Results:',
-                        scoredResults.map((r) => {
-                            if (r.type === 'movie' && 'movie' in r) {
-                                return {
-                                    title: r.movie?.title,
-                                    year: r.movie?.year,
-                                    score: r.confidenceScore
-                                };
-                            } else if (r.type === 'show' && 'show' in r) {
-                                return {
-                                    title: r.show?.title,
-                                    year: r.show?.year,
-                                    score: r.confidenceScore
-                                };
+                            if (lookupResults && lookupResults.length > 0) {
+                                mediaInfoResult = lookupResults[0];
+                                confidence = 'high';
+                                console.log(
+                                    `TMDB ID lookup successful for ${tmdbId}:`,
+                                    mediaInfoResult
+                                );
+                            } else {
+                                console.log(
+                                    `TMDB ID lookup for ${tmdbId} returned no results. Falling back.`
+                                );
+                                lookupMethod = 'text_search';
                             }
-                        })
-                    );
-
-                    const bestMatch = scoredResults[0];
-                    const CONFIDENCE_THRESHOLD = 70;
-
-                    if (bestMatch.confidenceScore >= CONFIDENCE_THRESHOLD) {
-                        console.log(
-                            `High confidence match found (${bestMatch.confidenceScore}):`,
-                            bestMatch
-                        );
-
-                        await chrome.storage.local.set({
-                            [tabUrlIdentifier]: {
-                                mediaInfo: bestMatch,
-                                confidence: 'high'
-                            }
-                        });
-                        const response: MessageResponse<MediaInfoActionResult> =
-                            {
-                                success: true,
-                                data: {
-                                    mediaInfo: bestMatch,
-                                    confidence: 'high',
-                                    originalQuery: originalQuery
-                                }
-                            };
-                        sendResponse(response);
+                        } catch (error) {
+                            console.error(
+                                `Error during TMDB ID lookup for ${tmdbId}:`,
+                                error
+                            );
+                            lookupMethod = 'text_search';
+                        }
                     } else {
                         console.log(
-                            `Low confidence match (${bestMatch.confidenceScore}). Threshold: ${CONFIDENCE_THRESHOLD}`
+                            'TMDB ID not found by site config. Falling back.'
                         );
-                        const response: MessageResponse<MediaInfoActionResult> =
-                            {
-                                success: true,
-                                data: {
-                                    mediaInfo: null,
-                                    confidence: 'low',
-                                    originalQuery: originalQuery
-                                }
-                            };
-                        sendResponse(response);
+                        lookupMethod = 'text_search';
                     }
-                } catch (error) {
-                    console.error('Error during mediaInfo action:', error);
-                    const response: MessageResponse<MediaInfoActionResult> = {
-                        success: false,
-                        error:
-                            error instanceof Error
-                                ? error.message
-                                : 'Failed to get media info from Trakt'
-                    };
-                    sendResponse(response);
+                } else {
+                    console.log(
+                        'Site config does not use TMDB ID. Proceeding with text search.'
+                    );
+                    lookupMethod = 'text_search';
                 }
+
+                if (lookupMethod === 'text_search') {
+                    console.log('Attempting text search fallback...');
+                    try {
+                        const fallbackTitle = await siteConfig.getTitle(url);
+                        const fallbackYear = await siteConfig.getYear(url);
+                        const mediaType = siteConfig.getMediaType(url);
+
+                        if (fallbackTitle && mediaType) {
+                            const searchParams = new URLSearchParams({
+                                query: fallbackTitle
+                            });
+
+                            const searchUrl = `https://api.trakt.tv/search/${mediaType}?${searchParams.toString()}&extended=full`;
+                            const searchResults: (
+                                | MovieMediaInfo
+                                | ShowMediaInfo
+                            )[] = await callApi(searchUrl, 'GET');
+
+                            if (searchResults && searchResults.length > 0) {
+                                const scoredResults: ScoredMediaInfo[] =
+                                    searchResults
+                                        .map((result) => ({
+                                            ...result,
+                                            confidenceScore:
+                                                calculateConfidence(
+                                                    result,
+                                                    fallbackTitle,
+                                                    fallbackYear
+                                                )
+                                        }))
+                                        .sort(
+                                            (a, b) =>
+                                                b.confidenceScore -
+                                                a.confidenceScore
+                                        );
+
+                                const bestMatch = scoredResults[0];
+                                const CONFIDENCE_THRESHOLD = 70;
+                                if (
+                                    bestMatch.confidenceScore >=
+                                    CONFIDENCE_THRESHOLD
+                                ) {
+                                    mediaInfoResult = bestMatch;
+                                    confidence = 'high';
+                                    console.log(
+                                        `Text search high confidence match (${bestMatch.confidenceScore}):`,
+                                        bestMatch
+                                    );
+                                } else {
+                                    mediaInfoResult = null;
+                                    confidence = 'low';
+                                    console.log(
+                                        `Text search low confidence match (${bestMatch.confidenceScore}).`
+                                    );
+                                }
+                            } else {
+                                console.log('Text search returned no results.');
+                            }
+                        } else {
+                            console.error(
+                                'Fallback failed: Could not extract title/type for text search.'
+                            );
+                        }
+                    } catch (error) {
+                        console.error(
+                            'Error during text search fallback:',
+                            error
+                        );
+                    }
+                }
+
+                if (confidence === 'high' && mediaInfoResult) {
+                    await chrome.storage.local.set({
+                        [tabUrlIdentifier]: {
+                            mediaInfo: mediaInfoResult,
+                            confidence: 'high',
+                            lookupMethod: lookupMethod
+                        }
+                    });
+                }
+
+                const response: MessageResponse<MediaInfoActionResult> = {
+                    success: true,
+                    data: {
+                        mediaInfo: mediaInfoResult,
+                        confidence: confidence,
+                        originalQuery: originalQuery
+                    }
+                };
+                sendResponse(response);
                 return true;
             }
 

@@ -22,7 +22,7 @@ async function getMediaInfoAndConfidence(
     siteConfig: SiteConfigBase,
     url: string,
     tabUrlIdentifier: string
-) {
+): Promise<MessageResponse<MediaInfoActionResult>> {
     try {
         const mediaInfoGet = await chrome.storage.local.get(tabUrlIdentifier);
         if (
@@ -34,15 +34,18 @@ async function getMediaInfoAndConfidence(
                 'Using high-confidence cached mediaInfo from storage:',
                 mediaInfoGet[tabUrlIdentifier].mediaInfo
             );
-
             return {
                 success: true,
                 data: {
                     mediaInfo: mediaInfoGet[tabUrlIdentifier]
                         .mediaInfo as MediaInfoResponse,
                     confidence: 'high' as const,
-                    originalQuery:
-                        mediaInfoGet[tabUrlIdentifier].originalQuery || null
+                    originalQuery: mediaInfoGet[tabUrlIdentifier]
+                        .originalQuery || {
+                        type: mediaInfoGet[tabUrlIdentifier].mediaInfo.type,
+                        query: '',
+                        years: ''
+                    }
                 }
             };
         }
@@ -51,28 +54,59 @@ async function getMediaInfoAndConfidence(
     }
 
     try {
-        const title = await siteConfig.getTitle(url);
-        const year = await siteConfig.getYear(url);
         const mediaType = siteConfig.getMediaType(url);
-
-        if (!title || !year || !mediaType) {
-            console.error('Title, year, or media type not found by siteConfig');
+        if (!mediaType) {
+            console.error('Media type not found by siteConfig');
             return {
                 success: false,
-                error: 'Failed to extract media details from page.'
+                error: 'Failed to determine media type from URL.'
             };
         }
 
+        let title: string | null = null;
+        let year: string | null = null;
+        let messageParams: { type: string; query: string; years: string };
+
+        if (siteConfig.usesTmdbId) {
+            console.log(
+                'TMDB ID site detected, attempting optional title/year scrape for fallback context...'
+            );
+            title = await siteConfig.getTitle(url);
+            year = await siteConfig.getYear(url);
+
+            messageParams = {
+                type: mediaType,
+                query: title || '',
+                years: year || ''
+            };
+        } else {
+            console.log('Non-TMDB ID site, scraping required title/year...');
+            title = await siteConfig.getTitle(url);
+            year = await siteConfig.getYear(url);
+
+            if (!title || !year) {
+                console.error(
+                    'Required Title or Year not found by siteConfig for non-TMDB site.'
+                );
+                return {
+                    success: false,
+                    error: 'Failed to extract required media details (title/year) from page.'
+                };
+            }
+            messageParams = {
+                type: mediaType,
+                query: title,
+                years: year
+            };
+        }
+
+        console.log('Sending mediaInfo message with params:', messageParams);
         const resp = await chrome.runtime.sendMessage<
             MediaInfoRequest,
             MessageResponse<MediaInfoActionResult>
         >({
             action: 'mediaInfo',
-            params: {
-                type: mediaType,
-                query: title,
-                years: year
-            }
+            params: messageParams
         });
 
         console.log('Background mediaInfo response:', resp);

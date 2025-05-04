@@ -12,20 +12,27 @@ export interface SiteConfigBase {
     name: string;
     selectorType: 'css' | 'xpath';
     urlPatterns: {
-        moviePage: RegExp;
-        showPage: RegExp;
+        movie: RegExp;
+        show: RegExp;
     };
     selectors: {
         movie: MediaInfoSelectors;
         show: MediaInfoSelectors;
     };
-    // Default methods shared by all sites
+
+    usesTmdbId?: boolean;
+    getTmdbId?(url: string): string | null;
+    tmdbIdUrlPatterns?: {
+        movie: RegExp;
+        show: RegExp;
+    };
+
     isWatchPage(url: string): boolean;
     isShowPage(url: string): boolean;
     getMediaType(url: string): MediaType;
     getUrlIdentifier(url: string): string;
     getSeasonEpisodeObj(url: string): SeasonEpisodeObj | null;
-    // Methods to extract title and year
+
     getTitle(url: string): Promise<string | null>;
     getYear(url: string): Promise<string | null>;
 }
@@ -35,22 +42,39 @@ export const createSiteConfig = (config: Partial<SiteConfigBase>) => {
         name: config.name || '',
         selectorType: config.selectorType || 'css',
         urlPatterns: config.urlPatterns || {
-            moviePage: /^$/,
-            showPage: /^$/
+            movie: /^$/,
+            show: /^$/
         },
         selectors: config.selectors || {
             movie: { title: '', year: '' },
             show: { title: '', year: '' }
         },
+        usesTmdbId: config.usesTmdbId ?? false,
+        tmdbIdUrlPatterns: config.tmdbIdUrlPatterns,
+        getTmdbId(url: string): string | null {
+            const urlObj = new URL(url);
+            const path = urlObj.pathname;
+            if (this.tmdbIdUrlPatterns?.movie?.test(path)) {
+                const match = path.match(/\/(\d+)$/);
+                return match ? match[1] : null;
+            }
+            if (this.tmdbIdUrlPatterns?.show?.test(path)) {
+                const match = path.match(/\/(\d+)/);
+                return match ? match[1] : null;
+            }
+            return null;
+        },
         getMediaType(url: string): MediaType {
             const urlObj = new URL(url);
-            if (this.urlPatterns.moviePage.test(urlObj.pathname)) {
-                return 'movie';
-            } else if (this.urlPatterns.showPage.test(urlObj.pathname)) {
-                return 'show';
-            } else {
-                return null;
-            }
+            const path = urlObj.pathname;
+
+            if (this.tmdbIdUrlPatterns?.movie?.test(path)) return 'movie';
+            if (this.tmdbIdUrlPatterns?.show?.test(path)) return 'show';
+
+            if (this.urlPatterns.movie.test(path)) return 'movie';
+            if (this.urlPatterns.show.test(path)) return 'show';
+
+            return null;
         },
         isWatchPage(url: string): boolean {
             return this.getMediaType(url) !== null;
