@@ -6,12 +6,12 @@ export const hexaWatchConfig: SiteConfigBase = createSiteConfig({
     usesTmdbId: true,
     tmdbIdUrlPatterns: {
         movie: /\/details\/movie\/\d+$/,
-        show: /\/details\/tv\/\d+$/
+        show: /\/watch\/tv\/\d+$/
     },
 
     urlPatterns: {
         movie: /\/(details|watch)\/movie\/\d+/,
-        show: /\/(details|watch)\/tv\/\d+/
+        show: /\/watch\/tv\/\d+/
     },
     selectors: {
         movie: { title: '', year: '' },
