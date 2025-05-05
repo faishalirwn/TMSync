@@ -18,59 +18,15 @@ import {
 import { ScrobbleNotification } from './ScrobbleNotification';
 import { ManualSearchPrompt } from './ManualSearchPrompt';
 import { LoadingIndicator } from './LoadingIndicator';
-import { isShowMediaInfo } from '../utils/typeGuards';
+import { isMovieMediaInfo, isShowMediaInfo } from '../utils/typeGuards';
 import { TraktShowWatchedProgress } from '../utils/types/traktApi';
 import { StartWatchPrompt } from './StartWatchPrompt';
 import { RewatchPrompt } from './RewatchPrompt';
-
-const REWATCH_STORAGE_KEY = 'tmsync_rewatch_progress';
-type LocalRewatchProgress = {
-    [traktShowId: number]: {
-        season: number;
-        number: number;
-        timestamp: number;
-    };
-};
-
-async function getLocalRewatchProgress(
-    showId: number
-): Promise<{ season: number; number: number } | null> {
-    try {
-        const data = await chrome.storage.local.get(REWATCH_STORAGE_KEY);
-        const allProgress: LocalRewatchProgress =
-            data[REWATCH_STORAGE_KEY] || {};
-        const showProgress = allProgress[showId];
-        return showProgress
-            ? { season: showProgress.season, number: showProgress.number }
-            : null;
-    } catch (error) {
-        console.error('Error getting local rewatch progress:', error);
-        return null;
-    }
-}
-
-async function saveLocalRewatchProgress(
-    showId: number,
-    season: number,
-    episode: number
-): Promise<void> {
-    try {
-        const data = await chrome.storage.local.get(REWATCH_STORAGE_KEY);
-        const allProgress: LocalRewatchProgress =
-            data[REWATCH_STORAGE_KEY] || {};
-        allProgress[showId] = {
-            season: season,
-            number: episode,
-            timestamp: Date.now()
-        };
-        await chrome.storage.local.set({ [REWATCH_STORAGE_KEY]: allProgress });
-        console.log(
-            `Saved local rewatch progress for ${showId}: S${season}E${episode}`
-        );
-    } catch (error) {
-        console.error('Error saving local rewatch progress:', error);
-    }
-}
+import {
+    getLocalRewatchInfo,
+    LocalRewatchInfo,
+    saveLocalRewatchInfo
+} from '../utils/helpers/localRewatch';
 
 async function getMediaInfoAndConfidence(
     siteConfig: SiteConfigBase,
@@ -219,11 +175,8 @@ export const ScrobbleManager = () => {
     const [showRewatchPrompt, setShowRewatchPrompt] = useState(false);
     const [userConfirmedAction, setUserConfirmedAction] = useState(false);
     const [isRewatchSession, setIsRewatchSession] = useState(false);
-
-    const [localRewatchLastEpisode, setLocalRewatchLastEpisode] = useState<{
-        season: number;
-        number: number;
-    } | null>(null);
+    const [localRewatchInfo, setLocalRewatchInfo] =
+        useState<LocalRewatchInfo | null>(null);
 
     const traktHistoryIdRef = useRef<number | null>(null);
     const previousUrlRef = useRef<string | null>(null);
@@ -239,7 +192,6 @@ export const ScrobbleManager = () => {
     const tabUrlIdentifier = siteConfig?.getUrlIdentifier(currentUrl) ?? '';
 
     const handleScrobble = useCallback(async () => {
-        const isFirstWatch = !watchStatus?.isInHistory;
         if (
             !mediaInfo ||
             !tabUrlIdentifier ||
@@ -264,6 +216,7 @@ export const ScrobbleManager = () => {
         try {
             const scrobbleResponse = await scrobbleMedia();
             const traktHistoryId = scrobbleResponse.data?.traktHistoryId;
+
             if (traktHistoryId) {
                 traktHistoryIdRef.current = traktHistoryId;
                 setIsScrobbled(true);
@@ -275,13 +228,16 @@ export const ScrobbleManager = () => {
                     isShowMediaInfo(mediaInfo) &&
                     showEpisodeInfo
                 ) {
-                    await saveLocalRewatchProgress(
+                    await saveLocalRewatchInfo(
                         mediaInfo.show.ids.trakt,
                         showEpisodeInfo.season,
                         showEpisodeInfo.number
                     );
 
-                    setLocalRewatchLastEpisode(showEpisodeInfo);
+                    const updatedInfo = await getLocalRewatchInfo(
+                        mediaInfo.show.ids.trakt
+                    );
+                    setLocalRewatchInfo(updatedInfo);
                 }
             } else {
                 console.error(
@@ -337,7 +293,7 @@ export const ScrobbleManager = () => {
             setWatchStatus(null);
             setProgressInfo(null);
             setRatingInfo(null);
-            setLocalRewatchLastEpisode(null);
+            setLocalRewatchInfo(null);
             setIsRewatchSession(false);
             setShowStartPrompt(false);
             setShowRewatchPrompt(false);
@@ -460,40 +416,109 @@ export const ScrobbleManager = () => {
         [mediaInfo]
     );
 
-    const processMediaStatus = useCallback(async (data: MediaStatusPayload) => {
-        setWatchStatus(data.watchStatus || null);
-        setProgressInfo(data.progressInfo || null);
-        setRatingInfo(data.ratingInfo || null);
-
-        const isFirst = !data.watchStatus?.isInHistory;
-
-        const traktProgressComplete =
-            !!data.progressInfo &&
-            data.progressInfo.aired > 0 &&
-            data.progressInfo.aired === data.progressInfo.completed;
-        const isLikelyRewatch = !!data.watchStatus?.isInHistory && !isFirst;
-
-        console.log('Processing Status:', {
-            isFirst,
-            isLikelyRewatch,
-            traktProgressComplete
-        });
-
-        setShowStartPrompt(isFirst);
-        setShowRewatchPrompt(isLikelyRewatch);
-        setUserConfirmedAction(false);
-        setIsRewatchSession(false);
-
-        if (isLikelyRewatch && isShowMediaInfo(data.mediaInfo)) {
-            const localProgress = await getLocalRewatchProgress(
-                data.mediaInfo.show.ids.trakt
+    const processMediaStatus = useCallback(
+        async (data: MediaStatusPayload) => {
+            setWatchStatus(
+                data.watchStatus || { isInHistory: false, isCompleted: false }
             );
-            console.log('Fetched local rewatch progress:', localProgress);
-            setLocalRewatchLastEpisode(localProgress);
-        } else {
-            setLocalRewatchLastEpisode(null);
-        }
-    }, []);
+            setProgressInfo(data.progressInfo || null);
+            setRatingInfo(data.ratingInfo || null);
+
+            setShowStartPrompt(false);
+            setShowRewatchPrompt(false);
+            setUserConfirmedAction(false);
+            setIsRewatchSession(false);
+            setLocalRewatchInfo(null);
+
+            const currentEpisode =
+                siteConfig?.getSeasonEpisodeObj(currentUrl) || null;
+
+            if (isShowMediaInfo(data.mediaInfo)) {
+                const traktShowId = data.mediaInfo.show.ids.trakt;
+                const traktProgress = data.progressInfo;
+                const watchHistory = data.watchStatus;
+
+                if (!watchHistory?.isInHistory) {
+                    console.log('State: First ever watch detected.');
+                    setShowStartPrompt(true);
+                } else {
+                    const isTraktProgressComplete =
+                        !!traktProgress &&
+                        traktProgress.aired > 0 &&
+                        traktProgress.aired === traktProgress.completed;
+
+                    if (!isTraktProgressComplete) {
+                        console.log('State: First watch in progress.');
+
+                        const episodeProgress = traktProgress?.seasons
+                            ?.find((s) => s.number === currentEpisode?.season)
+                            ?.episodes?.find(
+                                (e) => e.number === currentEpisode?.number
+                            );
+
+                        if (episodeProgress?.completed && currentEpisode) {
+                            console.log(
+                                `State: First watch, but EPISODE S${currentEpisode.season}E${currentEpisode.number} already watched. Prompting rewatch (of episode).`
+                            );
+
+                            setShowRewatchPrompt(true);
+
+                            const localInfo =
+                                await getLocalRewatchInfo(traktShowId);
+                            setLocalRewatchInfo(localInfo);
+                        } else {
+                            console.log(
+                                'State: First watch, new episode. No prompt needed immediately.'
+                            );
+                            setUserConfirmedAction(true);
+                            setIsRewatchSession(false);
+                        }
+                    } else {
+                        console.log(
+                            'State: Trakt progress complete. Entering Rewatch logic.'
+                        );
+                        const localInfo =
+                            await getLocalRewatchInfo(traktShowId);
+                        setLocalRewatchInfo(localInfo);
+
+                        const nextExpected = localInfo?.nextExpected;
+                        const isWatchingNextLocally =
+                            !!currentEpisode &&
+                            !!nextExpected &&
+                            currentEpisode.season === nextExpected.season &&
+                            currentEpisode.number === nextExpected.number;
+
+                        if (isWatchingNextLocally) {
+                            console.log(
+                                'State: Rewatch - watching the expected next episode locally. Skipping prompt.'
+                            );
+                            setUserConfirmedAction(true);
+                            setIsRewatchSession(true);
+                            setShowRewatchPrompt(false);
+                        } else {
+                            console.log(
+                                'State: Rewatch - not the next expected episode locally. Prompting.'
+                            );
+                            setShowRewatchPrompt(true);
+                        }
+                    }
+                }
+            } else if (isMovieMediaInfo(data.mediaInfo)) {
+                if (!data.watchStatus?.isInHistory) {
+                    console.log('State: Movie - First watch.');
+                    setShowStartPrompt(true);
+                } else {
+                    console.log(
+                        'State: Movie - Already watched. Prompting rewatch.'
+                    );
+                    setShowRewatchPrompt(true);
+
+                    setLocalRewatchInfo(null);
+                }
+            }
+        },
+        [currentUrl, siteConfig]
+    );
 
     const clearWaitTitleTimers = useCallback(() => {
         if (waitTitleIntervalRef.current !== null) {
@@ -544,7 +569,7 @@ export const ScrobbleManager = () => {
             setShowRewatchPrompt(false);
             setUserConfirmedAction(false);
             setIsRewatchSession(false);
-            setLocalRewatchLastEpisode(null);
+            setLocalRewatchInfo(null);
             traktHistoryIdRef.current = null;
             undoPressed.current = false;
             lastFetchedTitleRef.current = null;
@@ -565,7 +590,7 @@ export const ScrobbleManager = () => {
         setShowRewatchPrompt(false);
         setUserConfirmedAction(false);
         setIsRewatchSession(false);
-        setLocalRewatchLastEpisode(null);
+        setLocalRewatchInfo(null);
         traktHistoryIdRef.current = null;
         undoPressed.current = false;
 
@@ -624,7 +649,7 @@ export const ScrobbleManager = () => {
                     setShowRewatchPrompt(false);
                     setUserConfirmedAction(false);
                     setIsRewatchSession(false);
-                    setLocalRewatchLastEpisode(null);
+                    setLocalRewatchInfo(null);
                 }
             } else {
                 console.error('Failed to get media info:', response.error);
@@ -640,7 +665,7 @@ export const ScrobbleManager = () => {
                 setShowRewatchPrompt(false);
                 setUserConfirmedAction(false);
                 setIsRewatchSession(false);
-                setLocalRewatchLastEpisode(null);
+                setLocalRewatchInfo(null);
             }
             lastFetchedTitleRef.current = document.title;
             setIsLoadingMediaInfo(false);
