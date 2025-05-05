@@ -23,7 +23,6 @@ import { TraktShowWatchedProgress } from '../utils/types/traktApi';
 import { StartWatchPrompt } from './StartWatchPrompt';
 import { RewatchPrompt } from './RewatchPrompt';
 
-// Helper function to manage local rewatch storage (can be moved to utils)
 const REWATCH_STORAGE_KEY = 'tmsync_rewatch_progress';
 type LocalRewatchProgress = {
     [traktShowId: number]: {
@@ -78,36 +77,7 @@ async function getMediaInfoAndConfidence(
     url: string,
     tabUrlIdentifier: string
 ): Promise<MessageResponse<MediaStatusPayload>> {
-    try {
-        const mediaInfoGet = await chrome.storage.local.get(tabUrlIdentifier);
-        if (
-            tabUrlIdentifier &&
-            mediaInfoGet[tabUrlIdentifier] &&
-            mediaInfoGet[tabUrlIdentifier].confidence === 'high'
-        ) {
-            console.log(
-                'Using high-confidence cached mediaInfo from storage:',
-                mediaInfoGet[tabUrlIdentifier].mediaInfo
-            );
-            return {
-                success: true,
-                data: {
-                    mediaInfo: mediaInfoGet[tabUrlIdentifier]
-                        .mediaInfo as MediaInfoResponse,
-                    confidence: 'high' as const,
-                    originalQuery: mediaInfoGet[tabUrlIdentifier]
-                        .originalQuery || {
-                        type: mediaInfoGet[tabUrlIdentifier].mediaInfo.type,
-                        query: '',
-                        years: ''
-                    }
-                }
-            };
-        }
-    } catch (e) {
-        console.error('Error reading cache in ScrobbleManager:', e);
-    }
-
+    console.log('getMediaInfoAndConfidence called for:', url);
     try {
         const mediaType = siteConfig.getMediaType(url);
         if (!mediaType) {
@@ -123,39 +93,32 @@ async function getMediaInfoAndConfidence(
         let messageParams: { type: string; query: string; years: string };
 
         if (siteConfig.usesTmdbId) {
-            console.log(
-                'TMDB ID site detected, attempting optional title/year scrape for fallback context...'
-            );
-            title = await siteConfig.getTitle(url);
-            year = await siteConfig.getYear(url);
-
+            title = await siteConfig.getTitle(url).catch((e) => {
+                console.warn('Optional getTitle failed:', e);
+                return null;
+            });
+            year = await siteConfig.getYear(url).catch((e) => {
+                console.warn('Optional getYear failed:', e);
+                return null;
+            });
             messageParams = {
                 type: mediaType,
                 query: title || '',
                 years: year || ''
             };
         } else {
-            console.log('Non-TMDB ID site, scraping required title/year...');
             title = await siteConfig.getTitle(url);
             year = await siteConfig.getYear(url);
-
             if (!title || !year) {
-                console.error(
+                throw new Error(
                     'Required Title or Year not found by siteConfig for non-TMDB site.'
                 );
-                return {
-                    success: false,
-                    error: 'Failed to extract required media details (title/year) from page.'
-                };
             }
-            messageParams = {
-                type: mediaType,
-                query: title,
-                years: year
-            };
+            messageParams = { type: mediaType, query: title, years: year };
         }
 
         console.log('Sending mediaInfo message with params:', messageParams);
+
         const resp = await chrome.runtime.sendMessage<
             MediaInfoRequest,
             MessageResponse<MediaStatusPayload>
@@ -164,10 +127,10 @@ async function getMediaInfoAndConfidence(
             params: messageParams
         });
 
-        console.log('Background mediaInfo response:', resp);
+        console.log('Received Background mediaInfo response:', resp);
         return resp;
     } catch (error) {
-        console.error('Error requesting media info:', error);
+        console.error('Error in getMediaInfoAndConfidence:', error);
         return {
             success: false,
             error:
@@ -230,7 +193,6 @@ function undoScrobbleMedia(
 }
 
 export const ScrobbleManager = () => {
-    // --- State Variables ---
     const [mediaInfo, setMediaInfo] = useState<MediaInfoResponse | null>(null);
     const [originalMediaQuery, setOriginalMediaQuery] = useState<{
         type: string;
@@ -238,10 +200,9 @@ export const ScrobbleManager = () => {
         years: string;
     } | null>(null);
     const [showEpisodeInfo, setShowEpisodeInfo] =
-        useState<SeasonEpisodeObj | null>(null); // S/E of *current* page
+        useState<SeasonEpisodeObj | null>(null);
     const [currentUrl, setCurrentUrl] = useState(window.location.href);
 
-    // Status State
     const [watchStatus, setWatchStatus] = useState<WatchStatusInfo | null>(
         null
     );
@@ -249,22 +210,20 @@ export const ScrobbleManager = () => {
         useState<TraktShowWatchedProgress | null>(null);
     const [ratingInfo, setRatingInfo] = useState<RatingInfo | null>(null);
 
-    // UI / Flow Control State
     const [isLoadingMediaInfo, setIsLoadingMediaInfo] = useState(false);
     const [isScrobbled, setIsScrobbled] = useState(false);
     const [isScrobbling, setIsScrobbling] = useState(false);
     const [needsManualConfirmation, setNeedsManualConfirmation] =
         useState(false);
-    const [showStartPrompt, setShowStartPrompt] = useState(false); // New
-    const [showRewatchPrompt, setShowRewatchPrompt] = useState(false); // New
-    const [userConfirmedAction, setUserConfirmedAction] = useState(false); // New - Gate for actions requiring prompt
-    const [isRewatchSession, setIsRewatchSession] = useState(false); // New - Tracks if current session is confirmed rewatch
+    const [showStartPrompt, setShowStartPrompt] = useState(false);
+    const [showRewatchPrompt, setShowRewatchPrompt] = useState(false);
+    const [userConfirmedAction, setUserConfirmedAction] = useState(false);
+    const [isRewatchSession, setIsRewatchSession] = useState(false);
 
-    // Local Rewatch State
     const [localRewatchLastEpisode, setLocalRewatchLastEpisode] = useState<{
         season: number;
         number: number;
-    } | null>(null); // New
+    } | null>(null);
 
     const traktHistoryIdRef = useRef<number | null>(null);
     const previousUrlRef = useRef<string | null>(null);
@@ -280,9 +239,7 @@ export const ScrobbleManager = () => {
     const tabUrlIdentifier = siteConfig?.getUrlIdentifier(currentUrl) ?? '';
 
     const handleScrobble = useCallback(async () => {
-        // Gate checks: Ensure media is confirmed, not already scrobbling/scrobbled,
-        // and user has confirmed action if it was required (first watch/rewatch)
-        const isFirstWatch = !watchStatus?.isInHistory; // Determine based on fetched status
+        const isFirstWatch = !watchStatus?.isInHistory;
         if (
             !mediaInfo ||
             !tabUrlIdentifier ||
@@ -310,10 +267,9 @@ export const ScrobbleManager = () => {
             if (traktHistoryId) {
                 traktHistoryIdRef.current = traktHistoryId;
                 setIsScrobbled(true);
-                setNeedsManualConfirmation(false); // Scrobbling implies confirmation
+                setNeedsManualConfirmation(false);
                 console.log('Scrobble successful, History ID:', traktHistoryId);
 
-                // --- Handle Local Rewatch Update ---
                 if (
                     isRewatchSession &&
                     isShowMediaInfo(mediaInfo) &&
@@ -324,14 +280,9 @@ export const ScrobbleManager = () => {
                         showEpisodeInfo.season,
                         showEpisodeInfo.number
                     );
-                    // Update local state to reflect the newly watched episode for highlighting
+
                     setLocalRewatchLastEpisode(showEpisodeInfo);
                 }
-
-                // --- Potentially Fetch Updated Rating ---
-                // Decide if fetching the rating again immediately after scrobble is needed.
-                // Usually not, unless the rating UI needs instant feedback after adding history.
-                // We'll handle rating separately via its own action.
             } else {
                 console.error(
                     'Scrobble action did not return history ID.',
@@ -378,12 +329,11 @@ export const ScrobbleManager = () => {
     const handleConfirmMedia = useCallback(
         async (confirmedMedia: MediaInfoResponse) => {
             console.log('Handling confirmed media in manager:', confirmedMedia);
-            setIsLoadingMediaInfo(true); // Show loading while confirming/caching and fetching status
+            setIsLoadingMediaInfo(true);
             setMediaInfo(confirmedMedia);
             setNeedsManualConfirmation(false);
             setOriginalMediaQuery(null);
 
-            // Clear previous status before fetching new one
             setWatchStatus(null);
             setProgressInfo(null);
             setRatingInfo(null);
@@ -391,10 +341,9 @@ export const ScrobbleManager = () => {
             setIsRewatchSession(false);
             setShowStartPrompt(false);
             setShowRewatchPrompt(false);
-            setUserConfirmedAction(false); // Reset confirmation
+            setUserConfirmedAction(false);
 
             try {
-                // Send confirmation to background to cache it as 'high' confidence
                 await chrome.runtime.sendMessage<
                     MessageRequest,
                     MessageResponse<null>
@@ -404,8 +353,7 @@ export const ScrobbleManager = () => {
                 });
                 console.log('Confirmed media saved to background cache.');
 
-                // --- Now Fetch Status Details for the Confirmed Media ---
-                const currentUrl = window.location.href; // Get fresh URL
+                const currentUrl = window.location.href;
                 const urlObject = new URL(currentUrl);
                 const siteConfig = getCurrentSiteConfig(urlObject.hostname);
                 const tabUrlIdentifier =
@@ -415,14 +363,13 @@ export const ScrobbleManager = () => {
                     console.log(
                         'Fetching status details after manual confirmation...'
                     );
-                    // Re-use the background 'mediaInfo' action logic, but we know it's high confidence now
-                    // We primarily need the status details part of the payload
+
                     const statusResponse = await chrome.runtime.sendMessage<
-                        MediaInfoRequest, // Sending like a mediaInfo request again
+                        MediaInfoRequest,
                         MessageResponse<MediaStatusPayload>
                     >({
                         action: 'mediaInfo',
-                        // Send minimal params, background will use cached mediaInfo if available
+
                         params: {
                             type: confirmedMedia.type,
                             query: '',
@@ -438,25 +385,24 @@ export const ScrobbleManager = () => {
                             'Received status details after confirmation:',
                             statusResponse.data
                         );
-                        await processMediaStatus(statusResponse.data); // Use helper to set state
+                        await processMediaStatus(statusResponse.data);
                     } else {
                         console.error(
                             'Failed to fetch status details after confirmation:',
                             statusResponse.error
                         );
-                        // Handle error - maybe show defaults?
                     }
                 }
             } catch (error) {
                 console.error('Failed during confirmMedia processing:', error);
-                // Reset state?
+
                 setMediaInfo(null);
-                setNeedsManualConfirmation(true); // Go back to prompt?
+                setNeedsManualConfirmation(true);
             } finally {
                 setIsLoadingMediaInfo(false);
             }
         },
-        [siteConfig] // Dependency might need adjustment
+        [siteConfig]
     );
 
     const handleCancelManualSearch = useCallback(() => {
@@ -465,24 +411,19 @@ export const ScrobbleManager = () => {
         console.log('Manual identification cancelled.');
     }, []);
 
-    // --- New Prompt Handlers ---
     const handleConfirmStartWatching = useCallback(() => {
         console.log('User confirmed Start Watching.');
         setUserConfirmedAction(true);
         setShowStartPrompt(false);
-        // Auto-scrobble check will now proceed if video is playing past threshold
     }, []);
 
     const handleConfirmRewatch = useCallback(() => {
         console.log('User confirmed Rewatch.');
         setUserConfirmedAction(true);
-        setIsRewatchSession(true); // Mark this as a rewatch session
+        setIsRewatchSession(true);
         setShowRewatchPrompt(false);
-        // Fetch local progress again maybe? Or rely on initial fetch.
-        // Auto-scrobble check will now proceed.
     }, []);
 
-    // --- Rating Handler ---
     const handleRateItem = useCallback(
         async (rating: number) => {
             if (!mediaInfo || rating < 1 || rating > 10) {
@@ -492,7 +433,7 @@ export const ScrobbleManager = () => {
                 return;
             }
             console.log(`Submitting rating: ${rating}`);
-            // Optionally show a 'Saving rating...' state
+
             try {
                 const response = await chrome.runtime.sendMessage<
                     MessageRequest,
@@ -503,7 +444,7 @@ export const ScrobbleManager = () => {
                 });
                 if (response.success) {
                     console.log('Rating submitted successfully.');
-                    // Update local rating state immediately for better UX
+
                     setRatingInfo((prev) => ({
                         ...prev,
                         userRating: rating,
@@ -511,31 +452,26 @@ export const ScrobbleManager = () => {
                     }));
                 } else {
                     console.error('Failed to submit rating:', response.error);
-                    // Show error to user?
                 }
             } catch (error) {
                 console.error('Error sending rating message:', error);
-                // Show error to user?
             }
         },
         [mediaInfo]
     );
 
-    // --- Helper to process fetched media status ---
     const processMediaStatus = useCallback(async (data: MediaStatusPayload) => {
         setWatchStatus(data.watchStatus || null);
         setProgressInfo(data.progressInfo || null);
         setRatingInfo(data.ratingInfo || null);
 
-        // Determine flow state based on status
         const isFirst = !data.watchStatus?.isInHistory;
-        // Define rewatch: progress exists and is completed, or simply isInHistory and not first watch?
-        // Let's use: Has history AND (Trakt progress is complete OR Trakt progress missing/stuck but history exists)
+
         const traktProgressComplete =
             !!data.progressInfo &&
             data.progressInfo.aired > 0 &&
             data.progressInfo.aired === data.progressInfo.completed;
-        const isLikelyRewatch = !!data.watchStatus?.isInHistory && !isFirst; // Simpler: if it's in history, it's potentially a rewatch
+        const isLikelyRewatch = !!data.watchStatus?.isInHistory && !isFirst;
 
         console.log('Processing Status:', {
             isFirst,
@@ -545,10 +481,9 @@ export const ScrobbleManager = () => {
 
         setShowStartPrompt(isFirst);
         setShowRewatchPrompt(isLikelyRewatch);
-        setUserConfirmedAction(false); // Require confirmation for new session
-        setIsRewatchSession(false); // Reset rewatch session flag initially
+        setUserConfirmedAction(false);
+        setIsRewatchSession(false);
 
-        // If it's potentially a rewatch, fetch local progress
         if (isLikelyRewatch && isShowMediaInfo(data.mediaInfo)) {
             const localProgress = await getLocalRewatchProgress(
                 data.mediaInfo.show.ids.trakt
@@ -593,10 +528,9 @@ export const ScrobbleManager = () => {
         console.log(`Main effect running for URL: ${currentUrl}`);
         clearWaitTitleTimers();
         const previousUrl = previousUrlRef.current;
-        previousUrlRef.current = currentUrl; // Update previous URL ref *after* using it
+        previousUrlRef.current = currentUrl;
 
         if (!isWatchPage) {
-            // Reset all state if not on watch page
             setIsLoadingMediaInfo(false);
             setMediaInfo(null);
             setIsScrobbled(false);
@@ -617,9 +551,8 @@ export const ScrobbleManager = () => {
             return;
         }
 
-        // --- On Watch Page ---
         setIsLoadingMediaInfo(true);
-        // Reset transient state *before* fetch
+
         setMediaInfo(null);
         setIsScrobbled(false);
         setNeedsManualConfirmation(false);
@@ -648,7 +581,6 @@ export const ScrobbleManager = () => {
                 tabUrlIdentifier
             );
 
-            // Check if URL changed during async fetch
             if (currentUrl !== window.location.href) {
                 console.warn(
                     'URL changed during fetch, discarding result for:',
@@ -670,7 +602,7 @@ export const ScrobbleManager = () => {
                     setMediaInfo(fetchedMediaInfo);
                     setNeedsManualConfirmation(false);
                     setOriginalMediaQuery(null);
-                    // Determine current S/E for shows
+
                     if (isShowMediaInfo(fetchedMediaInfo)) {
                         setShowEpisodeInfo(
                             siteConfig.getSeasonEpisodeObj(currentUrl) || null
@@ -678,14 +610,13 @@ export const ScrobbleManager = () => {
                     } else {
                         setShowEpisodeInfo(null);
                     }
-                    // Process the status details received from background
-                    await processMediaStatus(response.data); // Pass the whole payload
+
+                    await processMediaStatus(response.data);
                 } else {
-                    // Low confidence
                     setMediaInfo(null);
                     setNeedsManualConfirmation(true);
                     setOriginalMediaQuery(originalQuery);
-                    // Reset status details on low confidence
+
                     setWatchStatus(null);
                     setProgressInfo(null);
                     setRatingInfo(null);
@@ -697,7 +628,7 @@ export const ScrobbleManager = () => {
                 }
             } else {
                 console.error('Failed to get media info:', response.error);
-                // Reset all state on failure
+
                 setMediaInfo(null);
                 setNeedsManualConfirmation(false);
                 setOriginalMediaQuery(null);
@@ -715,11 +646,7 @@ export const ScrobbleManager = () => {
             setIsLoadingMediaInfo(false);
         };
 
-        // --- Site-specific logic (Cineby) ---
         if (hostname === 'www.cineby.app') {
-            // ... Keep Cineby timer logic, calling fetchAndProcess() when ready ...
-            // Ensure setIsLoadingMediaInfo(false) is called within fetchAndProcess
-            // Start loading indicator immediately if waiting
             const currentTitle = document.title;
             const previousFetchedTitle = lastFetchedTitleRef.current;
             const isNavigation =
@@ -762,7 +689,7 @@ export const ScrobbleManager = () => {
                 fetchAndProcess();
             }
         } else {
-            fetchAndProcess(); // Fetch immediately for other sites
+            fetchAndProcess();
         }
 
         return () => {
@@ -875,7 +802,6 @@ export const ScrobbleManager = () => {
     }
 
     if (!isWatchPage && !isLoadingMediaInfo) {
-        // Don't render anything if not on watch page (unless loading initial state)
         return null;
     }
 
@@ -893,7 +819,6 @@ export const ScrobbleManager = () => {
                     />
                 )}
 
-            {/* --- New Prompts --- */}
             {!isLoadingMediaInfo && showStartPrompt && !userConfirmedAction && (
                 <StartWatchPrompt onConfirm={handleConfirmStartWatching} />
             )}
@@ -903,12 +828,11 @@ export const ScrobbleManager = () => {
                     <RewatchPrompt onConfirm={handleConfirmRewatch} />
                 )}
 
-            {/* Show Scrobble Notification if media is confirmed AND user action confirmed (if needed) */}
             {!isLoadingMediaInfo &&
                 !needsManualConfirmation &&
                 notificationMediaInfo &&
                 ((!showStartPrompt && !showRewatchPrompt) ||
-                    userConfirmedAction) && ( // Only show if prompts not needed or action confirmed
+                    userConfirmedAction) && (
                     <ScrobbleNotification
                         mediaInfo={notificationMediaInfo}
                         isScrobbled={isScrobbled}
@@ -916,7 +840,6 @@ export const ScrobbleManager = () => {
                         onScrobble={handleScrobble}
                         onUndoScrobble={handleUndoScrobble}
                         isScrobbling={isScrobbling}
-                        // Pass rating info down
                         ratingInfo={ratingInfo}
                         onRate={handleRateItem}
                     />
