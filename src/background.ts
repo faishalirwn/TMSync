@@ -151,7 +151,7 @@ chrome.runtime.onMessage.addListener(
                                         lookupResults = await callApi<
                                             MediaInfoResponse[]
                                         >(
-                                            `/search/tmdb/${tmdbId}?type=movie&extended=full`,
+                                            `https://api.trakt.tv/search/tmdb/${tmdbId}?type=movie&extended=full`,
                                             'GET'
                                         );
                                     } catch (movieError: any) {
@@ -178,7 +178,7 @@ chrome.runtime.onMessage.addListener(
                                             lookupResults = await callApi<
                                                 MediaInfoResponse[]
                                             >(
-                                                `/search/tmdb/${tmdbId}?type=show&extended=full`,
+                                                `https://api.trakt.tv/search/tmdb/${tmdbId}?type=show&extended=full`,
                                                 'GET'
                                             );
                                         } catch (showError: any) {
@@ -206,7 +206,7 @@ chrome.runtime.onMessage.addListener(
                                         lookupResults = await callApi<
                                             MediaInfoResponse[]
                                         >(
-                                            `/search/tmdb/${tmdbId}?type=${mediaTypeGuess}&extended=full`,
+                                            `https://api.trakt.tv/search/tmdb/${tmdbId}?type=${mediaTypeGuess}&extended=full`,
                                             'GET'
                                         );
                                     } catch (lookupError: any) {
@@ -367,7 +367,7 @@ chrome.runtime.onMessage.addListener(
                                 try {
                                     progressInfo =
                                         await callApi<TraktShowWatchedProgress>(
-                                            `/shows/${traktId}/progress/watched?hidden=false&specials=false`,
+                                            `https://api.trakt.tv/shows/${traktId}/progress/watched?hidden=false&specials=false`,
                                             'GET'
                                         );
                                     if (progressInfo) {
@@ -391,7 +391,7 @@ chrome.runtime.onMessage.addListener(
                             } else if (isMovieMediaInfo(mediaInfoResult)) {
                                 try {
                                     const movieHistory = await callApi<any[]>(
-                                        `/sync/history/movies/${traktId}?limit=1`,
+                                        `https://api.trakt.tv/sync/history/movies/${traktId}?limit=1`,
                                         'GET'
                                     );
                                     if (
@@ -420,7 +420,7 @@ chrome.runtime.onMessage.addListener(
                                 const ratingResult = await callApi<
                                     TraktRating[]
                                 >(
-                                    `/sync/ratings/${itemTypeForRating}/${traktId}`,
+                                    `https://api.trakt.tv/sync/ratings/${itemTypeForRating}/${traktId}`,
                                     'GET'
                                 );
                                 if (
@@ -534,7 +534,7 @@ chrome.runtime.onMessage.addListener(
 
                     console.log('Submitting rating to Trakt:', body);
                     const ratingResponse = await callApi(
-                        `/sync/ratings`,
+                        `https://api.trakt.tv/sync/ratings`,
                         'POST',
                         body
                     );
