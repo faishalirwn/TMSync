@@ -98,7 +98,6 @@ export const createSiteConfig = (config: Partial<SiteConfigBase>) => {
             // Default implementation - should be overridden
             return null;
         },
-        // Default implementations for getTitle and getYear
         async getTitle(url: string): Promise<string | null> {
             if (!this.isWatchPage(url)) return null;
 

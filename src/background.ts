@@ -126,23 +126,20 @@ chrome.runtime.onMessage.addListener(
                 }
 
                 if (confidence !== 'high') {
-                    // Only lookup if not already high confidence from cache
-                    let attemptedTmdbLookup = false; // Flag to know if we tried TMDB
+                    let attemptedTmdbLookup = false;
 
-                    // --- 2a. Try TMDB ID Lookup ---
                     if (siteConfig.usesTmdbId) {
                         attemptedTmdbLookup = true;
-                        lookupMethod = 'tmdb_id'; // Explicitly set method
+                        lookupMethod = 'tmdb_id';
                         console.log('Attempting TMDB ID lookup...');
                         const tmdbId = siteConfig.getTmdbId?.(url);
-                        let mediaTypeGuess = siteConfig.getMediaType(url); // Initial guess
+                        let mediaTypeGuess = siteConfig.getMediaType(url);
 
                         if (tmdbId) {
                             try {
                                 let lookupResults: MediaInfoResponse[] | null =
                                     null;
 
-                                // --- Handle Ambiguous Type ---
                                 if (mediaTypeGuess === null) {
                                     console.log(
                                         `Media type ambiguous for ID ${tmdbId}, trying both...`
@@ -198,7 +195,6 @@ chrome.runtime.onMessage.addListener(
                                         }
                                     }
                                 } else {
-                                    // Single lookup based on guessed type
                                     console.log(
                                         `Performing TMDB lookup for ID ${tmdbId} as type '${mediaTypeGuess}'...`
                                     );
@@ -225,7 +221,6 @@ chrome.runtime.onMessage.addListener(
                                             );
                                     }
                                 }
-                                // --- End Ambiguous Type Handling ---
 
                                 if (lookupResults && lookupResults.length > 0) {
                                     mediaInfoResult = lookupResults[0];
@@ -238,10 +233,8 @@ chrome.runtime.onMessage.addListener(
                                     console.log(
                                         `TMDB ID lookup for ${tmdbId} returned no results.`
                                     );
-                                    // Don't fall back to text search *yet*, let the next block handle it
                                 }
                             } catch (error) {
-                                // Catch errors from the callApi calls themselves
                                 console.error(
                                     `Error during TMDB ID lookup API calls for ${tmdbId}:`,
                                     error
@@ -250,29 +243,23 @@ chrome.runtime.onMessage.addListener(
                         } else {
                             console.log('TMDB ID not found by site config.');
                         }
-                    } // End TMDB ID check
+                    }
 
-                    // --- 2b. Fallback to Text Search ---
-                    // Execute if:
-                    // 1. Site doesn't use TMDB ID OR
-                    // 2. Site uses TMDB ID, but lookup was attempted and failed (mediaInfoResult is still null)
                     if (
                         !siteConfig.usesTmdbId ||
                         (attemptedTmdbLookup && mediaInfoResult === null)
                     ) {
-                        lookupMethod = 'text_search'; // Set method
+                        lookupMethod = 'text_search';
                         console.log('Attempting text search fallback...');
                         try {
-                            // Use the original query params sent from content script
                             const fallbackTitle = originalQuery.query;
                             const fallbackYear = originalQuery.years;
-                            // Use the original type guess, or try detecting again if it was null
+
                             const mediaType =
                                 originalQuery.type ||
                                 siteConfig.getMediaType(url);
 
                             if (fallbackTitle && mediaType) {
-                                // ... (The existing text search + scoring logic) ...
                                 const searchParams = new URLSearchParams({
                                     query: fallbackTitle
                                 });
@@ -320,7 +307,7 @@ chrome.runtime.onMessage.addListener(
                                             mediaInfoResult
                                         );
                                     } else {
-                                        mediaInfoResult = null; // Explicitly null
+                                        mediaInfoResult = null;
                                         confidence = 'low';
                                         console.log(
                                             `Text search low confidence match (${bestMatch.confidenceScore}).`
@@ -342,8 +329,8 @@ chrome.runtime.onMessage.addListener(
                                 error
                             );
                         }
-                    } // End Text Search Fallback
-                } // End Lookup block
+                    }
+                }
 
                 if (confidence === 'high' && mediaInfoResult) {
                     console.log(
