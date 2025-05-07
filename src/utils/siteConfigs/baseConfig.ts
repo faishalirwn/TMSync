@@ -8,6 +8,16 @@ interface MediaInfoSelectors {
 
 export type MediaType = 'movie' | 'show' | null;
 
+export interface EpisodeListContextConfig {
+    containerSelector: string;
+    itemSelector: string;
+    getSeasonEpisodeFromElement: (
+        itemElement: Element,
+        containerElement: Element
+    ) => { season: number; episode: number } | null;
+    getElementToStyle: (itemElement: Element) => HTMLElement | null;
+}
+
 export interface SiteConfigBase {
     name: string;
     selectorType: 'css' | 'xpath';
@@ -36,6 +46,11 @@ export interface SiteConfigBase {
 
     getTitle(url: string): Promise<string | null>;
     getYear(url: string): Promise<string | null>;
+
+    highlighting?: {
+        contexts: Record<string, EpisodeListContextConfig>;
+        getCurrentHighlightContextKey?: (url: string) => string | null;
+    };
 }
 
 export const createSiteConfig = (
@@ -144,7 +159,8 @@ export const createSiteConfig = (
                 console.error(`Error getting year for ${url}:`, error);
                 return null;
             }
-        }
+        },
+        highlighting: undefined
     };
 
     const finalConfig: SiteConfigBase = {
@@ -162,7 +178,8 @@ export const createSiteConfig = (
         },
 
         tmdbIdUrlPatterns:
-            config.tmdbIdUrlPatterns ?? defaults.tmdbIdUrlPatterns
+            config.tmdbIdUrlPatterns ?? defaults.tmdbIdUrlPatterns,
+        highlighting: config.highlighting ?? defaults.highlighting
     };
 
     return finalConfig;

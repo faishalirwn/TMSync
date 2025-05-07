@@ -17,6 +17,61 @@ export const xprimeTvConfig: SiteConfigBase = createSiteConfig({
     selectors: {
         movie: { title: '', year: '' },
         show: { title: '', year: '' }
+    },
+    highlighting: {
+        getCurrentHighlightContextKey: (url: string): string | null => {
+            const path = new URL(url).pathname;
+            if (/\/watch\/\d+(\/\d+\/\d+)?/.test(path))
+                return 'watchPageMenuEpisodes';
+            return null;
+        },
+        contexts: {
+            watchPageMenuEpisodes: {
+                containerSelector: 'div.episodes-box.visible',
+                itemSelector: 'button.episodebox-item',
+                getSeasonEpisodeFromElement: (
+                    itemElement: Element,
+                    containerElement: Element
+                ): { season: number; episode: number } | null => {
+                    const button = itemElement as HTMLButtonElement;
+                    const episodeNumberText = button
+                        .querySelector('.episode-number')
+                        ?.textContent?.trim();
+
+                    if (!episodeNumberText) return null;
+                    const episode = parseInt(episodeNumberText, 10);
+                    if (isNaN(episode)) return null;
+
+                    let season: number | null = null;
+
+                    const seasonHeader = containerElement.querySelector(
+                        '.episodesbox-header > h3'
+                    );
+                    if (seasonHeader && seasonHeader.textContent) {
+                        const seasonMatch =
+                            seasonHeader.textContent.match(/Season\s*(\d+)/i);
+                        if (seasonMatch && seasonMatch[1]) {
+                            season = parseInt(seasonMatch[1], 10);
+                        }
+                    }
+
+                    if (season === null || isNaN(season)) {
+                        console.warn(
+                            'Could not parse season number from container:',
+                            containerElement
+                        );
+                        return null;
+                    }
+
+                    return { season, episode };
+                },
+                getElementToStyle: (
+                    itemElement: Element
+                ): HTMLElement | null => {
+                    return itemElement as HTMLElement;
+                }
+            }
+        }
     }
 });
 
@@ -29,7 +84,7 @@ xprimeTvConfig.getTmdbId = function (url: string): string | null {
 xprimeTvConfig.getSeasonEpisodeObj = function (
     url: string
 ): { season: number; number: number } | null {
-    const match = url.match(/^\/watch\/\d+\/(\d+)\/(\d+)/);
+    const match = url.match(/\/watch\/\d+\/(\d+)\/(\d+)/);
     if (match && match[1] && match[2]) {
         const season = parseInt(match[1], 10);
         const episode = parseInt(match[2], 10);

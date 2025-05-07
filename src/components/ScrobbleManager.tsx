@@ -27,6 +27,11 @@ import {
     LocalRewatchInfo,
     saveLocalRewatchInfo
 } from '../utils/helpers/localRewatch';
+import {
+    clearHighlighting,
+    HighlightType,
+    setupEpisodeHighlighting
+} from '../utils/highlighting';
 
 async function getMediaInfoAndConfidence(
     siteConfig: SiteConfigBase,
@@ -177,6 +182,14 @@ export const ScrobbleManager = () => {
     const [isRewatchSession, setIsRewatchSession] = useState(false);
     const [localRewatchInfo, setLocalRewatchInfo] =
         useState<LocalRewatchInfo | null>(null);
+    const [highlightTarget, setHighlightTarget] = useState<{
+        season: number;
+        episode: number;
+        type: HighlightType;
+    } | null>(null);
+    const [watchedHistoryEpisodes, setWatchedHistoryEpisodes] = useState<
+        { season: number; number: number }[] | undefined
+    >(undefined);
 
     const traktHistoryIdRef = useRef<number | null>(null);
     const previousUrlRef = useRef<string | null>(null);
@@ -430,77 +443,93 @@ export const ScrobbleManager = () => {
             setIsRewatchSession(false);
             setLocalRewatchInfo(null);
 
+            setHighlightTarget(null);
+            setWatchedHistoryEpisodes(undefined);
+
             const currentEpisode =
                 siteConfig?.getSeasonEpisodeObj(currentUrl) || null;
+            let newHighlightTarget: {
+                season: number;
+                episode: number;
+                type: HighlightType;
+            } | null = null;
+            let watchedEpisodesForGreyOut: {
+                season: number;
+                number: number;
+            }[] = [];
 
             if (isShowMediaInfo(data.mediaInfo)) {
                 const traktShowId = data.mediaInfo.show.ids.trakt;
                 const traktProgress = data.progressInfo;
                 const watchHistory = data.watchStatus;
+                const isTraktProgressComplete =
+                    !!traktProgress &&
+                    traktProgress.aired > 0 &&
+                    traktProgress.aired === traktProgress.completed;
+
+                if (traktProgress?.seasons) {
+                    traktProgress.seasons.forEach((s) => {
+                        s.episodes.forEach((e) => {
+                            if (e.completed) {
+                                watchedEpisodesForGreyOut.push({
+                                    season: s.number,
+                                    number: e.number
+                                });
+                            }
+                        });
+                    });
+                    setWatchedHistoryEpisodes(watchedEpisodesForGreyOut);
+                }
 
                 if (!watchHistory?.isInHistory) {
                     console.log('State: First ever watch detected.');
                     setShowStartPrompt(true);
-                } else {
-                    const isTraktProgressComplete =
-                        !!traktProgress &&
-                        traktProgress.aired > 0 &&
-                        traktProgress.aired === traktProgress.completed;
+                } else if (
+                    !isTraktProgressComplete &&
+                    traktProgress?.last_episode
+                ) {
+                    newHighlightTarget = {
+                        season: traktProgress.last_episode.season,
+                        episode: traktProgress.last_episode.number,
+                        type: 'first_watch_last'
+                    };
 
-                    if (!isTraktProgressComplete) {
-                        console.log('State: First watch in progress.');
-
-                        const episodeProgress = traktProgress?.seasons
-                            ?.find((s) => s.number === currentEpisode?.season)
-                            ?.episodes?.find(
-                                (e) => e.number === currentEpisode?.number
-                            );
-
-                        if (episodeProgress?.completed && currentEpisode) {
-                            console.log(
-                                `State: First watch, but EPISODE S${currentEpisode.season}E${currentEpisode.number} already watched. Prompting rewatch (of episode).`
-                            );
-
-                            setShowRewatchPrompt(true);
-
-                            const localInfo =
-                                await getLocalRewatchInfo(traktShowId);
-                            setLocalRewatchInfo(localInfo);
-                        } else {
-                            console.log(
-                                'State: First watch, new episode. No prompt needed immediately.'
-                            );
-                            setUserConfirmedAction(true);
-                            setIsRewatchSession(false);
-                        }
-                    } else {
-                        console.log(
-                            'State: Trakt progress complete. Entering Rewatch logic.'
+                    const episodeProgress = traktProgress?.seasons
+                        ?.find((s) => s.number === currentEpisode?.season)
+                        ?.episodes?.find(
+                            (e) => e.number === currentEpisode?.number
                         );
-                        const localInfo =
-                            await getLocalRewatchInfo(traktShowId);
-                        setLocalRewatchInfo(localInfo);
+                    if (episodeProgress?.completed) {
+                        setShowRewatchPrompt(true);
+                    } else {
+                        setUserConfirmedAction(true);
+                    }
+                } else {
+                    const localInfo = await getLocalRewatchInfo(traktShowId);
+                    setLocalRewatchInfo(localInfo);
+                    setIsRewatchSession(false);
 
-                        const nextExpected = localInfo?.nextExpected;
-                        const isWatchingNextLocally =
-                            !!currentEpisode &&
-                            !!nextExpected &&
-                            currentEpisode.season === nextExpected.season &&
-                            currentEpisode.number === nextExpected.number;
+                    if (localInfo?.lastWatched) {
+                        newHighlightTarget = {
+                            season: localInfo.lastWatched.season,
+                            episode: localInfo.lastWatched.number,
+                            type: 'rewatch_last'
+                        };
+                    }
 
-                        if (isWatchingNextLocally) {
-                            console.log(
-                                'State: Rewatch - watching the expected next episode locally. Skipping prompt.'
-                            );
-                            setUserConfirmedAction(true);
-                            setIsRewatchSession(true);
-                            setShowRewatchPrompt(false);
-                        } else {
-                            console.log(
-                                'State: Rewatch - not the next expected episode locally. Prompting.'
-                            );
-                            setShowRewatchPrompt(true);
-                        }
+                    const nextExpected = localInfo?.nextExpected;
+                    const isWatchingNextLocally =
+                        !!currentEpisode &&
+                        !!nextExpected &&
+                        currentEpisode.season === nextExpected.season &&
+                        currentEpisode.number === nextExpected.number;
+                    if (isWatchingNextLocally) {
+                        setUserConfirmedAction(true);
+                        setIsRewatchSession(true);
+                        setShowRewatchPrompt(false);
+                    } else {
+                        setShowRewatchPrompt(true);
+                        setUserConfirmedAction(false);
                     }
                 }
             } else if (isMovieMediaInfo(data.mediaInfo)) {
@@ -515,6 +544,14 @@ export const ScrobbleManager = () => {
 
                     setLocalRewatchInfo(null);
                 }
+                setHighlightTarget(null);
+                setWatchedHistoryEpisodes(undefined);
+            }
+            setHighlightTarget(newHighlightTarget);
+
+            if (!userConfirmedAction) {
+                setUserConfirmedAction(false);
+                setIsRewatchSession(false);
             }
         },
         [currentUrl, siteConfig]
@@ -786,6 +823,38 @@ export const ScrobbleManager = () => {
     ]);
 
     useEffect(() => {
+        if (
+            !isWatchPage ||
+            !siteConfig ||
+            !isShowMediaInfo(mediaInfo) ||
+            !siteConfig.highlighting
+        ) {
+            if (siteConfig?.name) clearHighlighting(siteConfig.name, null);
+            return;
+        }
+
+        console.log(
+            'Setting up highlighting via siteConfig with target:',
+            highlightTarget
+        );
+        setupEpisodeHighlighting(
+            siteConfig,
+            highlightTarget,
+            watchedHistoryEpisodes
+        );
+
+        return () => {
+            if (siteConfig?.name) clearHighlighting(siteConfig.name, null);
+        };
+    }, [
+        isWatchPage,
+        siteConfig,
+        mediaInfo,
+        highlightTarget,
+        watchedHistoryEpisodes
+    ]);
+
+    useEffect(() => {
         function handleIframeScrobble(event: MessageEvent) {
             const data = event.data;
             if (data && data.type === 'TMSYNC_SCROBBLE_EVENT') {
@@ -815,6 +884,8 @@ export const ScrobbleManager = () => {
         isScrobbling
     ]);
 
+    const canShowScrobbleUI = !!showEpisodeInfo && !isLoadingMediaInfo;
+
     let notificationMediaInfo: ScrobbleNotificationMediaType | null = null;
     if (mediaInfo) {
         notificationMediaInfo = { ...mediaInfo };
@@ -832,9 +903,12 @@ export const ScrobbleManager = () => {
 
     return (
         <>
-            {isLoadingMediaInfo && <LoadingIndicator text="Finding media..." />}
+            {canShowScrobbleUI && isLoadingMediaInfo && (
+                <LoadingIndicator text="Finding media..." />
+            )}
 
-            {!isLoadingMediaInfo &&
+            {canShowScrobbleUI &&
+                !isLoadingMediaInfo &&
                 needsManualConfirmation &&
                 originalMediaQuery && (
                     <ManualSearchPrompt
@@ -844,16 +918,21 @@ export const ScrobbleManager = () => {
                     />
                 )}
 
-            {!isLoadingMediaInfo && showStartPrompt && !userConfirmedAction && (
-                <StartWatchPrompt onConfirm={handleConfirmStartWatching} />
-            )}
-            {!isLoadingMediaInfo &&
+            {canShowScrobbleUI &&
+                !isLoadingMediaInfo &&
+                showStartPrompt &&
+                !userConfirmedAction && (
+                    <StartWatchPrompt onConfirm={handleConfirmStartWatching} />
+                )}
+            {canShowScrobbleUI &&
+                !isLoadingMediaInfo &&
                 showRewatchPrompt &&
                 !userConfirmedAction && (
                     <RewatchPrompt onConfirm={handleConfirmRewatch} />
                 )}
 
-            {!isLoadingMediaInfo &&
+            {canShowScrobbleUI &&
+                !isLoadingMediaInfo &&
                 !needsManualConfirmation &&
                 notificationMediaInfo &&
                 ((!showStartPrompt && !showRewatchPrompt) ||
