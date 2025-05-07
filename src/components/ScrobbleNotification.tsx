@@ -3,7 +3,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { isMovieMediaInfo, isShowMediaInfo } from '../utils/typeGuards';
 import { RatingInfo, ScrobbleNotificationMediaType } from '../utils/types';
 
-// Simple Star component for rating
 const Star: React.FC<{
     filled: boolean;
     onClick: () => void;
@@ -31,9 +30,9 @@ interface ScrobbleNotificationProps {
     onScrobble: () => Promise<void>;
     onUndoScrobble: () => Promise<void>;
     isScrobbling?: boolean;
-    // --- New Rating Props ---
+
     ratingInfo: RatingInfo | null;
-    onRate: (rating: number) => void; // Callback when user rates
+    onRate: (rating: number) => void;
 }
 
 export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
@@ -43,23 +42,20 @@ export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
     onScrobble,
     onUndoScrobble,
     isScrobbling = false,
-    // --- Destructure new props ---
     ratingInfo,
     onRate
 }) => {
     const [isExpanded, setIsExpanded] = useState<boolean>(false);
     const contentRef = useRef<HTMLDivElement>(null);
-    // Rating UI State
-    const [hoverRating, setHoverRating] = useState<number>(0); // Track rating user is hovering over
-    const [currentRating, setCurrentRating] = useState<number | null>(null); // Local state reflecting Trakt rating
-    const [isRatingSubmitting, setIsRatingSubmitting] = useState(false); // Optional: loading state for rating submission
 
-    // Update local rating state when prop changes
+    const [hoverRating, setHoverRating] = useState<number>(0);
+    const [currentRating, setCurrentRating] = useState<number | null>(null);
+    const [isRatingSubmitting, setIsRatingSubmitting] = useState(false);
+
     useEffect(() => {
         setCurrentRating(ratingInfo?.userRating ?? null);
     }, [ratingInfo]);
 
-    // Auto-expand briefly when scrobbled successfully
     useEffect(() => {
         if (isScrobbled) {
             setIsExpanded(true);
@@ -79,19 +75,15 @@ export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
     };
 
     const handleRatingClick = async (ratingValue: number) => {
-        if (isRatingSubmitting || ratingValue === currentRating) return; // Prevent clicks during submission or if rating is the same
+        if (isRatingSubmitting || ratingValue === currentRating) return;
         console.log(`Rating ${ratingValue} clicked.`);
-        setIsRatingSubmitting(true); // Set loading state
+        setIsRatingSubmitting(true);
         try {
-            await onRate(ratingValue); // Call parent handler
-            // Optimistic update handled by useEffect watching ratingInfo prop,
-            // or could update setCurrentRating here directly if needed.
-            // setCurrentRating(ratingValue); // Update immediately
+            await onRate(ratingValue);
         } catch (error) {
             console.error('Error during rating submission:', error);
-            // Optionally revert UI or show error
         } finally {
-            setIsRatingSubmitting(false); // Clear loading state
+            setIsRatingSubmitting(false);
         }
     };
 
@@ -100,7 +92,7 @@ export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
     };
 
     const handleRatingLeave = () => {
-        setHoverRating(0); // Reset hover state
+        setHoverRating(0);
     };
 
     const getMediaTitle = (): string => {
@@ -124,13 +116,20 @@ export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
     const episode =
         isShow && 'number' in mediaInfo ? mediaInfo.number : undefined;
 
-    const containerClasses = `fixed bottom-0 w-full flex justify-center z-[999999999] transition-all duration-500 ease-in-out`;
+    const containerClasses = `
+        fixed bottom-0 left-1/2 -translate-x-1/2
+        z-[999999999]
+        transition-all duration-250 ease-in-out
+        pointer-events-none
+    `;
 
     const contentWrapperClasses = `
-         bg-white w-72 text-base text-center overflow-hidden shadow-lg rounded-t-md
-         transition-[max-height] duration-500 ease-in-out
-         ${isExpanded ? 'max-h-96' : 'max-h-2 hover:max-h-96'} 
-     `;
+        bg-white w-72 
+        text-base text-center overflow-hidden shadow-lg rounded-t-md
+        transition-[max-height] duration-250 ease-in-out
+        ${isExpanded ? 'max-h-96' : 'max-h-2 hover:max-h-96'}
+        pointer-events-auto 
+    `;
 
     return (
         <div className={containerClasses}>
@@ -156,7 +155,7 @@ export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
                                         {String(episode).padStart(2, '0')}
                                     </p>
                                 )}
-                            {/* --- Rating Display/Input (After Scrobble) --- */}
+
                             <div className="mt-1 border-t border-gray-100 pt-1">
                                 <p className="text-xs text-gray-500 mb-0.5">
                                     Your Rating:
@@ -186,8 +185,8 @@ export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
                                                         ratingValue
                                                     )
                                                 }
-                                                onMouseLeave={() => {}} // onMouseLeave handled by parent div
-                                                readOnly={isRatingSubmitting} // Disable clicks while submitting
+                                                onMouseLeave={() => {}}
+                                                readOnly={isRatingSubmitting}
                                             />
                                         );
                                     })}
@@ -219,7 +218,7 @@ export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
                             <button
                                 className="text-red-500 px-2 py-1 rounded border-none cursor-pointer mt-1 text-xs hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
                                 onClick={handleUndoScrobble}
-                                disabled={isScrobbling || isRatingSubmitting} // Also disable if rating is submitting
+                                disabled={isScrobbling || isRatingSubmitting}
                             >
                                 Undo?
                             </button>

@@ -94,7 +94,6 @@ const Popup: React.FC = () => {
     );
 };
 
-// --- Render the React component ---
 const container = document.getElementById('root');
 if (container) {
     const root = createRoot(container);

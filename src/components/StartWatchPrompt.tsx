@@ -2,20 +2,15 @@ import React from 'react';
 
 interface StartWatchPromptProps {
     onConfirm: () => void;
-    // Optional: Add media type ('show' or 'movie') if text needs customization
-    // mediaType?: 'show' | 'movie';
 }
 
 export const StartWatchPrompt: React.FC<StartWatchPromptProps> = ({
     onConfirm
 }) => {
-    // Customize text based on media type if needed
-    // const mediaText = mediaType === 'show' ? 'this show' : 'this movie';
-    const mediaText = 'this'; // Generic text
+    const mediaText = 'this';
 
     return (
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[1000000000] bg-gradient-to-r from-blue-500 to-indigo-600 text-white px-4 py-3 rounded-lg shadow-lg flex items-center space-x-3 animate-fade-in-scale">
-            {/* Simple icon placeholder */}
             <svg
                 xmlns="http://www.w3.org/2000/svg"
                 className="h-6 w-6"

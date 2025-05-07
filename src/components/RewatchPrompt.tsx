@@ -2,13 +2,11 @@ import React from 'react';
 
 interface RewatchPromptProps {
     onConfirm: () => void;
-    // Optional: mediaType if needed
 }
 
 export const RewatchPrompt: React.FC<RewatchPromptProps> = ({ onConfirm }) => {
     return (
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[1000000000] bg-gradient-to-r from-purple-500 to-pink-500 text-white px-4 py-3 rounded-lg shadow-lg flex items-center space-x-3 animate-fade-in-scale">
-            {/* Simple icon placeholder */}
             <svg
                 xmlns="http://www.w3.org/2000/svg"
                 className="h-6 w-6"
