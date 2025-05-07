@@ -884,7 +884,11 @@ export const ScrobbleManager = () => {
         isScrobbling
     ]);
 
-    const canShowScrobbleUI = !!showEpisodeInfo && !isLoadingMediaInfo;
+    const canShowScrobbleUI =
+        !isLoadingMediaInfo &&
+        mediaInfo &&
+        (isMovieMediaInfo(mediaInfo) ||
+            (isShowMediaInfo(mediaInfo) && !!showEpisodeInfo));
 
     let notificationMediaInfo: ScrobbleNotificationMediaType | null = null;
     if (mediaInfo) {
