@@ -82,26 +82,6 @@ function generateSiteLink(
         return config.generateWatchLink(pageInfo);
     }
 
-    if (pageInfo.tmdbId && config.usesTmdbId) {
-        let baseUrl = '';
-
-        if (siteKey === 'hexaWatch') baseUrl = `https://hexa.watch`;
-        else if (siteKey === 'xprimeTv') baseUrl = `https://xprime.tv`;
-
-        if (!baseUrl) return null;
-
-        if (pageInfo.type === 'show') {
-            if (
-                pageInfo.season !== undefined &&
-                pageInfo.episode !== undefined
-            ) {
-                return `${baseUrl}/watch/tv/${pageInfo.tmdbId}/${pageInfo.season}/${pageInfo.episode}`;
-            }
-            return `${baseUrl}/details/tv/${pageInfo.tmdbId}`;
-        } else if (pageInfo.type === 'movie') {
-            return `${baseUrl}/watch/${pageInfo.tmdbId}`;
-        }
-    }
     return null;
 }
 

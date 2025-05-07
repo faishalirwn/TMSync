@@ -81,11 +81,11 @@ export const xprimeTvConfig: SiteConfigBase = createSiteConfig({
                 pageInfo.season !== undefined &&
                 pageInfo.episode !== undefined
             ) {
-                return `https://hexa.watch/watch/${pageInfo.tmdbId}/${pageInfo.season}/${pageInfo.episode}`;
+                return `https://xprime.tv/watch/${pageInfo.tmdbId}/${pageInfo.season}/${pageInfo.episode}`;
             }
-            return `https://hexa.watch/watch/${pageInfo.tmdbId}`;
+            return `https://xprime.tv/watch/${pageInfo.tmdbId}`;
         } else if (pageInfo.type === 'movie') {
-            return `https://hexa.watch/watch/${pageInfo.tmdbId}`;
+            return `https://xprime.tv/watch/${pageInfo.tmdbId}`;
         }
         return null;
     }
