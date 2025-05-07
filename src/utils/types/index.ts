@@ -169,8 +169,8 @@ export interface ConfirmMediaRequest {
 export interface RateItemRequest {
     action: 'rateItem';
     params: {
-        mediaInfo: MediaInfoResponse; // Info to identify the item
-        rating: number; // The rating (1-10)
+        mediaInfo: MediaInfoResponse;
+        rating: number;
     };
 }
 
@@ -181,7 +181,7 @@ export type MessageRequest =
     | VideoMonitorRequest
     | ManualSearchRequest
     | ConfirmMediaRequest
-    | RateItemRequest; // <-- Add RateItemRequest
+    | RateItemRequest;
 export interface MessageResponse<T> {
     success: boolean;
     data?: T;

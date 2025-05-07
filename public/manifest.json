@@ -37,12 +37,20 @@
                 "https://xprime.tv/*"
             ],
             "all_frames": true
+        },
+        {
+            "js": ["js/vendor.js", "js/traktContentScript.js"],
+            "matches": ["*://trakt.tv/shows/*", "*://trakt.tv/movies/*"]
         }
     ],
     "web_accessible_resources": [
         {
             "resources": ["css/styles.css"],
             "matches": ["<all_urls>"]
+        },
+        {
+            "resources": ["images/logos/*.png"],
+            "matches": ["*://trakt.tv/*"]
         }
     ],
     "background": {

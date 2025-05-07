@@ -1,3 +1,4 @@
+import { TraktPageInfo } from '../../traktContentScript';
 import { waitForElm } from '../content';
 import { SeasonEpisodeObj } from '../types';
 
@@ -51,6 +52,8 @@ export interface SiteConfigBase {
         contexts: Record<string, EpisodeListContextConfig>;
         getCurrentHighlightContextKey?: (url: string) => string | null;
     };
+
+    generateWatchLink?: (pageInfo: TraktPageInfo) => string | null;
 }
 
 export const createSiteConfig = (
@@ -160,7 +163,8 @@ export const createSiteConfig = (
                 return null;
             }
         },
-        highlighting: undefined
+        highlighting: undefined,
+        generateWatchLink: undefined
     };
 
     const finalConfig: SiteConfigBase = {

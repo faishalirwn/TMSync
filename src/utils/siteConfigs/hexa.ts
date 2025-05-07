@@ -1,3 +1,4 @@
+import { TraktPageInfo } from '../../traktContentScript';
 import { createSiteConfig, SiteConfigBase } from './baseConfig';
 
 export const hexaWatchConfig: SiteConfigBase = createSiteConfig({
@@ -77,6 +78,21 @@ export const hexaWatchConfig: SiteConfigBase = createSiteConfig({
                 }
             }
         }
+    },
+    generateWatchLink: (pageInfo: TraktPageInfo): string | null => {
+        if (!pageInfo.tmdbId) return null;
+        if (pageInfo.type === 'show') {
+            if (
+                pageInfo.season !== undefined &&
+                pageInfo.episode !== undefined
+            ) {
+                return `https://xprime.tv/watch/tv/${pageInfo.tmdbId}/${pageInfo.season}/${pageInfo.episode}`;
+            }
+            return `https://xprime.tv/details/tv/${pageInfo.tmdbId}`;
+        } else if (pageInfo.type === 'movie') {
+            return `https://xprime.tv/watch/movie/${pageInfo.tmdbId}`;
+        }
+        return null;
     }
 });
 
