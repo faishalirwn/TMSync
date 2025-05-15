@@ -47,6 +47,7 @@ export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
 }) => {
     const [isExpanded, setIsExpanded] = useState<boolean>(false);
     const contentRef = useRef<HTMLDivElement>(null);
+    const scrobbleExpandRef = useRef(false);
 
     const [hoverRating, setHoverRating] = useState<number>(0);
     const [currentRating, setCurrentRating] = useState<number | null>(null);
@@ -57,9 +58,10 @@ export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
     }, [ratingInfo]);
 
     useEffect(() => {
-        if (isScrobbled) {
+        if (isScrobbled && !scrobbleExpandRef.current) {
             setIsExpanded(true);
             const timer = setTimeout(() => setIsExpanded(false), 5000);
+            scrobbleExpandRef.current = true;
             return () => clearTimeout(timer);
         }
     }, [isScrobbled]);
@@ -136,7 +138,7 @@ export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
             <div
                 className={contentWrapperClasses}
                 onMouseEnter={() => setIsExpanded(true)}
-                onMouseLeave={() => !isScrobbled && setIsExpanded(false)}
+                onMouseLeave={() => setIsExpanded(false)}
             >
                 <div ref={contentRef} className="py-2 px-3">
                     {isScrobbled ? (
