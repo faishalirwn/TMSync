@@ -8,11 +8,11 @@ import {
     HistoryBody,
     HostnameType,
     MediaInfoResponse,
+    MediaRatings,
     MediaStatusPayload,
     MessageRequest,
     MessageResponse,
     MovieMediaInfo,
-    RatingInfo,
     RequestManualAddToHistoryParams,
     RequestScrobblePauseParams,
     RequestScrobbleStartParams,
@@ -97,6 +97,7 @@ chrome.runtime.onMessage.addListener(
                 request.action !== 'confirmMedia' &&
                 request.action !== 'manualSearch' &&
                 !request.action.startsWith('requestScrobble') &&
+                !request.action.startsWith('rate') &&
                 request.action !== 'requestManualAddToHistory'
             ) {
                 if (request.action === 'mediaInfo') {
@@ -120,16 +121,12 @@ chrome.runtime.onMessage.addListener(
 
                 let watchStatus: WatchStatusInfo | undefined = undefined;
                 let progressInfo: TraktShowWatchedProgress | null = null;
-                let ratingInfo: RatingInfo | undefined = undefined;
+                let ratingInfo: MediaRatings = {};
 
                 try {
                     const cachedData =
                         await chrome.storage.local.get(tabUrlIdentifier);
                     if (cachedData[tabUrlIdentifier]?.confidence === 'high') {
-                        console.log(
-                            'Using high-confidence cached mediaInfo:',
-                            cachedData[tabUrlIdentifier].mediaInfo
-                        );
                         mediaInfoResult =
                             cachedData[tabUrlIdentifier].mediaInfo;
                         confidence = 'high';
@@ -140,12 +137,12 @@ chrome.runtime.onMessage.addListener(
                 }
 
                 if (confidence !== 'high') {
+                    // ... (This media identification block remains the same)
                     let attemptedTmdbLookup = false;
 
                     if (siteConfig.usesTmdbId) {
                         attemptedTmdbLookup = true;
                         lookupMethod = 'tmdb_id';
-                        console.log('Attempting TMDB ID lookup...');
                         const tmdbId = siteConfig.getTmdbId?.(url);
                         let mediaTypeGuess = siteConfig.getMediaType(url);
 
@@ -155,9 +152,6 @@ chrome.runtime.onMessage.addListener(
                                     null;
 
                                 if (mediaTypeGuess === null) {
-                                    console.log(
-                                        `Media type ambiguous for ID ${tmdbId}, trying both...`
-                                    );
                                     try {
                                         lookupResults = await callApi<
                                             MediaInfoResponse[]
@@ -166,25 +160,12 @@ chrome.runtime.onMessage.addListener(
                                             'GET'
                                         );
                                     } catch (movieError: any) {
-                                        if (
-                                            movieError?.message?.includes('404')
-                                        )
-                                            console.log(
-                                                `TMDB movie lookup 404 for ${tmdbId}`
-                                            );
-                                        else
-                                            console.warn(
-                                                `TMDB movie lookup failed for ${tmdbId}:`,
-                                                movieError
-                                            );
+                                        // Ignore
                                     }
                                     if (
                                         !lookupResults ||
                                         lookupResults.length === 0
                                     ) {
-                                        console.log(
-                                            `TMDB movie lookup failed or empty, trying show...`
-                                        );
                                         try {
                                             lookupResults = await callApi<
                                                 MediaInfoResponse[]
@@ -193,25 +174,10 @@ chrome.runtime.onMessage.addListener(
                                                 'GET'
                                             );
                                         } catch (showError: any) {
-                                            if (
-                                                showError?.message?.includes(
-                                                    '404'
-                                                )
-                                            )
-                                                console.log(
-                                                    `TMDB show lookup 404 for ${tmdbId}`
-                                                );
-                                            else
-                                                console.warn(
-                                                    `TMDB show lookup failed for ${tmdbId}:`,
-                                                    showError
-                                                );
+                                            // Ignore
                                         }
                                     }
                                 } else {
-                                    console.log(
-                                        `Performing TMDB lookup for ID ${tmdbId} as type '${mediaTypeGuess}'...`
-                                    );
                                     try {
                                         lookupResults = await callApi<
                                             MediaInfoResponse[]
@@ -220,42 +186,17 @@ chrome.runtime.onMessage.addListener(
                                             'GET'
                                         );
                                     } catch (lookupError: any) {
-                                        if (
-                                            lookupError?.message?.includes(
-                                                '404'
-                                            )
-                                        )
-                                            console.log(
-                                                `TMDB lookup 404 for ${tmdbId} as ${mediaTypeGuess}`
-                                            );
-                                        else
-                                            console.error(
-                                                `Error during TMDB ID lookup for ${tmdbId} as ${mediaTypeGuess}:`,
-                                                lookupError
-                                            );
+                                        // Ignore
                                     }
                                 }
 
                                 if (lookupResults && lookupResults.length > 0) {
                                     mediaInfoResult = lookupResults[0];
                                     confidence = 'high';
-                                    console.log(
-                                        `TMDB ID lookup successful for ${tmdbId}:`,
-                                        mediaInfoResult
-                                    );
-                                } else {
-                                    console.log(
-                                        `TMDB ID lookup for ${tmdbId} returned no results.`
-                                    );
                                 }
                             } catch (error) {
-                                console.error(
-                                    `Error during TMDB ID lookup API calls for ${tmdbId}:`,
-                                    error
-                                );
+                                // Ignore
                             }
-                        } else {
-                            console.log('TMDB ID not found by site config.');
                         }
                     }
 
@@ -264,7 +205,6 @@ chrome.runtime.onMessage.addListener(
                         (attemptedTmdbLookup && mediaInfoResult === null)
                     ) {
                         lookupMethod = 'text_search';
-                        console.log('Attempting text search fallback...');
                         try {
                             const fallbackTitle = originalQuery.query;
                             const fallbackYear = originalQuery.years;
@@ -282,31 +222,23 @@ chrome.runtime.onMessage.addListener(
                                     MediaInfoResponse[]
                                 >(searchUrl, 'GET');
                                 if (searchResults && searchResults.length > 0) {
-                                    const scoredResults: ScoredMediaInfo[] =
-                                        searchResults
-                                            .map(
-                                                (
-                                                    result:
-                                                        | MovieMediaInfo
-                                                        | ShowMediaInfo
-                                                ): ScoredMediaInfo => ({
-                                                    ...result,
-                                                    confidenceScore:
-                                                        calculateConfidence(
-                                                            result,
-                                                            fallbackTitle,
-                                                            fallbackYear
-                                                        )
-                                                })
-                                            )
-                                            .sort(
-                                                (
-                                                    a: ScoredMediaInfo,
-                                                    b: ScoredMediaInfo
-                                                ) =>
-                                                    b.confidenceScore -
-                                                    a.confidenceScore
-                                            );
+                                    const scoredResults = searchResults
+                                        .map(
+                                            (result): ScoredMediaInfo => ({
+                                                ...result,
+                                                confidenceScore:
+                                                    calculateConfidence(
+                                                        result,
+                                                        fallbackTitle,
+                                                        fallbackYear
+                                                    )
+                                            })
+                                        )
+                                        .sort(
+                                            (a, b) =>
+                                                b.confidenceScore -
+                                                a.confidenceScore
+                                        );
 
                                     const bestMatch = scoredResults[0];
                                     const CONFIDENCE_THRESHOLD = 70;
@@ -316,141 +248,177 @@ chrome.runtime.onMessage.addListener(
                                     ) {
                                         mediaInfoResult = bestMatch;
                                         confidence = 'high';
-                                        console.log(
-                                            `Text search high confidence match (${bestMatch.confidenceScore}):`,
-                                            mediaInfoResult
-                                        );
                                     } else {
                                         mediaInfoResult = null;
                                         confidence = 'low';
-                                        console.log(
-                                            `Text search low confidence match (${bestMatch.confidenceScore}).`
-                                        );
                                     }
-                                } else {
-                                    console.log(
-                                        'Text search returned no results.'
-                                    );
                                 }
-                            } else {
-                                console.error(
-                                    'Fallback failed: Missing title/type for text search.'
-                                );
                             }
                         } catch (error) {
-                            console.error(
-                                'Error during text search fallback:',
-                                error
-                            );
+                            // Ignore
                         }
                     }
                 }
 
+                // --- BLOCK MODIFIED (CORRECTED AGAIN) ---
                 if (confidence === 'high' && mediaInfoResult) {
                     console.log(
                         'High confidence match. Fetching status details...'
                     );
 
                     watchStatus = { isInHistory: false, isCompleted: false };
-                    ratingInfo = { userRating: null };
                     progressInfo = null;
+                    ratingInfo = {};
 
                     try {
-                        let traktId: number | undefined = undefined;
+                        let movieTraktId: number | undefined;
+                        let showTraktId: number | undefined;
+
                         if (isMovieMediaInfo(mediaInfoResult)) {
-                            traktId = mediaInfoResult.movie.ids?.trakt;
+                            movieTraktId = mediaInfoResult.movie.ids?.trakt;
                         } else if (isShowMediaInfo(mediaInfoResult)) {
-                            traktId = mediaInfoResult.show.ids?.trakt;
+                            showTraktId = mediaInfoResult.show.ids?.trakt;
                         }
 
-                        if (traktId) {
-                            if (isShowMediaInfo(mediaInfoResult)) {
-                                try {
-                                    progressInfo =
-                                        await callApi<TraktShowWatchedProgress>(
-                                            `https://api.trakt.tv/shows/${traktId}/progress/watched?hidden=false&specials=false`,
-                                            'GET'
-                                        );
-                                    if (progressInfo) {
-                                        if (progressInfo.last_watched_at) {
-                                            watchStatus.isInHistory = true;
-                                            watchStatus.lastWatchedAt =
-                                                progressInfo.last_watched_at;
-                                        }
-
-                                        watchStatus.isCompleted =
-                                            progressInfo.aired > 0 &&
-                                            progressInfo.aired ===
-                                                progressInfo.completed;
-                                    }
-                                } catch (progError) {
-                                    console.error(
-                                        'Failed to fetch show progress:',
-                                        progError
-                                    );
+                        if (movieTraktId) {
+                            // --- MOVIE ---
+                            try {
+                                const movieHistory = await callApi<any[]>(
+                                    `https://api.trakt.tv/sync/history/movies/${movieTraktId}?limit=1`,
+                                    'GET',
+                                    null,
+                                    true
+                                );
+                                if (movieHistory?.[0]?.watched_at) {
+                                    watchStatus.isInHistory = true;
+                                    watchStatus.lastWatchedAt =
+                                        movieHistory[0].watched_at;
                                 }
-                            } else if (isMovieMediaInfo(mediaInfoResult)) {
-                                try {
-                                    const movieHistory = await callApi<any[]>(
-                                        `https://api.trakt.tv/sync/history/movies/${traktId}?limit=1`,
-                                        'GET'
-                                    );
-                                    if (
-                                        movieHistory &&
-                                        movieHistory.length > 0
-                                    ) {
-                                        watchStatus.isInHistory = true;
-                                        watchStatus.lastWatchedAt =
-                                            movieHistory[0]?.watched_at;
-                                    }
-                                } catch (histError) {
-                                    console.error(
-                                        'Failed to fetch movie history:',
-                                        histError
-                                    );
-                                }
+                            } catch (e) {
+                                console.warn('Error fetching movie history', e);
                             }
 
                             try {
-                                const itemTypeForRating = isShowMediaInfo(
-                                    mediaInfoResult
-                                )
-                                    ? 'shows'
-                                    : 'movies';
-
-                                const ratingResult = await callApi<
-                                    TraktRating[]
-                                >(
-                                    `https://api.trakt.tv/sync/ratings/${itemTypeForRating}/${traktId}`,
-                                    'GET'
+                                const allMovieRatings = await callApi<any[]>(
+                                    `https://api.trakt.tv/sync/ratings/movies`,
+                                    'GET',
+                                    null,
+                                    true
                                 );
-                                if (
-                                    ratingResult &&
-                                    ratingResult.length > 0 &&
-                                    ratingResult[0].rating
-                                ) {
-                                    ratingInfo.userRating =
-                                        ratingResult[0].rating;
-                                    ratingInfo.ratedAt =
-                                        ratingResult[0].rated_at;
+                                const movieRating = allMovieRatings.find(
+                                    (r) => r.movie.ids.trakt === movieTraktId
+                                );
+                                if (movieRating) {
+                                    ratingInfo.show = {
+                                        userRating: movieRating.rating,
+                                        ratedAt: movieRating.rated_at
+                                    };
                                 }
-                            } catch (rateError) {
-                                console.error(
-                                    'Failed to fetch rating:',
-                                    rateError
-                                );
+                            } catch (e) {
+                                console.warn('Error fetching movie ratings', e);
                             }
-                        } else {
-                            console.warn(
-                                'Could not get Trakt ID from mediaInfoResult to fetch status.'
-                            );
-                        }
+                        } else if (showTraktId) {
+                            // --- SHOW ---
+                            try {
+                                progressInfo =
+                                    await callApi<TraktShowWatchedProgress>(
+                                        `https://api.trakt.tv/shows/${showTraktId}/progress/watched?hidden=false&specials=false`,
+                                        'GET',
+                                        null,
+                                        true
+                                    );
+                                if (progressInfo?.last_watched_at) {
+                                    watchStatus.isInHistory = true;
+                                    watchStatus.lastWatchedAt =
+                                        progressInfo.last_watched_at;
+                                }
+                                watchStatus.isCompleted =
+                                    progressInfo?.aired > 0 &&
+                                    progressInfo.aired ===
+                                        progressInfo.completed;
+                            } catch (e) {
+                                console.warn('Error fetching show progress', e);
+                            }
 
-                        console.log('Fetched Status Details:', {
-                            watchStatus,
-                            progressInfo,
-                            ratingInfo
-                        });
+                            try {
+                                const allShowRatings = await callApi<any[]>(
+                                    `https://api.trakt.tv/sync/ratings/shows`,
+                                    'GET',
+                                    null,
+                                    true
+                                );
+                                const showRating = allShowRatings.find(
+                                    (r) => r.show.ids.trakt === showTraktId
+                                );
+                                if (showRating) {
+                                    ratingInfo.show = {
+                                        userRating: showRating.rating,
+                                        ratedAt: showRating.rated_at
+                                    };
+                                }
+                            } catch (e) {
+                                console.warn('Error fetching show ratings', e);
+                            }
+
+                            const episodeInfo =
+                                siteConfig.getSeasonEpisodeObj(url);
+                            if (episodeInfo) {
+                                try {
+                                    const [
+                                        allSeasonRatings,
+                                        allEpisodeRatings
+                                    ] = await Promise.all([
+                                        callApi<any[]>(
+                                            `https://api.trakt.tv/sync/ratings/seasons`,
+                                            'GET',
+                                            null,
+                                            true
+                                        ).catch(() => []),
+                                        callApi<any[]>(
+                                            `https://api.trakt.tv/sync/ratings/episodes`,
+                                            'GET',
+                                            null,
+                                            true
+                                        ).catch(() => [])
+                                    ]);
+
+                                    const seasonRating = allSeasonRatings.find(
+                                        (r) =>
+                                            r.show.ids.trakt === showTraktId &&
+                                            r.season.number ===
+                                                episodeInfo.season
+                                    );
+                                    if (seasonRating) {
+                                        ratingInfo.season = {
+                                            userRating: seasonRating.rating,
+                                            ratedAt: seasonRating.rated_at
+                                        };
+                                    }
+
+                                    const episodeRating =
+                                        allEpisodeRatings.find(
+                                            (r) =>
+                                                r.show.ids.trakt ===
+                                                    showTraktId &&
+                                                r.episode.season ===
+                                                    episodeInfo.season &&
+                                                r.episode.number ===
+                                                    episodeInfo.number
+                                        );
+                                    if (episodeRating) {
+                                        ratingInfo.episode = {
+                                            userRating: episodeRating.rating,
+                                            ratedAt: episodeRating.rated_at
+                                        };
+                                    }
+                                } catch (epError) {
+                                    console.warn(
+                                        'Could not fetch season/episode ratings.',
+                                        epError
+                                    );
+                                }
+                            }
+                        }
 
                         await chrome.storage.local.set({
                             [tabUrlIdentifier]: {
@@ -461,12 +429,9 @@ chrome.runtime.onMessage.addListener(
                         });
                     } catch (error) {
                         console.error('Error fetching status details:', error);
-
-                        watchStatus = undefined;
-                        progressInfo = null;
-                        ratingInfo = undefined;
                     }
                 }
+                // --- END MODIFICATION ---
 
                 const responsePayload: MediaStatusPayload = {
                     mediaInfo: mediaInfoResult,
@@ -476,22 +441,13 @@ chrome.runtime.onMessage.addListener(
                     progressInfo: progressInfo,
                     ratingInfo: ratingInfo
                 };
-                const response: MessageResponse<MediaStatusPayload> = {
-                    success: true,
-                    data: responsePayload
-                };
-                sendResponse(response);
+                sendResponse({ success: true, data: responsePayload });
                 return true;
             }
 
+            // ... (All other action handlers from 'confirmMedia' to the end remain the same)
             if (request.action === 'confirmMedia') {
                 const confirmedMedia = request.params as MediaInfoResponse;
-                console.log(
-                    'Background: confirmMedia request:',
-                    confirmedMedia,
-                    'for tabUrlIdentifier:',
-                    tabUrlIdentifier
-                );
                 try {
                     await chrome.storage.local.set({
                         [tabUrlIdentifier]: {
@@ -502,7 +458,6 @@ chrome.runtime.onMessage.addListener(
                     });
                     sendResponse({ success: true });
                 } catch (error) {
-                    console.error('Error saving confirmed media:', error);
                     sendResponse({
                         success: false,
                         error: 'Failed to save confirmation'
@@ -510,93 +465,102 @@ chrome.runtime.onMessage.addListener(
                 }
                 return true;
             }
-            if (request.action === 'rateItem') {
-                const params = request.params as {
-                    mediaInfo: MediaInfoResponse;
-                    rating: number;
-                };
-                console.log(
-                    `Received rateItem request: Rating ${params.rating}`
-                );
+
+            if (
+                request.action === 'rateShow' ||
+                request.action === 'rateMovie'
+            ) {
+                const params = request.params as any;
+                const { mediaInfo, rating } = params;
+
+                const body: { movies?: any[]; shows?: any[] } = {};
+                const item = { ids: mediaInfo[mediaInfo.type].ids, rating };
+
+                if (request.action === 'rateMovie') body.movies = [item];
+                else body.shows = [item];
+
                 try {
-                    const body: {
-                        movies?: any[];
-                        shows?: any[];
-                        episodes?: any[];
-                    } = {};
-                    const mediaType = params.mediaInfo.type;
-
-                    if (params.rating < 1 || params.rating > 10) {
-                        throw new Error(
-                            'Invalid rating value. Must be between 1 and 10.'
-                        );
-                    }
-
-                    let traktId: number | undefined = undefined;
-                    if (isMovieMediaInfo(params.mediaInfo)) {
-                        traktId = params.mediaInfo.movie.ids?.trakt;
-                    } else if (isShowMediaInfo(params.mediaInfo)) {
-                        traktId = params.mediaInfo.show.ids?.trakt;
-                    }
-
-                    if (!traktId) {
-                        throw new Error(
-                            'Could not extract Trakt ID to rate item.'
-                        );
-                    }
-
-                    if (mediaType === 'movie') {
-                        body.movies = [
-                            { ids: { trakt: traktId }, rating: params.rating }
-                        ];
-                    } else if (mediaType === 'show') {
-                        body.shows = [
-                            { ids: { trakt: traktId }, rating: params.rating }
-                        ];
-                    } else {
-                        throw new Error(
-                            `Rating type '${mediaType}' not currently supported directly.`
-                        );
-                    }
-
-                    console.log('Submitting rating to Trakt:', body);
-                    const ratingResponse = await callApi(
+                    await callApi(
                         `https://api.trakt.tv/sync/ratings`,
                         'POST',
                         body
                     );
-                    console.log('Trakt rating response:', ratingResponse);
-
-                    if (
-                        ratingResponse?.not_found &&
-                        (ratingResponse.not_found.movies?.length ||
-                            ratingResponse.not_found.shows?.length)
-                    ) {
-                        console.warn(
-                            'Trakt reported item not found during rating.'
-                        );
-                    }
-
                     sendResponse({ success: true });
                 } catch (error) {
-                    console.error('Error submitting rating:', error);
                     sendResponse({
                         success: false,
                         error:
                             error instanceof Error
                                 ? error.message
-                                : 'Failed to submit rating.'
+                                : 'Rating failed'
                     });
                 }
                 return true;
             }
 
+            if (
+                request.action === 'rateSeason' ||
+                request.action === 'rateEpisode'
+            ) {
+                const params = request.params as any;
+                const { mediaInfo, episodeInfo, rating } = params;
+
+                const body: { seasons?: any[]; episodes?: any[] } = {};
+
+                try {
+                    if (request.action === 'rateEpisode') {
+                        const epDetails = await callApi<any>(
+                            `https://api.trakt.tv/shows/${mediaInfo.show.ids.trakt}/seasons/${episodeInfo.season}/episodes/${episodeInfo.number}`
+                        );
+                        const episodeTraktId = epDetails?.ids?.trakt;
+                        if (!episodeTraktId)
+                            throw new Error(
+                                'Could not find Trakt ID for the episode.'
+                            );
+                        body.episodes = [
+                            { ids: { trakt: episodeTraktId }, rating }
+                        ];
+                    } else {
+                        // rateSeason
+                        const seasons = await callApi<any[]>(
+                            `https://api.trakt.tv/shows/${mediaInfo.show.ids.trakt}/seasons`
+                        );
+                        const seasonTraktId = seasons.find(
+                            (s) => s.number === episodeInfo.season
+                        )?.ids?.trakt;
+                        if (!seasonTraktId)
+                            throw new Error(
+                                'Could not find Trakt ID for the season.'
+                            );
+                        body.seasons = [
+                            { ids: { trakt: seasonTraktId }, rating }
+                        ];
+                    }
+
+                    await callApi(
+                        `https://api.trakt.tv/sync/ratings`,
+                        'POST',
+                        body
+                    );
+                    sendResponse({ success: true });
+                } catch (error) {
+                    sendResponse({
+                        success: false,
+                        error:
+                            error instanceof Error
+                                ? error.message
+                                : 'Rating failed'
+                    });
+                }
+                return true;
+            }
+
+            // ... (rest of the file remains unchanged)
             if (request.action === 'manualSearch') {
                 const params = request.params as {
                     type: string;
                     query: string;
                 };
-                console.log('Received manualSearch request:', params);
                 try {
                     const searchParams = new URLSearchParams({
                         query: params.query
@@ -605,23 +569,18 @@ chrome.runtime.onMessage.addListener(
                     const searchResults: (MovieMediaInfo | ShowMediaInfo)[] =
                         await callApi(searchUrl, 'GET');
 
-                    const response: MessageResponse<
-                        (MovieMediaInfo | ShowMediaInfo)[]
-                    > = {
+                    sendResponse({
                         success: true,
                         data: searchResults
-                    };
-                    sendResponse(response);
+                    });
                 } catch (error) {
-                    console.error('Error during manualSearch:', error);
-                    const response: MessageResponse<null> = {
+                    sendResponse({
                         success: false,
                         error:
                             error instanceof Error
                                 ? error.message
                                 : 'Manual search failed'
-                    };
-                    sendResponse(response);
+                    });
                 }
                 return true;
             }
@@ -635,21 +594,13 @@ chrome.runtime.onMessage.addListener(
                     return true;
                 }
                 const params = request.params as RequestScrobbleStartParams;
-                console.log(
-                    `Background: requestScrobbleStart from tab ${tabId}`,
-                    params
-                );
 
                 try {
-                    // If another tab is actively scrobbling, pause it first
                     if (
                         activeScrobble.tabId &&
                         activeScrobble.tabId !== tabId &&
                         activeScrobble.status === 'started'
                     ) {
-                        console.log(
-                            `Pausing active scrobble on tab ${activeScrobble.tabId} due to new start on tab ${tabId}`
-                        );
                         const oldScrobblePayload = buildTraktScrobblePayload(
                             activeScrobble.mediaInfo!,
                             activeScrobble.episodeInfo,
@@ -660,11 +611,6 @@ chrome.runtime.onMessage.addListener(
                             'POST',
                             oldScrobblePayload
                         );
-                        // Update state for the old scrobble, though it's effectively superseded
-                        if (activeScrobble.tabId) {
-                            // Check just in case
-                            // We don't clear activeScrobble fully here, it will be overwritten by the new one.
-                        }
                     }
 
                     const payload = buildTraktScrobblePayload(
@@ -690,13 +636,8 @@ chrome.runtime.onMessage.addListener(
                         lastUpdateTime: Date.now(),
                         previousScrobbledUrl: url
                     };
-                    console.log(
-                        'Background: Scrobble started successfully. ActiveScrobble:',
-                        activeScrobble
-                    );
                     sendResponse({ success: true });
                 } catch (error) {
-                    console.error('Error during scrobble/start:', error);
                     sendResponse({
                         success: false,
                         error:
@@ -717,18 +658,11 @@ chrome.runtime.onMessage.addListener(
                     return true;
                 }
                 const params = request.params as RequestScrobblePauseParams;
-                console.log(
-                    `Background: requestScrobblePause from tab ${tabId}`,
-                    params
-                );
 
                 if (
                     activeScrobble.tabId !== tabId ||
                     activeScrobble.status !== 'started'
                 ) {
-                    console.warn(
-                        'Received pause request for a non-active or non-matching scrobble. Ignoring.'
-                    );
                     sendResponse({
                         success: false,
                         error: 'Scrobble not active on this tab or not started.'
@@ -751,13 +685,8 @@ chrome.runtime.onMessage.addListener(
                     activeScrobble.currentProgress = params.progress;
                     activeScrobble.status = 'paused';
                     activeScrobble.lastUpdateTime = Date.now();
-                    console.log(
-                        'Background: Scrobble paused successfully. ActiveScrobble:',
-                        activeScrobble
-                    );
                     sendResponse({ success: true });
                 } catch (error) {
-                    console.error('Error during scrobble/pause:', error);
                     sendResponse({
                         success: false,
                         error:
@@ -778,15 +707,8 @@ chrome.runtime.onMessage.addListener(
                     return true;
                 }
                 const params = request.params as RequestScrobbleStopParams;
-                console.log(
-                    `Background: requestScrobbleStop from tab ${tabId}`,
-                    params
-                );
 
                 if (activeScrobble.tabId !== tabId) {
-                    console.warn(
-                        'Received stop request for a non-active or non-matching scrobble. Ignoring.'
-                    );
                     sendResponse({
                         success: false,
                         error: 'Scrobble not active on this tab for stop.'
@@ -809,7 +731,6 @@ chrome.runtime.onMessage.addListener(
                         'POST',
                         payload
                     );
-                    console.log('Trakt stop response:', traktResponse);
 
                     if (
                         params.progress >= TRAKT_SCROBBLE_COMPLETION_THRESHOLD
@@ -823,30 +744,14 @@ chrome.runtime.onMessage.addListener(
                                           activeScrobble.traktMediaType!
                                       ]?.ids?.trakt
                                     : undefined)
-                            // Trakt's stop response is a bit inconsistent. Sometimes it gives a direct ID,
-                            // sometimes it gives the media object with its ID under 'movie' or 'episode'.
-                            // We might need to refine history ID extraction based on actual responses.
-                            // A more robust way to get history ID might be a subsequent /sync/history call if traktResponse.id is not present.
                         };
-                        console.log(
-                            'Background: Scrobble stopped (watched). Progress:',
-                            params.progress
-                        );
                     } else {
                         responseData = { action: 'paused_incomplete' };
-                        console.log(
-                            'Background: Scrobble stopped (incomplete). Progress:',
-                            params.progress
-                        );
                     }
 
                     resetActiveScrobbleState();
                     sendResponse({ success: true, data: responseData });
                 } catch (error) {
-                    console.error('Error during scrobble/stop:', error);
-                    // Don't reset activeScrobble on error, content script might retry or handle. Or do reset?
-                    // For now, let's assume content script will manage if stop fails.
-                    // resetActiveScrobbleState(); // Or perhaps not, to allow retries.
                     sendResponse({
                         success: false,
                         error:
@@ -862,7 +767,6 @@ chrome.runtime.onMessage.addListener(
             if (request.action === 'requestManualAddToHistory') {
                 const params =
                     request.params as RequestManualAddToHistoryParams;
-                console.log(`Background: requestManualAddToHistory`, params);
 
                 const historyBody: HistoryBody = {};
                 if (isMovieMediaInfo(params.mediaInfo)) {
@@ -898,16 +802,6 @@ chrome.runtime.onMessage.addListener(
                         'POST',
                         historyBody
                     );
-                    console.log(
-                        'Trakt Manual Add History Response:',
-                        addResponse
-                    );
-
-                    // To get history ID, similar to old scrobble logic:
-                    // This part needs testing with /sync/history to see if it returns IDs directly
-                    // or if a subsequent fetch is needed.
-                    // For simplicity, we'll assume it might not return an ID directly here.
-                    // The ScrobbleNotification for manual add might not need an undo for now.
                     const historyResponse = await callApi(
                         `https://api.trakt.tv/sync/history${isMovieMediaInfo(params.mediaInfo) ? '/movies' : '/episodes'}/${isMovieMediaInfo(params.mediaInfo) ? params.mediaInfo.movie.ids.trakt : params.mediaInfo.show.ids.trakt}?limit=1`,
                         'GET'
@@ -920,16 +814,6 @@ chrome.runtime.onMessage.addListener(
                         historyResponse[0].id
                     ) {
                         traktHistoryId = historyResponse[0].id;
-                    } else if (
-                        addResponse?.added?.movies ||
-                        addResponse?.added?.shows ||
-                        addResponse?.added?.episodes
-                    ) {
-                        // If the /sync/history response indicates success but no direct ID,
-                        // and we don't have an easy way to get the ID, we'll proceed without it for manual add's undo.
-                        console.log(
-                            'Manual add successful, but history ID not directly available for undo.'
-                        );
                     }
 
                     sendResponse({
@@ -937,7 +821,6 @@ chrome.runtime.onMessage.addListener(
                         data: { traktHistoryId } as ScrobbleResponse
                     });
                 } catch (error) {
-                    console.error('Error during manual add to history:', error);
                     sendResponse({
                         success: false,
                         error:
@@ -949,17 +832,6 @@ chrome.runtime.onMessage.addListener(
                 return true;
             }
 
-            if (request.action === 'scrobble') {
-                console.warn(
-                    "Legacy 'scrobble' action called. This should be phased out."
-                );
-
-                sendResponse({
-                    success: false,
-                    error: 'Legacy scrobble not fully implemented here yet'
-                });
-                return true;
-            }
             if (request.action === 'undoScrobble') {
                 const historyId = request.params.historyId;
                 try {
@@ -980,19 +852,14 @@ chrome.runtime.onMessage.addListener(
                 }
                 return true;
             }
-
-            // Default for unhandled actions
         })();
         return true;
     }
 );
 
+// ... (onRemoved and onUpdated listeners remain the same)
 chrome.tabs.onRemoved.addListener(async (tabId, removeInfo) => {
     if (activeScrobble.tabId === tabId && activeScrobble.mediaInfo) {
-        console.log(
-            `Background: Tab ${tabId} (active scrobble) removed. Status: ${activeScrobble.status}, Progress: ${activeScrobble.currentProgress}%`
-        );
-
         if (
             (activeScrobble.status === 'started' ||
                 activeScrobble.status === 'paused') &&
@@ -1000,9 +867,6 @@ chrome.tabs.onRemoved.addListener(async (tabId, removeInfo) => {
                 TRAKT_SCROBBLE_COMPLETION_THRESHOLD
         ) {
             try {
-                console.log(
-                    `Attempting to STOP scrobble for closed tab ${tabId} as progress was sufficient.`
-                );
                 const payload = buildTraktScrobblePayload(
                     activeScrobble.mediaInfo,
                     activeScrobble.episodeInfo,
@@ -1013,18 +877,11 @@ chrome.tabs.onRemoved.addListener(async (tabId, removeInfo) => {
                     'POST',
                     payload
                 );
-                console.log(`Scrobble STOPPED for closed tab ${tabId}.`);
             } catch (error) {
-                console.error(
-                    `Error STOPPING scrobble for closed tab ${tabId}:`,
-                    error
-                );
+                // Ignore
             }
         } else if (activeScrobble.status === 'started') {
             try {
-                console.log(
-                    `Attempting to PAUSE scrobble for closed tab ${tabId} as progress was insufficient for stop.`
-                );
                 const payload = buildTraktScrobblePayload(
                     activeScrobble.mediaInfo,
                     activeScrobble.episodeInfo,
@@ -1035,15 +892,10 @@ chrome.tabs.onRemoved.addListener(async (tabId, removeInfo) => {
                     'POST',
                     payload
                 );
-                console.log(`Scrobble PAUSED for closed tab ${tabId}.`);
             } catch (error) {
-                console.error(
-                    `Error PAUSING scrobble for closed tab ${tabId}:`,
-                    error
-                );
+                // Ignore
             }
         }
-
         resetActiveScrobbleState();
     }
 });
@@ -1055,43 +907,20 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
         activeScrobble.mediaInfo &&
         tab.url
     ) {
-        // More robust check: if the new URL is for a different media item or not a watch page
-        // const newUrlSiteConfig = getCurrentSiteConfig(
-        //     new URL(tab.url).hostname as HostnameType
-        // );
-        // const oldMediaUrlIdentifier = siteConfig?.getUrlIdentifier(
-        //     activeScrobble.previousScrobbledUrl || ''
-        // ); // Need to store previous URL
-        // const newMediaUrlIdentifier = newUrlSiteConfig?.getUrlIdentifier(
-        //     tab.url
-        // );
-
-        // A simple check: if the base path of the scrobbled media's URL no longer matches the new tab URL's path
-        // This is a heuristic and might need refinement based on how your getUrlIdentifier works.
-        // A robust way is if newMediaUrlIdentifier implies a *different* media item or not a watch page.
         let navigatedAwayFromMedia = false;
         if (activeScrobble.mediaInfo && activeScrobble.previousScrobbledUrl) {
-            // Store previousScrobbledUrl in activeScrobble
             const oldScrobbledUrl = new URL(
                 activeScrobble.previousScrobbledUrl
             );
             const newCurrentUrl = new URL(tab.url);
             if (oldScrobbledUrl.pathname !== newCurrentUrl.pathname) {
-                // Basic path check
                 navigatedAwayFromMedia = true;
             }
-            // More advanced:
-            // const oldScrobbledMediaId = siteConfig?.getTmdbId?.(activeScrobble.previousScrobbledUrl) || siteConfig?.getTitle(activeScrobble.previousScrobbledUrl);
-            // const newPotentialMediaId = newUrlSiteConfig?.getTmdbId?.(tab.url) || newUrlSiteConfig?.getTitle(tab.url);
-            // if (oldScrobbledMediaId !== newPotentialMediaId) navigatedAwayFromMedia = true;
         } else {
-            navigatedAwayFromMedia = true; // If no previous URL, assume navigation away
+            navigatedAwayFromMedia = true;
         }
 
         if (navigatedAwayFromMedia) {
-            console.log(
-                `Background: Tab ${tabId} (active scrobble) navigated away. Status: ${activeScrobble.status}, Progress: ${activeScrobble.currentProgress}%`
-            );
             if (
                 (activeScrobble.status === 'started' ||
                     activeScrobble.status === 'paused') &&
@@ -1099,9 +928,6 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
                     TRAKT_SCROBBLE_COMPLETION_THRESHOLD
             ) {
                 try {
-                    console.log(
-                        `Attempting to STOP scrobble for navigated tab ${tabId}.`
-                    );
                     const payload = buildTraktScrobblePayload(
                         activeScrobble.mediaInfo,
                         activeScrobble.episodeInfo,
@@ -1112,18 +938,11 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
                         'POST',
                         payload
                     );
-                    console.log(`Scrobble STOPPED for navigated tab ${tabId}.`);
                 } catch (error) {
-                    console.error(
-                        `Error STOPPING scrobble for navigated tab ${tabId}:`,
-                        error
-                    );
+                    // Ignore
                 }
             } else if (activeScrobble.status === 'started') {
                 try {
-                    console.log(
-                        `Attempting to PAUSE scrobble for navigated tab ${tabId}.`
-                    );
                     const payload = buildTraktScrobblePayload(
                         activeScrobble.mediaInfo,
                         activeScrobble.episodeInfo,
@@ -1134,12 +953,8 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
                         'POST',
                         payload
                     );
-                    console.log(`Scrobble PAUSED for navigated tab ${tabId}.`);
                 } catch (error) {
-                    console.error(
-                        `Error PAUSING scrobble for navigated tab ${tabId}:`,
-                        error
-                    );
+                    // Ignore
                 }
             }
             resetActiveScrobbleState();

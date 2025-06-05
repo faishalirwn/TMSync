@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { isMovieMediaInfo, isShowMediaInfo } from '../utils/typeGuards';
 import {
-    RatingInfo,
+    MediaRatings,
     ScrobbleNotificationMediaType,
     ActiveScrobbleStatus
 } from '../utils/types';
@@ -27,18 +27,60 @@ const Star: React.FC<{
     </svg>
 );
 
+// --- NEW HELPER COMPONENT ---
+const StarRatingInput: React.FC<{
+    label: string;
+    currentRating: number | null;
+    onRate: (rating: number) => void;
+    isSubmitting: boolean;
+}> = ({ label, currentRating, onRate, isSubmitting }) => {
+    const [hoverRating, setHoverRating] = useState(0);
+
+    return (
+        <div className="mt-2 pt-2 border-t border-gray-100 first-of-type:border-t-0 first-of-type:pt-1 first-of-type:mt-1">
+            <p className="text-xs text-gray-500 mb-0.5">{label}:</p>
+            <div
+                className="flex justify-center items-center space-x-0.5"
+                onMouseLeave={() => setHoverRating(0)}
+            >
+                {[...Array(10)].map((_, i) => {
+                    const ratingValue = i + 1;
+                    const isFilled =
+                        hoverRating >= ratingValue ||
+                        (!hoverRating && (currentRating ?? 0) >= ratingValue);
+                    return (
+                        <Star
+                            key={ratingValue}
+                            filled={isFilled}
+                            onClick={() => onRate(ratingValue)}
+                            onMouseEnter={() => setHoverRating(ratingValue)}
+                            onMouseLeave={() => {}}
+                            readOnly={isSubmitting}
+                        />
+                    );
+                })}
+            </div>
+        </div>
+    );
+};
+// --- END NEW HELPER COMPONENT ---
+
+// --- PROPS INTERFACE MODIFIED ---
 interface ScrobbleNotificationProps {
     mediaInfo: ScrobbleNotificationMediaType;
-    isEffectivelyScrobbled: boolean; // True if traktHistoryIdRef.current has a value
+    isEffectivelyScrobbled: boolean;
     traktHistoryId: number | null;
-    liveScrobbleStatus: ActiveScrobbleStatus; // 'idle', 'started', 'paused'
-    onManualScrobble: () => Promise<void>; // Renamed from onScrobble
+    liveScrobbleStatus: ActiveScrobbleStatus;
+    onManualScrobble: () => Promise<void>;
     onUndoScrobble: () => Promise<void>;
-    isProcessingAction: boolean; // Generic flag for when any scrobble/undo/rating action is in progress
-
-    ratingInfo: RatingInfo | null;
-    onRate: (rating: number) => void;
+    isProcessingAction: boolean;
+    ratings: MediaRatings | null;
+    onRate: (
+        type: 'movie' | 'show' | 'season' | 'episode',
+        rating: number
+    ) => void;
 }
+// --- END MODIFICATION ---
 
 export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
     mediaInfo,
@@ -47,31 +89,21 @@ export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
     liveScrobbleStatus,
     onManualScrobble,
     onUndoScrobble,
-    isProcessingAction, // Use this to disable buttons during any related async op
-    ratingInfo,
+    isProcessingAction,
+    ratings,
     onRate
 }) => {
     const [isExpanded, setIsExpanded] = useState<boolean>(false);
     const contentRef = useRef<HTMLDivElement>(null);
-    const initialExpandDoneRef = useRef(false); // To ensure auto-expand only happens once after a successful scrobble
-
-    const [hoverRating, setHoverRating] = useState<number>(0);
-    const [currentRating, setCurrentRating] = useState<number | null>(null);
-    const [isRatingSubmitting, setIsRatingSubmitting] = useState(false); // Keep this specific to rating
+    const initialExpandDoneRef = useRef(false);
 
     useEffect(() => {
-        setCurrentRating(ratingInfo?.userRating ?? null);
-    }, [ratingInfo]);
-
-    useEffect(() => {
-        // Auto-expand when an item is newly scrobbled (i.e., added to history)
         if (isEffectivelyScrobbled && !initialExpandDoneRef.current) {
             setIsExpanded(true);
-            const timer = setTimeout(() => setIsExpanded(false), 7000); // Longer display for confirmation
+            const timer = setTimeout(() => setIsExpanded(false), 7000);
             initialExpandDoneRef.current = true;
             return () => clearTimeout(timer);
         }
-        // If it's undone, reset the flag so it can expand again if re-scrobbled
         if (!isEffectivelyScrobbled) {
             initialExpandDoneRef.current = false;
         }
@@ -87,22 +119,15 @@ export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
         await onUndoScrobble();
     };
 
-    const handleRatingClick = async (ratingValue: number) => {
-        if (
-            isRatingSubmitting ||
-            ratingValue === currentRating ||
-            isProcessingAction
-        )
-            return;
-        setIsRatingSubmitting(true);
-        try {
-            await onRate(ratingValue);
-        } catch (error) {
-            console.error('Error during rating submission:', error);
-        } finally {
-            setIsRatingSubmitting(false);
-        }
+    // --- NEW RATING HANDLER ---
+    const handleRatingClick = async (
+        type: 'movie' | 'show' | 'season' | 'episode',
+        ratingValue: number
+    ) => {
+        if (isProcessingAction) return;
+        await onRate(type, ratingValue);
     };
+    // --- END NEW RATING HANDLER ---
 
     const getMediaTitle = (): string => {
         if (isMovieMediaInfo(mediaInfo)) return mediaInfo.movie.title;
@@ -161,7 +186,6 @@ export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
                 onMouseLeave={() => setIsExpanded(false)}
             >
                 <div ref={contentRef} className="py-2 px-3">
-                    {/* Status Area */}
                     {statusText && (
                         <p
                             className={`font-semibold m-0 p-0 text-sm ${statusColor}`}
@@ -181,74 +205,62 @@ export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
                             </p>
                         )}
 
-                    {/* Actions and Rating Area - Shown if expanded or scrobbled */}
                     {(isExpanded || isEffectivelyScrobbled) && (
                         <>
-                            {/* Rating Section */}
-                            <div className="mt-1 border-t border-gray-100 pt-1">
-                                <p className="text-xs text-gray-500 mb-0.5">
-                                    Your Rating:
-                                </p>
-                                <div
-                                    className="flex justify-center items-center space-x-0.5"
-                                    onMouseLeave={() => setHoverRating(0)}
-                                >
-                                    {[...Array(10)].map((_, i) => {
-                                        const ratingValue = i + 1;
-                                        const isFilled =
-                                            hoverRating >= ratingValue ||
-                                            (!hoverRating &&
-                                                (currentRating ?? 0) >=
-                                                    ratingValue);
-                                        return (
-                                            <Star
-                                                key={ratingValue}
-                                                filled={isFilled}
-                                                onClick={() =>
-                                                    handleRatingClick(
-                                                        ratingValue
-                                                    )
-                                                }
-                                                onMouseEnter={() =>
-                                                    setHoverRating(ratingValue)
-                                                }
-                                                onMouseLeave={() => {}} // Individual star leave handled by parent div
-                                                readOnly={
-                                                    isRatingSubmitting ||
-                                                    isProcessingAction
-                                                }
-                                            />
-                                        );
-                                    })}
-                                    {(isRatingSubmitting ||
-                                        (isProcessingAction &&
-                                            liveScrobbleStatus !== 'idle' &&
-                                            !isEffectivelyScrobbled)) && ( // Show spinner for rating or general processing
-                                        <svg
-                                            className="animate-spin ml-1 h-3 w-3 text-gray-500"
-                                            xmlns="http://www.w3.org/2000/svg"
-                                            fill="none"
-                                            viewBox="0 0 24 24"
-                                        >
-                                            <circle
-                                                className="opacity-25"
-                                                cx="12"
-                                                cy="12"
-                                                r="10"
-                                                stroke="currentColor"
-                                                strokeWidth="4"
-                                            ></circle>
-                                            <path
-                                                className="opacity-75"
-                                                fill="currentColor"
-                                                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                                            ></path>
-                                        </svg>
-                                    )}
-                                </div>
-                            </div>
+                            {/* --- RATING SECTION MODIFIED --- */}
+                            {isMovieMediaInfo(mediaInfo) && (
+                                <StarRatingInput
+                                    label="Your Rating"
+                                    currentRating={
+                                        ratings?.show?.userRating ?? null
+                                    }
+                                    onRate={(r) =>
+                                        handleRatingClick('movie', r)
+                                    }
+                                    isSubmitting={isProcessingAction}
+                                />
+                            )}
 
-                            {/* Buttons: Manual Scrobble or Undo */}
+                            {isShowMediaInfo(mediaInfo) &&
+                                episode !== undefined && (
+                                    <StarRatingInput
+                                        label="Episode Rating"
+                                        currentRating={
+                                            ratings?.episode?.userRating ?? null
+                                        }
+                                        onRate={(r) =>
+                                            handleRatingClick('episode', r)
+                                        }
+                                        isSubmitting={isProcessingAction}
+                                    />
+                                )}
+
+                            {isShowMediaInfo(mediaInfo) &&
+                                season !== undefined && (
+                                    <StarRatingInput
+                                        label="Season Rating"
+                                        currentRating={
+                                            ratings?.season?.userRating ?? null
+                                        }
+                                        onRate={(r) =>
+                                            handleRatingClick('season', r)
+                                        }
+                                        isSubmitting={isProcessingAction}
+                                    />
+                                )}
+
+                            {isShowMediaInfo(mediaInfo) && (
+                                <StarRatingInput
+                                    label="Show Rating"
+                                    currentRating={
+                                        ratings?.show?.userRating ?? null
+                                    }
+                                    onRate={(r) => handleRatingClick('show', r)}
+                                    isSubmitting={isProcessingAction}
+                                />
+                            )}
+                            {/* --- END MODIFICATION --- */}
+
                             <div className="mt-2">
                                 {isEffectivelyScrobbled ? (
                                     <button
@@ -262,7 +274,7 @@ export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
                                         Undo History Add?
                                     </button>
                                 ) : (
-                                    liveScrobbleStatus === 'idle' && ( // Only show manual add if no live scrobble active
+                                    liveScrobbleStatus === 'idle' && (
                                         <button
                                             className="text-blue-600 w-full px-2 py-1 rounded border-none cursor-pointer my-1 text-sm hover:bg-blue-50 disabled:opacity-70 disabled:cursor-wait flex items-center justify-center"
                                             onClick={handleManualScrobbleClick}

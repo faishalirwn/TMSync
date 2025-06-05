@@ -115,10 +115,18 @@ export interface WatchStatusInfo {
     isCompleted?: boolean;
 }
 
-export interface RatingInfo {
+// --- RATING TYPES: MODIFIED ---
+export interface IndividualRating {
     userRating: number | null;
     ratedAt?: string;
 }
+
+export interface MediaRatings {
+    show?: IndividualRating; // For a movie, this holds the movie's rating
+    season?: IndividualRating;
+    episode?: IndividualRating;
+}
+// --- END MODIFICATION ---
 
 export interface MediaStatusPayload {
     mediaInfo: MediaInfoResponse | null;
@@ -126,7 +134,7 @@ export interface MediaStatusPayload {
     confidence: 'high' | 'low';
     watchStatus?: WatchStatusInfo;
     progressInfo?: TraktShowWatchedProgress | null;
-    ratingInfo?: RatingInfo;
+    ratingInfo?: MediaRatings; // <-- UPDATED
 }
 
 export interface RequestScrobbleStartParams {
@@ -210,13 +218,32 @@ export interface ConfirmMediaRequest {
     params: MediaInfoResponse;
 }
 
-export interface RateItemRequest {
-    action: 'rateItem';
+// --- RATING REQUESTS: MODIFIED ---
+export interface RateShowRequest {
+    action: 'rateShow';
+    params: { mediaInfo: ShowMediaInfo; rating: number };
+}
+export interface RateMovieRequest {
+    action: 'rateMovie';
+    params: { mediaInfo: MovieMediaInfo; rating: number };
+}
+export interface RateSeasonRequest {
+    action: 'rateSeason';
     params: {
-        mediaInfo: MediaInfoResponse;
+        mediaInfo: ShowMediaInfo;
+        episodeInfo: SeasonEpisodeObj;
         rating: number;
     };
 }
+export interface RateEpisodeRequest {
+    action: 'rateEpisode';
+    params: {
+        mediaInfo: ShowMediaInfo;
+        episodeInfo: SeasonEpisodeObj;
+        rating: number;
+    };
+}
+// --- END MODIFICATION ---
 
 export type MessageRequest =
     | MediaInfoRequest
@@ -225,11 +252,15 @@ export type MessageRequest =
     | VideoMonitorRequest
     | ManualSearchRequest
     | ConfirmMediaRequest
-    | RateItemRequest
     | RequestScrobbleStartRequest
     | RequestScrobblePauseRequest
     | RequestScrobbleStopRequest
-    | RequestManualAddToHistoryRequest;
+    | RequestManualAddToHistoryRequest
+    // --- ADDED NEW REQUESTS ---
+    | RateShowRequest
+    | RateMovieRequest
+    | RateSeasonRequest
+    | RateEpisodeRequest;
 
 export interface MessageResponse<T> {
     success: boolean;
