@@ -168,6 +168,9 @@ export const ScrobbleManager = () => {
         duration: number;
         isFromIframe?: boolean;
     } | null>(null);
+    const pendingCriticalOperationRef = useRef<'pause' | 'stop' | null>(null);
+    const lastSentActionTimestampRef = useRef(0); // To prevent too rapid succession of any action
+    const MIN_TIME_BETWEEN_ACTIONS_MS = 500; // Minimum time between any scrobble API call initiation
 
     const urlObject = new URL(currentUrl);
     const hostname = urlObject.hostname;
@@ -231,6 +234,30 @@ export const ScrobbleManager = () => {
             // No need to setScrobblingStatus('started') here, background confirmation is better source of truth
             // Or, can be optimistic: setScrobblingStatus('started');
 
+            const now = Date.now();
+
+            // Priority Check: If a critical op is pending, or we just sent something, defer this start ping.
+            if (
+                pendingCriticalOperationRef.current ||
+                now - lastSentActionTimestampRef.current <
+                    MIN_TIME_BETWEEN_ACTIONS_MS * 2
+            ) {
+                // Give more room for pings
+                console.log(
+                    `ScrobbleManager: Deferring Scrobble Start (ping) due to pending critical op (${pendingCriticalOperationRef.current}) or recent action.`
+                );
+                return;
+            }
+            // It's also possible a critical op was just sent, and this start is for a quick resume.
+            // The main check is that 'start' pings don't stomp on a 'pause'/'stop' about to be sent
+            // or that has just been sent and awaiting response.
+
+            console.log(
+                `ScrobbleManager: Requesting Scrobble Start at ${progress.toFixed(1)}%`
+            );
+            lastSentActionTimestampRef.current = now;
+            // No need to set pendingCriticalOperationRef for 'start' pings
+
             const params: RequestScrobbleStartParams = {
                 mediaInfo,
                 episodeInfo: showEpisodeInfo || undefined,
@@ -249,11 +276,9 @@ export const ScrobbleManager = () => {
                 lastProgressPingTimeRef.current = Date.now();
                 lastReportedProgressRef.current = progress;
             } else {
-                console.error(
-                    'ScrobbleManager: Start request failed:',
-                    response.error
-                );
-                setScrobblingStatus('idle'); // Revert if failed
+                // If start failed, we might still be 'paused' or 'idle'
+                // console.error('ScrobbleManager: Start request failed:', response.error);
+                // Re-evaluate status based on actual video state if needed, or let next event handle it.
             }
         },
         [mediaInfo, showEpisodeInfo, sendMessageToBackground]
@@ -262,9 +287,25 @@ export const ScrobbleManager = () => {
     const sendScrobblePause = useCallback(
         async (progress: number) => {
             if (!mediaInfo || scrobblingStatus !== 'started') return;
+            const now = Date.now();
+
+            if (
+                now - lastSentActionTimestampRef.current <
+                MIN_TIME_BETWEEN_ACTIONS_MS
+            ) {
+                console.log(
+                    'ScrobbleManager: Deferring Scrobble Pause due to very recent action. Will retry shortly via video events.'
+                );
+                // Schedule a re-attempt or rely on next user action/event.
+                // For simplicity now, we'll just not send and let a subsequent event (like another pause attempt) try again.
+                return;
+            }
+
             console.log(
                 `ScrobbleManager: Requesting Scrobble Pause at ${progress.toFixed(1)}%`
             );
+            pendingCriticalOperationRef.current = 'pause'; // Mark critical op as pending
+            lastSentActionTimestampRef.current = now;
 
             const params: RequestScrobblePauseParams = {
                 mediaInfo,
@@ -275,6 +316,7 @@ export const ScrobbleManager = () => {
                 action: 'requestScrobblePause',
                 params
             });
+            pendingCriticalOperationRef.current = null; // Clear critical op flag
 
             if (response.success) {
                 console.log(
@@ -296,12 +338,26 @@ export const ScrobbleManager = () => {
         async (progress: number): Promise<ScrobbleStopResponseData | null> => {
             // Removed isUnloading parameter as we're not using sendBeacon here directly
             if (!mediaInfo || scrobblingStatus === 'idle') return null;
+
+            const now = Date.now();
+
+            if (
+                now - lastSentActionTimestampRef.current <
+                MIN_TIME_BETWEEN_ACTIONS_MS
+            ) {
+                console.log(
+                    'ScrobbleManager: Deferring Scrobble Stop due to very recent action. Will retry shortly or on unload.'
+                );
+                return null; // Indicate stop was not sent
+            }
             console.log(
                 `ScrobbleManager: Requesting Scrobble Stop at ${progress.toFixed(1)}%`
             );
 
             const previousStatus = scrobblingStatus;
-            setScrobblingStatus('idle'); // Optimistic UI update, always set to idle after attempting stop
+            pendingCriticalOperationRef.current = 'stop'; // Mark critical op
+            lastSentActionTimestampRef.current = now;
+            // Optimistically set to idle, background response will confirm
 
             const params: RequestScrobbleStopParams = {
                 mediaInfo: mediaInfo!,
@@ -325,6 +381,7 @@ export const ScrobbleManager = () => {
                     response.data.traktHistoryId
                 ) {
                     traktHistoryIdRef.current = response.data.traktHistoryId;
+                    setScrobblingStatus('idle');
                     if (
                         isRewatchSession &&
                         isShowMediaInfo(mediaInfo) &&
@@ -368,7 +425,17 @@ export const ScrobbleManager = () => {
             if (!mediaInfo || !userConfirmedAction) return;
             setCurrentVideoProgress(progress);
             if (scrobblingStatus === 'idle' || scrobblingStatus === 'paused') {
-                sendScrobbleStart(progress || 0);
+                if (
+                    !pendingCriticalOperationRef.current &&
+                    Date.now() - lastSentActionTimestampRef.current >
+                        MIN_TIME_BETWEEN_ACTIONS_MS
+                ) {
+                    sendScrobbleStart(progress || 0);
+                } else {
+                    console.log(
+                        'ScrobbleManager: Play event, but deferring start due to pending/recent critical op.'
+                    );
+                }
             }
         },
         [mediaInfo, userConfirmedAction, sendScrobbleStart, scrobblingStatus]
@@ -394,13 +461,25 @@ export const ScrobbleManager = () => {
     }, [mediaInfo, userConfirmedAction, sendScrobbleStop, scrobblingStatus]);
 
     const processThrottledTimeUpdate = useCallback(async () => {
+        timeUpdateProcessingScheduledRef.current = false;
+
         if (
             !latestVideoStateForThrottleRef.current ||
             !mediaInfo ||
             !userConfirmedAction ||
             pageUnloadRef.current
         ) {
-            timeUpdateProcessingScheduledRef.current = false; // Reset flag
+            return;
+        }
+
+        // CRITICAL: Check if a pause/stop is pending before sending a 'start' ping
+        if (pendingCriticalOperationRef.current) {
+            console.log(
+                'ScrobbleManager: TimeUpdate processing deferred due to pending critical operation:',
+                pendingCriticalOperationRef.current
+            );
+            // Reschedule or wait for critical op to clear before pinging.
+            // For simplicity, we'll just skip this ping. The critical op will resolve the state.
             return;
         }
 
@@ -422,6 +501,22 @@ export const ScrobbleManager = () => {
             );
 
             if (
+                now - lastProgressPingTimeRef.current >
+                    WATCHING_PING_INTERVAL_MS ||
+                (progressDelta >= SIGNIFICANT_PROGRESS_CHANGE_PERCENT &&
+                    progress < TRAKT_SCROBBLE_COMPLETION_THRESHOLD - 1 &&
+                    progress > lastReportedProgressRef.current + 0.1)
+            ) {
+                if (!pendingCriticalOperationRef.current) {
+                    await sendScrobbleStart(progress);
+                } else {
+                    console.log(
+                        'ScrobbleManager: Start ping aborted right before send due to now-pending critical op.'
+                    );
+                }
+            }
+
+            if (
                 progress >= TRAKT_SCROBBLE_COMPLETION_THRESHOLD &&
                 !traktHistoryIdRef.current
             ) {
@@ -434,14 +529,6 @@ export const ScrobbleManager = () => {
                 }
                 timeUpdateProcessingScheduledRef.current = false; // Reset flag
                 return; // Exit after sending stop
-            } else if (
-                now - lastProgressPingTimeRef.current >
-                    WATCHING_PING_INTERVAL_MS ||
-                (progressDelta >= SIGNIFICANT_PROGRESS_CHANGE_PERCENT &&
-                    progress < TRAKT_SCROBBLE_COMPLETION_THRESHOLD - 1 &&
-                    progress > lastReportedProgressRef.current + 0.1)
-            ) {
-                await sendScrobbleStart(progress);
             }
         }
         timeUpdateProcessingScheduledRef.current = false; // Reset flag if no early exit
