@@ -158,13 +158,7 @@ export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
             <div
                 className={contentWrapperClasses}
                 onMouseEnter={() => setIsExpanded(true)}
-                onMouseLeave={() => {
-                    if (
-                        !isEffectivelyScrobbled ||
-                        !initialExpandDoneRef.current
-                    )
-                        setIsExpanded(false);
-                }}
+                onMouseLeave={() => setIsExpanded(false)}
             >
                 <div ref={contentRef} className="py-2 px-3">
                     {/* Status Area */}
