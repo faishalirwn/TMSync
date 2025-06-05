@@ -19,6 +19,7 @@ export const xprimeTvConfig: SiteConfigBase = createSiteConfig({
         movie: { title: '', year: '' },
         show: { title: '', year: '' }
     },
+    usesIframePlayer: false,
     highlighting: {
         getCurrentHighlightContextKey: (url: string): string | null => {
             const path = new URL(url).pathname;

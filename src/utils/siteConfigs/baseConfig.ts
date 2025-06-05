@@ -37,6 +37,8 @@ export interface SiteConfigBase {
         movie: RegExp;
         show: RegExp;
     };
+    usesIframePlayer?: boolean;
+    iframePlayerSelector?: string;
 
     isWatchPage(url: string): boolean;
     isShowPage(url: string): boolean;

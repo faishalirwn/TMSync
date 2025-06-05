@@ -1,9 +1,10 @@
 import { callApi } from './utils/api';
 import { calculateConfidence } from './utils/confidenceHelper';
 import { getCurrentSiteConfig } from './utils/siteConfigs';
-import { MediaType, SiteConfigBase } from './utils/siteConfigs/baseConfig';
+import { SiteConfigBase } from './utils/siteConfigs/baseConfig';
 import { isMovieMediaInfo, isShowMediaInfo } from './utils/typeGuards';
 import {
+    ActiveScrobbleState,
     HistoryBody,
     HostnameType,
     MediaInfoResponse,
@@ -12,7 +13,14 @@ import {
     MessageResponse,
     MovieMediaInfo,
     RatingInfo,
+    RequestManualAddToHistoryParams,
+    RequestScrobblePauseParams,
+    RequestScrobbleStartParams,
+    RequestScrobbleStopParams,
+    ScrobbleBody,
     ScrobbleResponse,
+    ScrobbleStopResponseData,
+    SeasonEpisodeObj,
     ShowMediaInfo,
     TraktRating,
     WatchStatusInfo
@@ -23,34 +31,86 @@ export type ScoredMediaInfo = MediaInfoResponse & {
     confidenceScore: number;
 };
 
+let activeScrobble: ActiveScrobbleState = {
+    tabId: null,
+    mediaInfo: null,
+    episodeInfo: undefined,
+    currentProgress: 0,
+    status: 'idle',
+    traktMediaType: null,
+    lastUpdateTime: 0
+};
+
+const TRAKT_SCROBBLE_COMPLETION_THRESHOLD = 80;
+
+function buildTraktScrobblePayload(
+    mediaInfo: MediaInfoResponse,
+    episodeInfo: SeasonEpisodeObj | undefined | null,
+    progress: number
+): ScrobbleBody {
+    const payload: ScrobbleBody = { progress };
+
+    if (isMovieMediaInfo(mediaInfo)) {
+        payload.movie = mediaInfo.movie;
+    } else if (isShowMediaInfo(mediaInfo) && episodeInfo) {
+        payload.show = mediaInfo.show;
+        payload.episode = episodeInfo;
+    } else {
+        throw new Error(
+            'Invalid mediaInfo or missing episodeInfo for show to build scrobble payload'
+        );
+    }
+    return payload;
+}
+
+function resetActiveScrobbleState() {
+    activeScrobble = {
+        tabId: null,
+        mediaInfo: null,
+        episodeInfo: undefined,
+        currentProgress: 0,
+        status: 'idle',
+        traktMediaType: null,
+        lastUpdateTime: 0,
+        previousScrobbledUrl: ''
+    };
+    console.log('Active scrobble state reset.');
+}
+
 chrome.runtime.onMessage.addListener(
     (request: MessageRequest, sender, sendResponse) => {
         (async () => {
+            const tabId = sender.tab?.id;
+
             if (!sender.tab || !sender.tab.url) {
                 sendResponse({ success: false, error: 'no sender.tab' });
                 return true;
             }
-
             const url = sender.tab.url;
             const urlObj = new URL(url);
             const hostname = urlObj.hostname as HostnameType;
             const siteConfig: SiteConfigBase | null =
                 getCurrentSiteConfig(hostname);
 
-            if (!siteConfig) {
-                sendResponse({
-                    success: false,
-                    error: `No site config found for ${hostname}`
-                });
-                return true;
+            if (
+                !siteConfig &&
+                request.action !== 'confirmMedia' &&
+                request.action !== 'manualSearch' &&
+                !request.action.startsWith('requestScrobble') &&
+                request.action !== 'requestManualAddToHistory'
+            ) {
+                if (request.action === 'mediaInfo') {
+                    sendResponse({
+                        success: false,
+                        error: `No site config found for ${hostname}`
+                    });
+                    return true;
+                }
             }
 
-            const tabUrlIdentifier = siteConfig.getUrlIdentifier(url);
-
-            if (!tabUrlIdentifier) {
-                sendResponse({ success: false, error: 'tab url parse fail' });
-                return true;
-            }
+            const tabUrlIdentifier =
+                siteConfig?.getUrlIdentifier(url) ||
+                (tabId ? `tab-${tabId}-media` : 'unknown-identifier');
 
             if (request.action === 'mediaInfo') {
                 const originalQuery = request.params;
@@ -424,6 +484,32 @@ chrome.runtime.onMessage.addListener(
                 return true;
             }
 
+            if (request.action === 'confirmMedia') {
+                const confirmedMedia = request.params as MediaInfoResponse;
+                console.log(
+                    'Background: confirmMedia request:',
+                    confirmedMedia,
+                    'for tabUrlIdentifier:',
+                    tabUrlIdentifier
+                );
+                try {
+                    await chrome.storage.local.set({
+                        [tabUrlIdentifier]: {
+                            mediaInfo: confirmedMedia,
+                            confidence: 'high',
+                            confirmedAt: Date.now()
+                        }
+                    });
+                    sendResponse({ success: true });
+                } catch (error) {
+                    console.error('Error saving confirmed media:', error);
+                    sendResponse({
+                        success: false,
+                        error: 'Failed to save confirmation'
+                    });
+                }
+                return true;
+            }
             if (request.action === 'rateItem') {
                 const params = request.params as {
                     mediaInfo: MediaInfoResponse;
@@ -540,71 +626,260 @@ chrome.runtime.onMessage.addListener(
                 return true;
             }
 
-            if (request.action === 'confirmMedia') {
-                const confirmedMedia = request.params as MediaInfoResponse;
-                console.log('Received confirmMedia request:', confirmedMedia);
-                try {
-                    await chrome.storage.local.set({
-                        [tabUrlIdentifier]: {
-                            mediaInfo: confirmedMedia,
-                            confidence: 'high',
-                            confirmedAt: Date.now()
-                        }
-                    });
-                    const response: MessageResponse<null> = { success: true };
-                    sendResponse(response);
-                } catch (error) {
-                    console.error('Error saving confirmed media:', error);
-                    const response: MessageResponse<null> = {
+            if (request.action === 'requestScrobbleStart') {
+                if (!tabId) {
+                    sendResponse({
                         success: false,
-                        error: 'Failed to save confirmation'
+                        error: 'Tab ID missing for scrobble start'
+                    });
+                    return true;
+                }
+                const params = request.params as RequestScrobbleStartParams;
+                console.log(
+                    `Background: requestScrobbleStart from tab ${tabId}`,
+                    params
+                );
+
+                try {
+                    // If another tab is actively scrobbling, pause it first
+                    if (
+                        activeScrobble.tabId &&
+                        activeScrobble.tabId !== tabId &&
+                        activeScrobble.status === 'started'
+                    ) {
+                        console.log(
+                            `Pausing active scrobble on tab ${activeScrobble.tabId} due to new start on tab ${tabId}`
+                        );
+                        const oldScrobblePayload = buildTraktScrobblePayload(
+                            activeScrobble.mediaInfo!,
+                            activeScrobble.episodeInfo,
+                            activeScrobble.currentProgress
+                        );
+                        await callApi(
+                            `https://api.trakt.tv/scrobble/pause`,
+                            'POST',
+                            oldScrobblePayload
+                        );
+                        // Update state for the old scrobble, though it's effectively superseded
+                        if (activeScrobble.tabId) {
+                            // Check just in case
+                            // We don't clear activeScrobble fully here, it will be overwritten by the new one.
+                        }
+                    }
+
+                    const payload = buildTraktScrobblePayload(
+                        params.mediaInfo,
+                        params.episodeInfo,
+                        params.progress
+                    );
+                    await callApi(
+                        `https://api.trakt.tv/scrobble/start`,
+                        'POST',
+                        payload
+                    );
+
+                    activeScrobble = {
+                        tabId: tabId,
+                        mediaInfo: params.mediaInfo,
+                        episodeInfo: params.episodeInfo,
+                        currentProgress: params.progress,
+                        status: 'started',
+                        traktMediaType: isMovieMediaInfo(params.mediaInfo)
+                            ? 'movie'
+                            : 'episode',
+                        lastUpdateTime: Date.now(),
+                        previousScrobbledUrl: url
                     };
-                    sendResponse(response);
+                    console.log(
+                        'Background: Scrobble started successfully. ActiveScrobble:',
+                        activeScrobble
+                    );
+                    sendResponse({ success: true });
+                } catch (error) {
+                    console.error('Error during scrobble/start:', error);
+                    sendResponse({
+                        success: false,
+                        error:
+                            error instanceof Error
+                                ? error.message
+                                : 'Scrobble start failed'
+                    });
                 }
                 return true;
             }
 
-            if (request.action === 'scrobble') {
-                const cacheResult =
-                    await chrome.storage.local.get(tabUrlIdentifier);
-                const cachedItem = cacheResult[tabUrlIdentifier];
+            if (request.action === 'requestScrobblePause') {
+                if (!tabId) {
+                    sendResponse({
+                        success: false,
+                        error: 'Tab ID missing for scrobble pause'
+                    });
+                    return true;
+                }
+                const params = request.params as RequestScrobblePauseParams;
+                console.log(
+                    `Background: requestScrobblePause from tab ${tabId}`,
+                    params
+                );
 
                 if (
-                    !cachedItem ||
-                    !cachedItem.mediaInfo ||
-                    cachedItem.confidence !== 'high'
+                    activeScrobble.tabId !== tabId ||
+                    activeScrobble.status !== 'started'
                 ) {
-                    const errorMsg =
-                        'Cannot scrobble: Media info not found or not confirmed with high confidence.';
-                    console.error(errorMsg, cachedItem);
-                    sendResponse({ success: false, error: errorMsg });
+                    console.warn(
+                        'Received pause request for a non-active or non-matching scrobble. Ignoring.'
+                    );
+                    sendResponse({
+                        success: false,
+                        error: 'Scrobble not active on this tab or not started.'
+                    });
                     return true;
                 }
 
-                const mediaInfo: MovieMediaInfo | ShowMediaInfo =
-                    cachedItem.mediaInfo;
-                let body: HistoryBody = {};
+                try {
+                    const payload = buildTraktScrobblePayload(
+                        params.mediaInfo,
+                        params.episodeInfo,
+                        params.progress
+                    );
+                    await callApi(
+                        `https://api.trakt.tv/scrobble/pause`,
+                        'POST',
+                        payload
+                    );
 
-                if (mediaInfo.type === 'movie' && 'movie' in mediaInfo) {
-                    body.movies = [{ ids: mediaInfo.movie.ids }];
-                } else if (mediaInfo.type === 'show' && 'show' in mediaInfo) {
-                    const seasonEpisode = siteConfig.getSeasonEpisodeObj(url);
-                    if (!seasonEpisode) {
-                        sendResponse({
-                            success: false,
-                            error: 'season episode parse fail for show'
-                        });
-                        return true;
+                    activeScrobble.currentProgress = params.progress;
+                    activeScrobble.status = 'paused';
+                    activeScrobble.lastUpdateTime = Date.now();
+                    console.log(
+                        'Background: Scrobble paused successfully. ActiveScrobble:',
+                        activeScrobble
+                    );
+                    sendResponse({ success: true });
+                } catch (error) {
+                    console.error('Error during scrobble/pause:', error);
+                    sendResponse({
+                        success: false,
+                        error:
+                            error instanceof Error
+                                ? error.message
+                                : 'Scrobble pause failed'
+                    });
+                }
+                return true;
+            }
+
+            if (request.action === 'requestScrobbleStop') {
+                if (!tabId) {
+                    sendResponse({
+                        success: false,
+                        error: 'Tab ID missing for scrobble stop'
+                    });
+                    return true;
+                }
+                const params = request.params as RequestScrobbleStopParams;
+                console.log(
+                    `Background: requestScrobbleStop from tab ${tabId}`,
+                    params
+                );
+
+                if (activeScrobble.tabId !== tabId) {
+                    console.warn(
+                        'Received stop request for a non-active or non-matching scrobble. Ignoring.'
+                    );
+                    sendResponse({
+                        success: false,
+                        error: 'Scrobble not active on this tab for stop.'
+                    });
+                    return true;
+                }
+
+                let responseData: ScrobbleStopResponseData = {
+                    action: 'error'
+                };
+
+                try {
+                    const payload = buildTraktScrobblePayload(
+                        params.mediaInfo,
+                        params.episodeInfo,
+                        params.progress
+                    );
+                    const traktResponse = await callApi<any>(
+                        `https://api.trakt.tv/scrobble/stop`,
+                        'POST',
+                        payload
+                    );
+                    console.log('Trakt stop response:', traktResponse);
+
+                    if (
+                        params.progress >= TRAKT_SCROBBLE_COMPLETION_THRESHOLD
+                    ) {
+                        responseData = {
+                            action: 'watched',
+                            traktHistoryId:
+                                traktResponse?.id ||
+                                (traktResponse?.action === 'scrobble'
+                                    ? traktResponse[
+                                          activeScrobble.traktMediaType!
+                                      ]?.ids?.trakt
+                                    : undefined)
+                            // Trakt's stop response is a bit inconsistent. Sometimes it gives a direct ID,
+                            // sometimes it gives the media object with its ID under 'movie' or 'episode'.
+                            // We might need to refine history ID extraction based on actual responses.
+                            // A more robust way to get history ID might be a subsequent /sync/history call if traktResponse.id is not present.
+                        };
+                        console.log(
+                            'Background: Scrobble stopped (watched). Progress:',
+                            params.progress
+                        );
+                    } else {
+                        responseData = { action: 'paused_incomplete' };
+                        console.log(
+                            'Background: Scrobble stopped (incomplete). Progress:',
+                            params.progress
+                        );
                     }
-                    const { season, number } = seasonEpisode;
 
-                    body.shows = [
+                    resetActiveScrobbleState();
+                    sendResponse({ success: true, data: responseData });
+                } catch (error) {
+                    console.error('Error during scrobble/stop:', error);
+                    // Don't reset activeScrobble on error, content script might retry or handle. Or do reset?
+                    // For now, let's assume content script will manage if stop fails.
+                    // resetActiveScrobbleState(); // Or perhaps not, to allow retries.
+                    sendResponse({
+                        success: false,
+                        error:
+                            error instanceof Error
+                                ? error.message
+                                : 'Scrobble stop failed',
+                        data: responseData
+                    });
+                }
+                return true;
+            }
+
+            if (request.action === 'requestManualAddToHistory') {
+                const params =
+                    request.params as RequestManualAddToHistoryParams;
+                console.log(`Background: requestManualAddToHistory`, params);
+
+                const historyBody: HistoryBody = {};
+                if (isMovieMediaInfo(params.mediaInfo)) {
+                    historyBody.movies = [{ ids: params.mediaInfo.movie.ids }];
+                } else if (
+                    isShowMediaInfo(params.mediaInfo) &&
+                    params.episodeInfo
+                ) {
+                    historyBody.shows = [
                         {
-                            ids: mediaInfo.show.ids,
+                            ids: params.mediaInfo.show.ids,
                             seasons: [
                                 {
-                                    number: season,
-                                    episodes: [{ number: number }]
+                                    number: params.episodeInfo.season,
+                                    episodes: [
+                                        { number: params.episodeInfo.number }
+                                    ]
                                 }
                             ]
                         }
@@ -612,53 +887,79 @@ chrome.runtime.onMessage.addListener(
                 } else {
                     sendResponse({
                         success: false,
-                        error: 'Invalid mediaInfo structure for scrobble'
+                        error: 'Invalid media for manual history add'
                     });
                     return true;
                 }
-                console.log('Scrobble Body:', body);
 
                 try {
                     const addResponse = await callApi(
                         `https://api.trakt.tv/sync/history`,
                         'POST',
-                        body
+                        historyBody
                     );
-                    console.log('Trakt Add History Response:', addResponse);
+                    console.log(
+                        'Trakt Manual Add History Response:',
+                        addResponse
+                    );
 
+                    // To get history ID, similar to old scrobble logic:
+                    // This part needs testing with /sync/history to see if it returns IDs directly
+                    // or if a subsequent fetch is needed.
+                    // For simplicity, we'll assume it might not return an ID directly here.
+                    // The ScrobbleNotification for manual add might not need an undo for now.
                     const historyResponse = await callApi(
-                        `https://api.trakt.tv/sync/history${mediaInfo.type === 'show' ? '/episodes' : ''}?limit=1`,
+                        `https://api.trakt.tv/sync/history${isMovieMediaInfo(params.mediaInfo) ? '/movies' : '/episodes'}/${isMovieMediaInfo(params.mediaInfo) ? params.mediaInfo.movie.ids.trakt : params.mediaInfo.show.ids.trakt}?limit=1`,
                         'GET'
                     );
 
-                    if (!historyResponse || historyResponse.length === 0) {
-                        throw new Error(
-                            'Could not retrieve history ID after scrobble.'
+                    let traktHistoryId: number | undefined;
+                    if (
+                        Array.isArray(historyResponse) &&
+                        historyResponse.length > 0 &&
+                        historyResponse[0].id
+                    ) {
+                        traktHistoryId = historyResponse[0].id;
+                    } else if (
+                        addResponse?.added?.movies ||
+                        addResponse?.added?.shows ||
+                        addResponse?.added?.episodes
+                    ) {
+                        // If the /sync/history response indicates success but no direct ID,
+                        // and we don't have an easy way to get the ID, we'll proceed without it for manual add's undo.
+                        console.log(
+                            'Manual add successful, but history ID not directly available for undo.'
                         );
                     }
 
-                    const traktHistoryId = historyResponse[0].id;
-                    console.log('Retrieved Trakt History ID:', traktHistoryId);
-
-                    const response: MessageResponse<ScrobbleResponse> = {
+                    sendResponse({
                         success: true,
-                        data: { traktHistoryId }
-                    };
-                    sendResponse(response);
+                        data: { traktHistoryId } as ScrobbleResponse
+                    });
                 } catch (error) {
-                    console.error('Error during scrobble:', error);
-                    const response: MessageResponse<null> = {
+                    console.error('Error during manual add to history:', error);
+                    sendResponse({
                         success: false,
                         error:
                             error instanceof Error
                                 ? error.message
-                                : 'fail scrobble dawg'
-                    };
-                    sendResponse(response);
+                                : 'Manual history add failed'
+                    });
                 }
                 return true;
             }
 
+            if (request.action === 'scrobble') {
+                console.warn(
+                    "Legacy 'scrobble' action called. This should be phased out."
+                );
+
+                sendResponse({
+                    success: false,
+                    error: 'Legacy scrobble not fully implemented here yet'
+                });
+                return true;
+            }
             if (request.action === 'undoScrobble') {
                 const historyId = request.params.historyId;
                 try {
@@ -667,23 +968,181 @@ chrome.runtime.onMessage.addListener(
                         'POST',
                         { ids: [historyId] }
                     );
-                    const response: MessageResponse<null> = { success: true };
-                    sendResponse(response);
+                    sendResponse({ success: true });
                 } catch (error) {
-                    console.error('Error during undoScrobble:', error);
-                    const response: MessageResponse<null> = {
+                    sendResponse({
                         success: false,
                         error:
                             error instanceof Error
                                 ? error.message
-                                : 'fail undo scrobble dawg'
-                    };
-                    sendResponse(response);
+                                : 'Undo failed'
+                    });
                 }
                 return true;
             }
-        })();
 
+            // Default for unhandled actions
+        })();
         return true;
     }
 );
+
+chrome.tabs.onRemoved.addListener(async (tabId, removeInfo) => {
+    if (activeScrobble.tabId === tabId && activeScrobble.mediaInfo) {
+        console.log(
+            `Background: Tab ${tabId} (active scrobble) removed. Status: ${activeScrobble.status}, Progress: ${activeScrobble.currentProgress}%`
+        );
+
+        if (
+            (activeScrobble.status === 'started' ||
+                activeScrobble.status === 'paused') &&
+            activeScrobble.currentProgress >=
+                TRAKT_SCROBBLE_COMPLETION_THRESHOLD
+        ) {
+            try {
+                console.log(
+                    `Attempting to STOP scrobble for closed tab ${tabId} as progress was sufficient.`
+                );
+                const payload = buildTraktScrobblePayload(
+                    activeScrobble.mediaInfo,
+                    activeScrobble.episodeInfo,
+                    activeScrobble.currentProgress
+                );
+                await callApi(
+                    `https://api.trakt.tv/scrobble/stop`,
+                    'POST',
+                    payload
+                );
+                console.log(`Scrobble STOPPED for closed tab ${tabId}.`);
+            } catch (error) {
+                console.error(
+                    `Error STOPPING scrobble for closed tab ${tabId}:`,
+                    error
+                );
+            }
+        } else if (activeScrobble.status === 'started') {
+            try {
+                console.log(
+                    `Attempting to PAUSE scrobble for closed tab ${tabId} as progress was insufficient for stop.`
+                );
+                const payload = buildTraktScrobblePayload(
+                    activeScrobble.mediaInfo,
+                    activeScrobble.episodeInfo,
+                    activeScrobble.currentProgress
+                );
+                await callApi(
+                    `https://api.trakt.tv/scrobble/pause`,
+                    'POST',
+                    payload
+                );
+                console.log(`Scrobble PAUSED for closed tab ${tabId}.`);
+            } catch (error) {
+                console.error(
+                    `Error PAUSING scrobble for closed tab ${tabId}:`,
+                    error
+                );
+            }
+        }
+
+        resetActiveScrobbleState();
+    }
+});
+
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+    if (
+        activeScrobble.tabId === tabId &&
+        changeInfo.url &&
+        activeScrobble.mediaInfo &&
+        tab.url
+    ) {
+        // More robust check: if the new URL is for a different media item or not a watch page
+        // const newUrlSiteConfig = getCurrentSiteConfig(
+        //     new URL(tab.url).hostname as HostnameType
+        // );
+        // const oldMediaUrlIdentifier = siteConfig?.getUrlIdentifier(
+        //     activeScrobble.previousScrobbledUrl || ''
+        // ); // Need to store previous URL
+        // const newMediaUrlIdentifier = newUrlSiteConfig?.getUrlIdentifier(
+        //     tab.url
+        // );
+
+        // A simple check: if the base path of the scrobbled media's URL no longer matches the new tab URL's path
+        // This is a heuristic and might need refinement based on how your getUrlIdentifier works.
+        // A robust way is if newMediaUrlIdentifier implies a *different* media item or not a watch page.
+        let navigatedAwayFromMedia = false;
+        if (activeScrobble.mediaInfo && activeScrobble.previousScrobbledUrl) {
+            // Store previousScrobbledUrl in activeScrobble
+            const oldScrobbledUrl = new URL(
+                activeScrobble.previousScrobbledUrl
+            );
+            const newCurrentUrl = new URL(tab.url);
+            if (oldScrobbledUrl.pathname !== newCurrentUrl.pathname) {
+                // Basic path check
+                navigatedAwayFromMedia = true;
+            }
+            // More advanced:
+            // const oldScrobbledMediaId = siteConfig?.getTmdbId?.(activeScrobble.previousScrobbledUrl) || siteConfig?.getTitle(activeScrobble.previousScrobbledUrl);
+            // const newPotentialMediaId = newUrlSiteConfig?.getTmdbId?.(tab.url) || newUrlSiteConfig?.getTitle(tab.url);
+            // if (oldScrobbledMediaId !== newPotentialMediaId) navigatedAwayFromMedia = true;
+        } else {
+            navigatedAwayFromMedia = true; // If no previous URL, assume navigation away
+        }
+
+        if (navigatedAwayFromMedia) {
+            console.log(
+                `Background: Tab ${tabId} (active scrobble) navigated away. Status: ${activeScrobble.status}, Progress: ${activeScrobble.currentProgress}%`
+            );
+            if (
+                (activeScrobble.status === 'started' ||
+                    activeScrobble.status === 'paused') &&
+                activeScrobble.currentProgress >=
+                    TRAKT_SCROBBLE_COMPLETION_THRESHOLD
+            ) {
+                try {
+                    console.log(
+                        `Attempting to STOP scrobble for navigated tab ${tabId}.`
+                    );
+                    const payload = buildTraktScrobblePayload(
+                        activeScrobble.mediaInfo,
+                        activeScrobble.episodeInfo,
+                        activeScrobble.currentProgress
+                    );
+                    await callApi(
+                        `https://api.trakt.tv/scrobble/stop`,
+                        'POST',
+                        payload
+                    );
+                    console.log(`Scrobble STOPPED for navigated tab ${tabId}.`);
+                } catch (error) {
+                    console.error(
+                        `Error STOPPING scrobble for navigated tab ${tabId}:`,
+                        error
+                    );
+                }
+            } else if (activeScrobble.status === 'started') {
+                try {
+                    console.log(
+                        `Attempting to PAUSE scrobble for navigated tab ${tabId}.`
+                    );
+                    const payload = buildTraktScrobblePayload(
+                        activeScrobble.mediaInfo,
+                        activeScrobble.episodeInfo,
+                        activeScrobble.currentProgress
+                    );
+                    await callApi(
+                        `https://api.trakt.tv/scrobble/pause`,
+                        'POST',
+                        payload
+                    );
+                    console.log(`Scrobble PAUSED for navigated tab ${tabId}.`);
+                } catch (error) {
+                    console.error(
+                        `Error PAUSING scrobble for navigated tab ${tabId}:`,
+                        error
+                    );
+                }
+            }
+            resetActiveScrobbleState();
+        }
+    }
+});

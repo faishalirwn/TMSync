@@ -129,6 +129,50 @@ export interface MediaStatusPayload {
     ratingInfo?: RatingInfo;
 }
 
+export interface RequestScrobbleStartParams {
+    mediaInfo: MediaInfoResponse;
+    episodeInfo?: SeasonEpisodeObj;
+    progress: number;
+}
+export interface RequestScrobbleStartRequest {
+    action: 'requestScrobbleStart';
+    params: RequestScrobbleStartParams;
+}
+
+export interface RequestScrobblePauseParams {
+    mediaInfo: MediaInfoResponse;
+    episodeInfo?: SeasonEpisodeObj;
+    progress: number;
+}
+export interface RequestScrobblePauseRequest {
+    action: 'requestScrobblePause';
+    params: RequestScrobblePauseParams;
+}
+
+export interface RequestScrobbleStopParams {
+    mediaInfo: MediaInfoResponse;
+    episodeInfo?: SeasonEpisodeObj;
+    progress: number;
+}
+export interface RequestScrobbleStopRequest {
+    action: 'requestScrobbleStop';
+    params: RequestScrobbleStopParams;
+}
+
+export interface ScrobbleStopResponseData {
+    traktHistoryId?: number;
+    action: 'watched' | 'paused_incomplete' | 'error';
+}
+
+export interface RequestManualAddToHistoryParams {
+    mediaInfo: MediaInfoResponse;
+    episodeInfo?: SeasonEpisodeObj;
+}
+export interface RequestManualAddToHistoryRequest {
+    action: 'requestManualAddToHistory';
+    params: RequestManualAddToHistoryParams;
+}
+
 export interface MediaInfoRequest {
     action: 'mediaInfo';
     params: {
@@ -181,7 +225,12 @@ export type MessageRequest =
     | VideoMonitorRequest
     | ManualSearchRequest
     | ConfirmMediaRequest
-    | RateItemRequest;
+    | RateItemRequest
+    | RequestScrobbleStartRequest
+    | RequestScrobblePauseRequest
+    | RequestScrobbleStopRequest
+    | RequestManualAddToHistoryRequest;
+
 export interface MessageResponse<T> {
     success: boolean;
     data?: T;
@@ -195,6 +244,19 @@ export interface ScrobbleResponse {
 }
 
 export type MediaInfoMessageResponse = MessageResponse<MediaStatusPayload>;
+
+export type ActiveScrobbleStatus = 'idle' | 'started' | 'paused';
+
+export interface ActiveScrobbleState {
+    tabId: number | null;
+    mediaInfo: MediaInfoResponse | null;
+    episodeInfo?: SeasonEpisodeObj | null;
+    currentProgress: number;
+    status: ActiveScrobbleStatus;
+    traktMediaType: 'movie' | 'episode' | null;
+    lastUpdateTime: number;
+    previousScrobbledUrl?: string;
+}
 
 export type HostnameType = 'www.cineby.app' | 'freek.to';
 

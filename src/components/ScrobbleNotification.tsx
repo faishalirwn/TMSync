@@ -1,8 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-
 import { isMovieMediaInfo, isShowMediaInfo } from '../utils/typeGuards';
-import { RatingInfo, ScrobbleNotificationMediaType } from '../utils/types';
+import {
+    RatingInfo,
+    ScrobbleNotificationMediaType,
+    ActiveScrobbleStatus
+} from '../utils/types';
 
+// Star component remains the same
 const Star: React.FC<{
     filled: boolean;
     onClick: () => void;
@@ -25,11 +29,12 @@ const Star: React.FC<{
 
 interface ScrobbleNotificationProps {
     mediaInfo: ScrobbleNotificationMediaType;
-    isScrobbled?: boolean;
-    traktHistoryId?: number | null;
-    onScrobble: () => Promise<void>;
+    isEffectivelyScrobbled: boolean; // True if traktHistoryIdRef.current has a value
+    traktHistoryId: number | null;
+    liveScrobbleStatus: ActiveScrobbleStatus; // 'idle', 'started', 'paused'
+    onManualScrobble: () => Promise<void>; // Renamed from onScrobble
     onUndoScrobble: () => Promise<void>;
-    isScrobbling?: boolean;
+    isProcessingAction: boolean; // Generic flag for when any scrobble/undo/rating action is in progress
 
     ratingInfo: RatingInfo | null;
     onRate: (rating: number) => void;
@@ -37,48 +42,58 @@ interface ScrobbleNotificationProps {
 
 export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
     mediaInfo,
-    isScrobbled,
+    isEffectivelyScrobbled,
     traktHistoryId,
-    onScrobble,
+    liveScrobbleStatus,
+    onManualScrobble,
     onUndoScrobble,
-    isScrobbling = false,
+    isProcessingAction, // Use this to disable buttons during any related async op
     ratingInfo,
     onRate
 }) => {
     const [isExpanded, setIsExpanded] = useState<boolean>(false);
     const contentRef = useRef<HTMLDivElement>(null);
-    const scrobbleExpandRef = useRef(false);
+    const initialExpandDoneRef = useRef(false); // To ensure auto-expand only happens once after a successful scrobble
 
     const [hoverRating, setHoverRating] = useState<number>(0);
     const [currentRating, setCurrentRating] = useState<number | null>(null);
-    const [isRatingSubmitting, setIsRatingSubmitting] = useState(false);
+    const [isRatingSubmitting, setIsRatingSubmitting] = useState(false); // Keep this specific to rating
 
     useEffect(() => {
         setCurrentRating(ratingInfo?.userRating ?? null);
     }, [ratingInfo]);
 
     useEffect(() => {
-        if (isScrobbled && !scrobbleExpandRef.current) {
+        // Auto-expand when an item is newly scrobbled (i.e., added to history)
+        if (isEffectivelyScrobbled && !initialExpandDoneRef.current) {
             setIsExpanded(true);
-            const timer = setTimeout(() => setIsExpanded(false), 5000);
-            scrobbleExpandRef.current = true;
+            const timer = setTimeout(() => setIsExpanded(false), 7000); // Longer display for confirmation
+            initialExpandDoneRef.current = true;
             return () => clearTimeout(timer);
         }
-    }, [isScrobbled]);
+        // If it's undone, reset the flag so it can expand again if re-scrobbled
+        if (!isEffectivelyScrobbled) {
+            initialExpandDoneRef.current = false;
+        }
+    }, [isEffectivelyScrobbled]);
 
-    const handleScrobble = () => {
-        if (isScrobbling) return;
-        onScrobble();
+    const handleManualScrobbleClick = async () => {
+        if (isProcessingAction) return;
+        await onManualScrobble();
     };
 
-    const handleUndoScrobble = () => {
-        if (isScrobbling || !traktHistoryId) return;
-        onUndoScrobble();
+    const handleUndoScrobbleClick = async () => {
+        if (isProcessingAction || !traktHistoryId) return;
+        await onUndoScrobble();
     };
 
     const handleRatingClick = async (ratingValue: number) => {
-        if (isRatingSubmitting || ratingValue === currentRating) return;
-        console.log(`Rating ${ratingValue} clicked.`);
+        if (
+            isRatingSubmitting ||
+            ratingValue === currentRating ||
+            isProcessingAction
+        )
+            return;
         setIsRatingSubmitting(true);
         try {
             await onRate(ratingValue);
@@ -87,14 +102,6 @@ export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
         } finally {
             setIsRatingSubmitting(false);
         }
-    };
-
-    const handleRatingHover = (ratingValue: number) => {
-        setHoverRating(ratingValue);
-    };
-
-    const handleRatingLeave = () => {
-        setHoverRating(0);
     };
 
     const getMediaTitle = (): string => {
@@ -111,7 +118,6 @@ export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
 
     const title = getMediaTitle();
     const year = getMediaYear();
-
     const isShow = isShowMediaInfo(mediaInfo);
     const season =
         isShow && 'season' in mediaInfo ? mediaInfo.season : undefined;
@@ -133,38 +139,65 @@ export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
         pointer-events-auto 
     `;
 
+    let statusText = '';
+    let statusColor = 'text-gray-700';
+
+    if (isEffectivelyScrobbled) {
+        statusText = 'Added to Trakt History';
+        statusColor = 'text-green-600';
+    } else if (liveScrobbleStatus === 'started') {
+        statusText = 'Scrobbling to Trakt...';
+        statusColor = 'text-blue-600';
+    } else if (liveScrobbleStatus === 'paused') {
+        statusText = 'Scrobbling Paused';
+        statusColor = 'text-yellow-600';
+    }
+
     return (
         <div className={containerClasses}>
             <div
                 className={contentWrapperClasses}
                 onMouseEnter={() => setIsExpanded(true)}
-                onMouseLeave={() => setIsExpanded(false)}
+                onMouseLeave={() => {
+                    if (
+                        !isEffectivelyScrobbled ||
+                        !initialExpandDoneRef.current
+                    )
+                        setIsExpanded(false);
+                }}
             >
                 <div ref={contentRef} className="py-2 px-3">
-                    {isScrobbled ? (
-                        <div>
-                            <p className="text-green-600 font-semibold m-0 p-0 text-sm">
-                                Added to Trakt
+                    {/* Status Area */}
+                    {statusText && (
+                        <p
+                            className={`font-semibold m-0 p-0 text-sm ${statusColor}`}
+                        >
+                            {statusText}
+                        </p>
+                    )}
+                    <p className="text-black text-sm m-0 p-0 truncate">
+                        {title} {year && `(${year})`}
+                    </p>
+                    {isShow &&
+                        season !== undefined &&
+                        episode !== undefined && (
+                            <p className="text-gray-600 text-xs m-0 p-0">
+                                S{String(season).padStart(2, '0')} E
+                                {String(episode).padStart(2, '0')}
                             </p>
-                            <p className="text-black text-sm m-0 p-0 truncate">
-                                {title} {year && `(${year})`}
-                            </p>
-                            {isShow &&
-                                season !== undefined &&
-                                episode !== undefined && (
-                                    <p className="text-gray-600 text-xs m-0 p-0">
-                                        S{String(season).padStart(2, '0')} E
-                                        {String(episode).padStart(2, '0')}
-                                    </p>
-                                )}
+                        )}
 
+                    {/* Actions and Rating Area - Shown if expanded or scrobbled */}
+                    {(isExpanded || isEffectivelyScrobbled) && (
+                        <>
+                            {/* Rating Section */}
                             <div className="mt-1 border-t border-gray-100 pt-1">
                                 <p className="text-xs text-gray-500 mb-0.5">
                                     Your Rating:
                                 </p>
                                 <div
                                     className="flex justify-center items-center space-x-0.5"
-                                    onMouseLeave={handleRatingLeave}
+                                    onMouseLeave={() => setHoverRating(0)}
                                 >
                                     {[...Array(10)].map((_, i) => {
                                         const ratingValue = i + 1;
@@ -183,16 +216,20 @@ export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
                                                     )
                                                 }
                                                 onMouseEnter={() =>
-                                                    handleRatingHover(
-                                                        ratingValue
-                                                    )
+                                                    setHoverRating(ratingValue)
                                                 }
-                                                onMouseLeave={() => {}}
-                                                readOnly={isRatingSubmitting}
+                                                onMouseLeave={() => {}} // Individual star leave handled by parent div
+                                                readOnly={
+                                                    isRatingSubmitting ||
+                                                    isProcessingAction
+                                                }
                                             />
                                         );
                                     })}
-                                    {isRatingSubmitting && (
+                                    {(isRatingSubmitting ||
+                                        (isProcessingAction &&
+                                            liveScrobbleStatus !== 'idle' &&
+                                            !isEffectivelyScrobbled)) && ( // Show spinner for rating or general processing
                                         <svg
                                             className="animate-spin ml-1 h-3 w-3 text-gray-500"
                                             xmlns="http://www.w3.org/2000/svg"
@@ -217,57 +254,34 @@ export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
                                 </div>
                             </div>
 
-                            <button
-                                className="text-red-500 px-2 py-1 rounded border-none cursor-pointer mt-1 text-xs hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
-                                onClick={handleUndoScrobble}
-                                disabled={isScrobbling || isRatingSubmitting}
-                            >
-                                Undo?
-                            </button>
-                        </div>
-                    ) : (
-                        <button
-                            className="text-blue-600 w-full px-2 py-1 rounded border-none cursor-pointer my-1 text-sm hover:bg-blue-50 disabled:opacity-70 disabled:cursor-wait flex items-center justify-center"
-                            onClick={handleScrobble}
-                            disabled={isScrobbling}
-                        >
-                            {isScrobbling ? (
-                                <>
-                                    <svg
-                                        className="animate-spin -ml-1 mr-2 h-4 w-4 text-blue-600"
-                                        xmlns="http://www.w3.org/2000/svg"
-                                        fill="none"
-                                        viewBox="0 0 24 24"
+                            {/* Buttons: Manual Scrobble or Undo */}
+                            <div className="mt-2">
+                                {isEffectivelyScrobbled ? (
+                                    <button
+                                        className="text-red-500 px-2 py-1 rounded border-none cursor-pointer text-xs hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
+                                        onClick={handleUndoScrobbleClick}
+                                        disabled={
+                                            isProcessingAction ||
+                                            !traktHistoryId
+                                        }
                                     >
-                                        <circle
-                                            className="opacity-25"
-                                            cx="12"
-                                            cy="12"
-                                            r="10"
-                                            stroke="currentColor"
-                                            strokeWidth="4"
-                                        ></circle>
-                                        <path
-                                            className="opacity-75"
-                                            fill="currentColor"
-                                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                                        ></path>
-                                    </svg>
-                                    Adding...
-                                </>
-                            ) : (
-                                <div className="flex flex-col items-center">
-                                    <span>Add to Trakt history</span>
-                                    <span className="text-xs text-gray-600 truncate max-w-full px-1">
-                                        {title} {year && `(${year})`}
-                                        {isShow &&
-                                            season !== undefined &&
-                                            episode !== undefined &&
-                                            ` S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}`}
-                                    </span>
-                                </div>
-                            )}
-                        </button>
+                                        Undo History Add?
+                                    </button>
+                                ) : (
+                                    liveScrobbleStatus === 'idle' && ( // Only show manual add if no live scrobble active
+                                        <button
+                                            className="text-blue-600 w-full px-2 py-1 rounded border-none cursor-pointer my-1 text-sm hover:bg-blue-50 disabled:opacity-70 disabled:cursor-wait flex items-center justify-center"
+                                            onClick={handleManualScrobbleClick}
+                                            disabled={isProcessingAction}
+                                        >
+                                            {isProcessingAction
+                                                ? 'Processing...'
+                                                : 'Manually Add to History'}
+                                        </button>
+                                    )
+                                )}
+                            </div>
+                        </>
                     )}
                 </div>
             </div>

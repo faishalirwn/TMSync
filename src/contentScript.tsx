@@ -1,112 +1,245 @@
 import './styles/index.css';
 import React from 'react';
-import { createRoot } from 'react-dom/client';
-import { Root } from 'react-dom/client';
+import { createRoot, Root } from 'react-dom/client';
 import { ScrobbleManager } from './components/ScrobbleManager';
-
-let url = location.href;
-let urlObj = new URL(url);
-let hostname = urlObj.hostname;
 
 const isIframe = window.self !== window.top;
 let reactRoot: Root | null = null;
+let videoMonitorIntervalId: number | null = null;
+let iframeVideoEl: HTMLVideoElement | null = null;
+let iframeTimeUpdateThrottleTimer: number | null = null;
 
-function startVideoMonitoring(): number {
-    let isWatched = false;
-    console.log('Initiate Video progress monitoring', hostname);
+const IFRAME_VIDEO_PROGRESS_UPDATE_THROTTLE_MS = 2000;
 
-    const monitorVideoInterval = window.setInterval(() => {
-        try {
-            const video = document.querySelector('video');
-            if (!video) {
-                return;
-            }
+function handleIframePlay(event: Event) {
+    const video = event.target as HTMLVideoElement;
+    if (!video || isNaN(video.duration) || video.duration === 0) return;
+    console.log('TMSync Iframe: Play event', {
+        currentTime: video.currentTime,
+        duration: video.duration
+    });
+    window.top?.postMessage(
+        {
+            type: 'TMSYNC_IFRAME_PLAY',
+            currentTime: video.currentTime,
+            duration: video.duration,
+            sourceId: 'tmsync-iframe-player'
+        },
+        '*'
+    );
+}
 
-            const watchPercentage = (video.currentTime / video.duration) * 100;
+function handleIframePause(event: Event) {
+    const video = event.target as HTMLVideoElement;
+    if (!video || isNaN(video.duration) || video.duration === 0) return;
+    console.log('TMSync Iframe: Pause event', {
+        currentTime: video.currentTime,
+        duration: video.duration
+    });
+    window.top?.postMessage(
+        {
+            type: 'TMSYNC_IFRAME_PAUSE',
+            currentTime: video.currentTime,
+            duration: video.duration,
+            sourceId: 'tmsync-iframe-player'
+        },
+        '*'
+    );
+}
 
-            if (watchPercentage >= 80 && !isWatched) {
-                console.log('Watch percentage:', watchPercentage);
-                isWatched = true;
+function handleIframeEnded(event: Event) {
+    const video = event.target as HTMLVideoElement;
+    if (!video || isNaN(video.duration) || video.duration === 0) return;
+    console.log('TMSync Iframe: Ended event', {
+        currentTime: video.currentTime,
+        duration: video.duration
+    });
+    window.top?.postMessage(
+        {
+            type: 'TMSYNC_IFRAME_ENDED',
+            currentTime: video.duration,
+            duration: video.duration,
+            sourceId: 'tmsync-iframe-player'
+        },
+        '*'
+    );
+}
 
-                window.clearInterval(monitorVideoInterval);
+function handleIframeTimeUpdate(event: Event) {
+    const video = event.target as HTMLVideoElement;
+    if (!video || video.paused || isNaN(video.duration) || video.duration === 0)
+        return;
 
-                window.top?.postMessage(
-                    {
-                        type: 'TMSYNC_SCROBBLE_EVENT'
-                    },
-                    '*'
+    if (iframeTimeUpdateThrottleTimer) {
+        clearTimeout(iframeTimeUpdateThrottleTimer);
+    }
+
+    iframeTimeUpdateThrottleTimer = window.setTimeout(() => {
+        if (
+            !video ||
+            video.paused ||
+            isNaN(video.duration) ||
+            video.duration === 0
+        )
+            return;
+        console.log('TMSync Iframe: TimeUpdate event (throttled)', {
+            currentTime: video.currentTime,
+            duration: video.duration
+        });
+        window.top?.postMessage(
+            {
+                type: 'TMSYNC_IFRAME_TIMEUPDATE',
+                currentTime: video.currentTime,
+                duration: video.duration,
+                sourceId: 'tmsync-iframe-player'
+            },
+            '*'
+        );
+    }, IFRAME_VIDEO_PROGRESS_UPDATE_THROTTLE_MS);
+}
+
+function attachIframeVideoListeners(videoElement: HTMLVideoElement) {
+    iframeVideoEl = videoElement;
+    console.log(
+        'TMSync Iframe: Attaching listeners to video element:',
+        videoElement
+    );
+    videoElement.addEventListener('play', handleIframePlay);
+    videoElement.addEventListener('pause', handleIframePause);
+    videoElement.addEventListener('ended', handleIframeEnded);
+    videoElement.addEventListener('timeupdate', handleIframeTimeUpdate);
+
+    if (
+        !videoElement.paused &&
+        videoElement.duration > 0 &&
+        videoElement.currentTime > 0
+    ) {
+        console.log(
+            'TMSync Iframe: Video already playing, sending initial play event.'
+        );
+
+        window.top?.postMessage(
+            {
+                type: 'TMSYNC_IFRAME_PLAY',
+                currentTime: videoElement.currentTime,
+                duration: videoElement.duration,
+                sourceId: 'tmsync-iframe-player'
+            },
+            '*'
+        );
+    }
+}
+
+function detachIframeVideoListeners() {
+    if (iframeVideoEl) {
+        console.log('TMSync Iframe: Detaching listeners from video element.');
+        iframeVideoEl.removeEventListener('play', handleIframePlay);
+        iframeVideoEl.removeEventListener('pause', handleIframePause);
+        iframeVideoEl.removeEventListener('ended', handleIframeEnded);
+        iframeVideoEl.removeEventListener('timeupdate', handleIframeTimeUpdate);
+        if (iframeTimeUpdateThrottleTimer) {
+            clearTimeout(iframeTimeUpdateThrottleTimer);
+        }
+        iframeVideoEl = null;
+    }
+}
+
+function startIframeVideoMonitoring() {
+    const videoElement = document.querySelector('video');
+    if (videoElement) {
+        attachIframeVideoListeners(videoElement);
+    } else {
+        let attempts = 0;
+        const findVideoInterval = setInterval(() => {
+            attempts++;
+            const vEl = document.querySelector('video');
+            if (vEl) {
+                clearInterval(findVideoInterval);
+                attachIframeVideoListeners(vEl);
+            } else if (attempts > 20) {
+                clearInterval(findVideoInterval);
+                console.warn(
+                    'TMSync Iframe: Video element not found after multiple attempts.'
                 );
             }
-        } catch (error) {
-            console.error('Error in video monitoring:', error);
-        }
-    }, 1000);
+        }, 500);
+    }
 
-    return monitorVideoInterval;
+    window.addEventListener('beforeunload', () => {
+        console.log('TMSync Iframe: beforeunload, detaching listeners.');
+        detachIframeVideoListeners();
+    });
 }
 
 function injectReactApp(): void {
-    // Create container if it doesn't exist
     let container = document.getElementById('tmsync-container');
-    let shadow = container?.shadowRoot;
+    let shadowRootElement: ShadowRoot | null = null;
 
     if (!container) {
-        const body = document.querySelector('body');
         container = document.createElement('div');
         container.id = 'tmsync-container';
 
-        shadow = container.attachShadow({
-            mode: 'open'
-        });
+        shadowRootElement = container.attachShadow({ mode: 'open' });
 
-        // Setup the style
-        container.style.all = 'initial'; // Reset all inherited styles
+        const reactAppContainer = document.createElement('div');
+        reactAppContainer.id = 'tmsync-react-app-root';
 
-        async function createStyle() {
-            try {
-                const cssUrl = chrome.runtime.getURL('css/styles.css');
+        shadowRootElement.appendChild(reactAppContainer);
 
-                const response = await fetch(cssUrl);
-
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
+        const tailwindCssUrl = chrome.runtime.getURL('css/styles.css');
+        fetch(tailwindCssUrl)
+            .then((response) => response.text())
+            .then((cssText) => {
+                if (shadowRootElement) {
+                    const styleEl = document.createElement('style');
+                    styleEl.textContent = cssText;
+                    shadowRootElement.appendChild(styleEl);
                 }
+            })
+            .catch((err) =>
+                console.error('Failed to load styles into shadow DOM', err)
+            );
 
-                const mainCSS = await response.text();
-
-                const sheet = new CSSStyleSheet();
-                sheet.replaceSync(mainCSS);
-
-                if (shadow) {
-                    shadow.adoptedStyleSheets = [sheet];
-                }
-            } catch (error) {
-                console.error('Failed to load CSS:', error);
-            }
-        }
-
-        createStyle();
-
-        if (body) {
-            body.append(container);
-        }
+        document.body.appendChild(container);
+    } else {
+        shadowRootElement = container.shadowRoot;
     }
 
-    if (!reactRoot && shadow) {
-        reactRoot = createRoot(shadow);
-    }
+    const reactAppRootElement = shadowRootElement?.getElementById(
+        'tmsync-react-app-root'
+    );
 
-    if (reactRoot) {
+    if (reactAppRootElement) {
+        if (!reactRoot) {
+            reactRoot = createRoot(reactAppRootElement);
+        }
         reactRoot.render(<ScrobbleManager />);
+    } else {
+        console.error('TMSync: React root within shadow DOM not found!');
     }
 }
 
 async function initialize() {
     if (isIframe) {
-        startVideoMonitoring();
+        console.log(
+            'TMSync: Running in iframe context. Initializing video event posting.'
+        );
+
+        if (videoMonitorIntervalId) {
+            clearInterval(videoMonitorIntervalId);
+            videoMonitorIntervalId = null;
+        }
+        startIframeVideoMonitoring();
     } else {
+        console.log(
+            'TMSync: Running in main frame context. Injecting React app.'
+        );
         injectReactApp();
     }
 }
 
-initialize();
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initialize);
+} else {
+    initialize();
+}
