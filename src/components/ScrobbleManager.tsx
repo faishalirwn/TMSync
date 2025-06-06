@@ -1,8 +1,5 @@
-// src/components/ScrobbleManager.tsx
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { getCurrentSiteConfig } from '../utils/siteConfigs';
-// Assuming SiteConfigBase is correctly imported from your siteConfigs/baseConfig
-// import { SiteConfigBase } from '../utils/siteConfigs/baseConfig';
 import {
     MediaInfoResponse,
     MessageRequest,
@@ -16,11 +13,13 @@ import {
     ScrobbleStopResponseData,
     SeasonEpisodeObj,
     WatchStatusInfo,
-    ActiveScrobbleStatus, // From types
-    MediaStatusPayload, // For processMediaStatus
-    MediaInfoRequest, // For getMediaInfoAndConfidence
+    ActiveScrobbleStatus,
+    MediaStatusPayload,
+    MediaInfoRequest,
     ShowMediaInfo,
-    MovieMediaInfo
+    MovieMediaInfo,
+    TraktComment,
+    CommentableType
 } from '../utils/types';
 import { ScrobbleNotification } from './ScrobbleNotification';
 import { ManualSearchPrompt } from './ManualSearchPrompt';
@@ -39,72 +38,55 @@ import {
     HighlightType,
     setupEpisodeHighlighting
 } from '../utils/highlighting';
+import { CommentModal } from './CommentModal';
 
-// --- Constants ---
-const WATCHING_PING_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
-const SIGNIFICANT_PROGRESS_CHANGE_PERCENT = 5; // 5%
-const VIDEO_PROGRESS_UPDATE_THROTTLE_MS = 2000; // 2 seconds
-const TRAKT_SCROBBLE_COMPLETION_THRESHOLD = 80; // Define this constant if not already at the top
-
-// Re-add your getMediaInfoAndConfidence function, or ensure it's imported if it's now a utility
-// This function was previously in ScrobbleManager.tsx in the prompt.
+const WATCHING_PING_INTERVAL_MS = 5 * 60 * 1000;
+const SIGNIFICANT_PROGRESS_CHANGE_PERCENT = 5;
+const VIDEO_PROGRESS_UPDATE_THROTTLE_MS = 2000;
+const TRAKT_SCROBBLE_COMPLETION_THRESHOLD = 80;
 async function getMediaInfoAndConfidence(
-    siteConfig: any, // Replace 'any' with SiteConfigBase if imported
+    siteConfig: any,
     url: string,
-    tabUrlIdentifier: string // You might not need tabUrlIdentifier here if it's for background cache only
+    tabUrlIdentifier: string
 ): Promise<MessageResponse<MediaStatusPayload>> {
-    console.log('getMediaInfoAndConfidence called for:', url);
-    try {
-        const mediaType = siteConfig.getMediaType(url);
-        if (!mediaType) {
-            return {
-                success: false,
-                error: 'Failed to determine media type from URL.'
-            };
-        }
-
-        let title: string | null = null;
-        let year: string | null = null;
-        let messageParams: { type: string; query: string; years: string };
-
-        if (siteConfig.usesTmdbId) {
-            title = await siteConfig.getTitle(url).catch(() => null);
-            year = await siteConfig.getYear(url).catch(() => null);
-            messageParams = {
-                type: mediaType,
-                query: title || '',
-                years: year || ''
-            };
-        } else {
-            title = await siteConfig.getTitle(url);
-            year = await siteConfig.getYear(url);
-            if (!title || !year) {
-                throw new Error(
-                    'Required Title or Year not found for non-TMDB site.'
-                );
-            }
-            messageParams = { type: mediaType, query: title, years: year };
-        }
-
-        const resp = await chrome.runtime.sendMessage<
-            MediaInfoRequest,
-            MessageResponse<MediaStatusPayload>
-        >({
-            action: 'mediaInfo',
-            params: messageParams
-        });
-        return resp;
-    } catch (error) {
-        console.error('Error in getMediaInfoAndConfidence:', error);
+    const mediaType = siteConfig.getMediaType(url);
+    if (!mediaType) {
         return {
             success: false,
-            error: error instanceof Error ? error.message : 'Unknown error'
+            error: 'Failed to determine media type from URL.'
         };
     }
+    let title: string | null = null;
+    let year: string | null = null;
+    let messageParams: { type: string; query: string; years: string };
+    if (siteConfig.usesTmdbId) {
+        title = await siteConfig.getTitle(url).catch(() => null);
+        year = await siteConfig.getYear(url).catch(() => null);
+        messageParams = {
+            type: mediaType,
+            query: title || '',
+            years: year || ''
+        };
+    } else {
+        title = await siteConfig.getTitle(url);
+        year = await siteConfig.getYear(url);
+        if (!title || !year) {
+            throw new Error(
+                'Required Title or Year not found for non-TMDB site.'
+            );
+        }
+        messageParams = { type: mediaType, query: title, years: year };
+    }
+    return await chrome.runtime.sendMessage<
+        MediaInfoRequest,
+        MessageResponse<MediaStatusPayload>
+    >({
+        action: 'mediaInfo',
+        params: messageParams
+    });
 }
 
 export const ScrobbleManager = () => {
-    // --- Existing State (Adapted) ---
     const [mediaInfo, setMediaInfo] = useState<MediaInfoResponse | null>(null);
     const [originalMediaQuery, setOriginalMediaQuery] = useState<{
         type: string;
@@ -114,14 +96,14 @@ export const ScrobbleManager = () => {
     const [showEpisodeInfo, setShowEpisodeInfo] =
         useState<SeasonEpisodeObj | null>(null);
     const [currentUrl, setCurrentUrl] = useState(window.location.href);
-
     const [watchStatus, setWatchStatus] = useState<WatchStatusInfo | null>(
         null
     );
     const [progressInfo, setProgressInfo] =
         useState<TraktShowWatchedProgress | null>(null);
-    // --- STATE MODIFIED ---
     const [ratings, setRatings] = useState<MediaRatings | null>(null);
+    const [scrobblingStatus, setScrobblingStatus] =
+        useState<ActiveScrobbleStatus>('idle');
 
     const [isLoadingMediaInfo, setIsLoadingMediaInfo] = useState(false);
     const [needsManualConfirmation, setNeedsManualConfirmation] =
@@ -129,9 +111,16 @@ export const ScrobbleManager = () => {
     const [showStartPrompt, setShowStartPrompt] = useState(false);
     const [showRewatchPrompt, setShowRewatchPrompt] = useState(false);
     const [userConfirmedAction, setUserConfirmedAction] = useState(false);
+    const [isProcessingScrobbleAction, setIsProcessingScrobbleAction] =
+        useState(false);
+
+    const [isCommentModalOpen, setIsCommentModalOpen] = useState(false);
+    const [commentModalType, setCommentModalType] =
+        useState<CommentableType | null>(null);
+    const [comments, setComments] = useState<TraktComment[]>([]);
+    const [isLoadingComments, setIsLoadingComments] = useState(false);
+
     const [isRewatchSession, setIsRewatchSession] = useState(false);
-    const [localRewatchInfo, setLocalRewatchInfo] =
-        useState<LocalRewatchInfo | null>(null);
     const [highlightTarget, setHighlightTarget] = useState<{
         season: number;
         episode: number;
@@ -141,30 +130,23 @@ export const ScrobbleManager = () => {
         { season: number; number: number }[] | undefined
     >(undefined);
 
-    // --- New Scrobbling State ---
-    const [scrobblingStatus, setScrobblingStatus] =
-        useState<ActiveScrobbleStatus>('idle');
-    const [currentVideoProgress, setCurrentVideoProgress] = useState(0);
-    const [isProcessingScrobbleAction, setIsProcessingScrobbleAction] =
-        useState(false);
-
     const videoRef = useRef<HTMLVideoElement | null>(null);
-    const traktHistoryIdRef = useRef<number | null>(null); // Stores ID after successful scrobble/stop
+    const traktHistoryIdRef = useRef<number | null>(null);
+    const previousUrlRef = useRef<string | null>(null);
+
+    const [currentVideoProgress, setCurrentVideoProgress] = useState(0);
+    const [localRewatchInfo, setLocalRewatchInfo] =
+        useState<LocalRewatchInfo | null>(null);
     const lastProgressPingTimeRef = useRef(0);
     const lastReportedProgressRef = useRef(0);
     const timeUpdateThrottleTimerRef = useRef<number | null>(null);
-    const pageUnloadRef = useRef(false); // To help manage sendBeacon logic
-
-    // --- Refs for existing logic ---
-    const previousUrlRef = useRef<string | null>(null);
+    const pageUnloadRef = useRef(false);
     const waitTitleIntervalRef = useRef<number | null>(null);
     const waitTitleTimeoutRef = useRef<number | null>(null);
     const lastFetchedTitleRef = useRef<string | null>(null);
-
-    const [isIframePlayerActive, setIsIframePlayerActive] = useState(false); // New state
-    const [iframeOrigin, setIframeOrigin] = useState<string | null>(null); // Store origin for security
-    const playerIframeRef = useRef<HTMLIFrameElement | null>(null); // Ref to the player iframe if applicable
-
+    const [isIframePlayerActive, setIsIframePlayerActive] = useState(false);
+    const [iframeOrigin, setIframeOrigin] = useState<string | null>(null);
+    const playerIframeRef = useRef<HTMLIFrameElement | null>(null);
     const timeUpdateProcessingScheduledRef = useRef(false);
     const latestVideoStateForThrottleRef = useRef<{
         currentTime: number;
@@ -172,8 +154,8 @@ export const ScrobbleManager = () => {
         isFromIframe?: boolean;
     } | null>(null);
     const pendingCriticalOperationRef = useRef<'pause' | 'stop' | null>(null);
-    const lastSentActionTimestampRef = useRef(0); // To prevent too rapid succession of any action
-    const MIN_TIME_BETWEEN_ACTIONS_MS = 500; // Minimum time between any scrobble API call initiation
+    const lastSentActionTimestampRef = useRef(0);
+    const MIN_TIME_BETWEEN_ACTIONS_MS = 500;
 
     const urlObject = new URL(currentUrl);
     const hostname = urlObject.hostname;
@@ -183,22 +165,11 @@ export const ScrobbleManager = () => {
         siteConfig?.getUrlIdentifier(currentUrl) ??
         `generic-tab-media-${Date.now()}`;
 
-    // --- Helper: Send Message to Background ---
     const sendMessageToBackground = useCallback(
         async <TResponseData = any,>(
             message: MessageRequest
         ): Promise<MessageResponse<TResponseData>> => {
             try {
-                if (
-                    pageUnloadRef.current &&
-                    message.action !== 'requestScrobbleStop'
-                ) {
-                    console.warn(
-                        'Page unloading, blocking message:',
-                        message.action
-                    );
-                    return { success: false, error: 'Page is unloading' };
-                }
                 const response = (await chrome.runtime.sendMessage(
                     message
                 )) as MessageResponse<TResponseData>;
@@ -225,7 +196,6 @@ export const ScrobbleManager = () => {
         []
     );
 
-    // --- Scrobbling Action Senders ---
     const sendScrobbleStart = useCallback(
         async (progress: number) => {
             if (!mediaInfo) return;
@@ -396,7 +366,6 @@ export const ScrobbleManager = () => {
         ]
     );
 
-    // ... (commonPlayHandler, commonPauseHandler, commonEndedHandler, etc remain the same)
     const commonPlayHandler = useCallback(
         (progress: number) => {
             if (!mediaInfo || !userConfirmedAction) return;
@@ -436,7 +405,6 @@ export const ScrobbleManager = () => {
             await sendScrobbleStop(100);
         }
     }, [mediaInfo, userConfirmedAction, sendScrobbleStop, scrobblingStatus]);
-    // ...
 
     const processThrottledTimeUpdate = useCallback(async () => {
         timeUpdateProcessingScheduledRef.current = false;
@@ -601,7 +569,6 @@ export const ScrobbleManager = () => {
         commonTimeUpdateHandler();
     }, [commonTimeUpdateHandler, isIframePlayerActive]);
 
-    // ... (useEffect for finding video element remains the same)
     useEffect(() => {
         if (!isWatchPage || !mediaInfo || !userConfirmedAction) {
             if (videoRef.current && scrobblingStatus === 'started') {
@@ -770,6 +737,79 @@ export const ScrobbleManager = () => {
     ]);
 
     useEffect(() => {
+        if (!mediaInfo || !userConfirmedAction) return;
+
+        const handleIframeMessage = (event: MessageEvent) => {
+            const { data } = event;
+            if (
+                data &&
+                typeof data.type === 'string' &&
+                data.type.startsWith('TMSYNC_IFRAME_')
+            ) {
+                if (!iframeOrigin && event.origin !== 'null') {
+                    setIframeOrigin(event.origin);
+                } else if (
+                    iframeOrigin &&
+                    event.origin !== iframeOrigin &&
+                    event.origin !== 'null'
+                ) {
+                    console.warn(
+                        'TMSync Iframe: Message from unexpected origin:',
+                        event.origin,
+                        'Expected:',
+                        iframeOrigin
+                    );
+                    return;
+                }
+
+                console.log('ScrobbleManager: Received iframe message:', data);
+                const progress = (data.currentTime / data.duration) * 100;
+                if (isNaN(progress)) return;
+
+                switch (data.type) {
+                    case 'TMSYNC_IFRAME_PLAY':
+                        commonPlayHandler(progress);
+                        break;
+                    case 'TMSYNC_IFRAME_PAUSE':
+                        commonPauseHandler(progress);
+                        break;
+                    case 'TMSYNC_IFRAME_ENDED':
+                        commonEndedHandler();
+                        break;
+                    case 'TMSYNC_IFRAME_TIMEUPDATE':
+                        const progressFromIframe =
+                            (data.currentTime / data.duration) * 100;
+                        if (isNaN(progressFromIframe)) break;
+                        commonTimeUpdateHandlerWithProgress(progressFromIframe);
+                        break;
+                    default:
+                        break;
+                }
+            }
+        };
+
+        window.addEventListener('message', handleIframeMessage);
+        console.log(
+            'ScrobbleManager: Added window message listener for iframe events.'
+        );
+
+        return () => {
+            window.removeEventListener('message', handleIframeMessage);
+            console.log('ScrobbleManager: Removed window message listener.');
+            setIframeOrigin(null);
+        };
+    }, [
+        mediaInfo,
+        userConfirmedAction,
+        isIframePlayerActive,
+        commonPlayHandler,
+        commonPauseHandler,
+        commonEndedHandler,
+        commonTimeUpdateHandlerWithProgress,
+        iframeOrigin
+    ]);
+
+    useEffect(() => {
         const handleBeforeUnload = () => {
             pageUnloadRef.current = true;
         };
@@ -811,23 +851,18 @@ export const ScrobbleManager = () => {
         return () => clearInterval(interval);
     }, [currentUrl]);
 
-    // --- processMediaStatus (Your existing logic, ensure it resets scrobble states if new media) ---
     const processMediaStatus = useCallback(
         async (data: MediaStatusPayload) => {
-            console.log('ScrobbleManager: Processing media status:', data);
             setWatchStatus(
                 data.watchStatus || { isInHistory: false, isCompleted: false }
             );
-
             setProgressInfo(data.progressInfo || null);
-            // --- STATE MODIFIED ---
             setRatings(data.ratingInfo || null);
 
             setShowStartPrompt(false);
             setShowRewatchPrompt(false);
             setUserConfirmedAction(false);
             setIsRewatchSession(false);
-            setLocalRewatchInfo(null);
 
             let newHighlightTargetUpdate: {
                 season: number;
@@ -838,11 +873,9 @@ export const ScrobbleManager = () => {
                 season: number;
                 number: number;
             }[] = [];
-
             if (isShowMediaInfo(data.mediaInfo)) {
                 const traktShowId = data.mediaInfo.show.ids.trakt;
                 const traktProgress = data.progressInfo;
-
                 if (traktProgress?.seasons) {
                     traktProgress.seasons.forEach((s) =>
                         s.episodes.forEach((e) => {
@@ -854,7 +887,6 @@ export const ScrobbleManager = () => {
                         })
                     );
                 }
-
                 if (
                     !data.watchStatus?.isInHistory &&
                     (!traktProgress || traktProgress.completed === 0)
@@ -871,7 +903,6 @@ export const ScrobbleManager = () => {
                         ?.episodes?.find(
                             (e) => e.number === currentEpInfo?.number
                         )?.completed;
-
                     if (isCurrentEpWatchedOnTrakt) {
                         setShowRewatchPrompt(true);
                     } else {
@@ -886,9 +917,8 @@ export const ScrobbleManager = () => {
                     }
                 } else {
                     const localInfo = await getLocalRewatchInfo(traktShowId);
-                    setLocalRewatchInfo(localInfo);
-                    setShowRewatchPrompt(true);
 
+                    setShowRewatchPrompt(true);
                     if (localInfo?.lastWatched) {
                         newHighlightTargetUpdate = {
                             season: localInfo.lastWatched.season,
@@ -921,7 +951,7 @@ export const ScrobbleManager = () => {
         setShowEpisodeInfo(null);
         setWatchStatus(null);
         setProgressInfo(null);
-        // --- STATE MODIFIED ---
+
         setRatings(null);
         setIsLoadingMediaInfo(true);
         setNeedsManualConfirmation(false);
@@ -991,7 +1021,7 @@ export const ScrobbleManager = () => {
                     setShowEpisodeInfo(null);
                     setWatchStatus(null);
                     setProgressInfo(null);
-                    setRatings(null); // --- STATE MODIFIED ---
+                    setRatings(null);
                     setShowStartPrompt(false);
                     setShowRewatchPrompt(false);
                     setUserConfirmedAction(false);
@@ -1058,7 +1088,6 @@ export const ScrobbleManager = () => {
         processMediaStatus
     ]);
 
-    // --- Manual Confirmation Handler ---
     const handleConfirmMedia = useCallback(
         async (confirmedMedia: MediaInfoResponse) => {
             console.log(
@@ -1071,7 +1100,7 @@ export const ScrobbleManager = () => {
 
             setWatchStatus(null);
             setProgressInfo(null);
-            setRatings(null); // --- STATE MODIFIED ---
+            setRatings(null);
             setShowStartPrompt(false);
             setShowRewatchPrompt(false);
             setUserConfirmedAction(false);
@@ -1123,7 +1152,6 @@ export const ScrobbleManager = () => {
         [currentUrl, siteConfig, sendMessageToBackground, processMediaStatus]
     );
 
-    // --- Episode Highlighting Effect ---
     useEffect(() => {
         if (
             !isWatchPage ||
@@ -1150,7 +1178,6 @@ export const ScrobbleManager = () => {
         watchedHistoryEpisodes
     ]);
 
-    // --- Manual Add to History (for the button) ---
     const handleManualAddToHistory = useCallback(async () => {
         if (!mediaInfo) return;
         console.log(
@@ -1199,7 +1226,6 @@ export const ScrobbleManager = () => {
         sendScrobblePause
     ]);
 
-    // --- Handlers for Prompts, Rating, Undo ---
     const handleConfirmStartWatching = useCallback(() => {
         setUserConfirmedAction(true);
         setShowStartPrompt(false);
@@ -1214,17 +1240,14 @@ export const ScrobbleManager = () => {
         setOriginalMediaQuery(null);
     }, []);
 
-    // --- RATING HANDLER MODIFIED ---
     const handleRate = useCallback(
         async (
             type: 'movie' | 'show' | 'season' | 'episode',
             rating: number
         ) => {
             if (!mediaInfo) return;
-
             let action: any;
             let params: any = { mediaInfo, rating };
-
             if (type === 'movie' && isMovieMediaInfo(mediaInfo)) {
                 action = 'rateMovie';
             } else if (type === 'show' && isShowMediaInfo(mediaInfo)) {
@@ -1244,16 +1267,14 @@ export const ScrobbleManager = () => {
                 action = 'rateEpisode';
                 params.episodeInfo = showEpisodeInfo;
             } else {
-                console.error('Invalid rating type/media combination');
                 return;
             }
-
+            console.log(action, params, '👄');
             const response = await sendMessageToBackground<null>({
                 action,
                 params
             });
             if (response.success) {
-                // Optimistically update local state
                 setRatings((prev) => ({
                     ...prev,
                     [type === 'movie' ? 'show' : type]: {
@@ -1263,7 +1284,6 @@ export const ScrobbleManager = () => {
                 }));
             } else {
                 console.error(`Rating ${type} failed:`, response.error);
-                // Optionally, add user feedback for failed rating
             }
         },
         [mediaInfo, showEpisodeInfo, sendMessageToBackground]
@@ -1291,92 +1311,103 @@ export const ScrobbleManager = () => {
         }
     }, [mediaInfo, sendMessageToBackground, processMediaStatus]);
 
-    // --- Prepare data for ScrobbleNotification ---
+    const handleOpenCommentModal = useCallback(
+        async (type: CommentableType) => {
+            if (!mediaInfo) return;
+
+            setIsCommentModalOpen(true);
+            setCommentModalType(type);
+            setIsLoadingComments(true);
+            setComments([]);
+
+            const response = await sendMessageToBackground<TraktComment[]>({
+                action: 'getComments',
+
+                params: {
+                    type,
+                    mediaInfo,
+                    episodeInfo: showEpisodeInfo || undefined
+                }
+            });
+
+            if (response.success && response.data) {
+                setComments(response.data);
+            } else {
+                console.error('Failed to fetch comments:', response.error);
+            }
+            setIsLoadingComments(false);
+        },
+        [mediaInfo, showEpisodeInfo, sendMessageToBackground]
+    );
+
+    const handleCloseCommentModal = useCallback(() => {
+        setIsCommentModalOpen(false);
+        setCommentModalType(null);
+        setComments([]);
+    }, []);
+
+    const handlePostComment = useCallback(
+        async (comment: string, spoiler: boolean) => {
+            if (!mediaInfo || !commentModalType) return;
+            const response = await sendMessageToBackground<TraktComment>({
+                action: 'postComment',
+
+                params: {
+                    type: commentModalType,
+                    mediaInfo,
+                    episodeInfo: showEpisodeInfo || undefined,
+                    comment,
+                    spoiler
+                }
+            });
+            if (response.success && response.data) {
+                setComments((prev) => [response.data!, ...prev]);
+            }
+            return response;
+        },
+        [mediaInfo, showEpisodeInfo, commentModalType, sendMessageToBackground]
+    );
+
+    const handleUpdateComment = useCallback(
+        async (commentId: number, comment: string, spoiler: boolean) => {
+            const response = await sendMessageToBackground<TraktComment>({
+                action: 'updateComment',
+                params: { commentId, comment, spoiler }
+            });
+            if (response.success && response.data) {
+                setComments((prev) =>
+                    prev.map((c) => (c.id === commentId ? response.data! : c))
+                );
+            }
+            return response;
+        },
+        [sendMessageToBackground]
+    );
+
+    const handleDeleteComment = useCallback(
+        async (commentId: number) => {
+            const response = await sendMessageToBackground<null>({
+                action: 'deleteComment',
+                params: { commentId }
+            });
+            if (response.success) {
+                setComments((prev) => prev.filter((c) => c.id !== commentId));
+            }
+            return response;
+        },
+        [sendMessageToBackground]
+    );
+
     const isEffectivelyScrobbled = !!traktHistoryIdRef.current;
     let SNotificationMediaInfo: ScrobbleNotificationMediaType | null = null;
     if (mediaInfo) {
-        SNotificationMediaInfo = { ...mediaInfo };
-        if (isShowMediaInfo(mediaInfo) && showEpisodeInfo) {
-            SNotificationMediaInfo = {
-                ...SNotificationMediaInfo,
-                ...showEpisodeInfo
-            };
-        }
+        SNotificationMediaInfo = {
+            ...mediaInfo,
+            ...(isShowMediaInfo(mediaInfo) && showEpisodeInfo
+                ? showEpisodeInfo
+                : {})
+        };
     }
-
-    // --- NEW: Effect to listen for messages from iframes ---
-    useEffect(() => {
-        if (!mediaInfo || !userConfirmedAction) return;
-
-        const handleIframeMessage = (event: MessageEvent) => {
-            const { data } = event;
-            if (
-                data &&
-                typeof data.type === 'string' &&
-                data.type.startsWith('TMSYNC_IFRAME_')
-            ) {
-                if (!iframeOrigin && event.origin !== 'null') {
-                    setIframeOrigin(event.origin);
-                } else if (
-                    iframeOrigin &&
-                    event.origin !== iframeOrigin &&
-                    event.origin !== 'null'
-                ) {
-                    console.warn(
-                        'TMSync Iframe: Message from unexpected origin:',
-                        event.origin,
-                        'Expected:',
-                        iframeOrigin
-                    );
-                    return;
-                }
-
-                console.log('ScrobbleManager: Received iframe message:', data);
-                const progress = (data.currentTime / data.duration) * 100;
-                if (isNaN(progress)) return;
-
-                switch (data.type) {
-                    case 'TMSYNC_IFRAME_PLAY':
-                        commonPlayHandler(progress);
-                        break;
-                    case 'TMSYNC_IFRAME_PAUSE':
-                        commonPauseHandler(progress);
-                        break;
-                    case 'TMSYNC_IFRAME_ENDED':
-                        commonEndedHandler();
-                        break;
-                    case 'TMSYNC_IFRAME_TIMEUPDATE':
-                        const progressFromIframe =
-                            (data.currentTime / data.duration) * 100;
-                        if (isNaN(progressFromIframe)) break;
-                        commonTimeUpdateHandlerWithProgress(progressFromIframe);
-                        break;
-                    default:
-                        break;
-                }
-            }
-        };
-
-        window.addEventListener('message', handleIframeMessage);
-        console.log(
-            'ScrobbleManager: Added window message listener for iframe events.'
-        );
-
-        return () => {
-            window.removeEventListener('message', handleIframeMessage);
-            console.log('ScrobbleManager: Removed window message listener.');
-            setIframeOrigin(null);
-        };
-    }, [
-        mediaInfo,
-        userConfirmedAction,
-        isIframePlayerActive,
-        commonPlayHandler,
-        commonPauseHandler,
-        commonEndedHandler,
-        commonTimeUpdateHandlerWithProgress, // Corrected dependency
-        iframeOrigin
-    ]);
 
     const showScrobbleRelatedUI =
         !isLoadingMediaInfo &&
@@ -1387,32 +1418,36 @@ export const ScrobbleManager = () => {
     if (!isWatchPage && !isLoadingMediaInfo && !needsManualConfirmation) {
         return null;
     }
-
     return (
         <>
             {isLoadingMediaInfo && <LoadingIndicator text="Finding media..." />}
-
             {!isLoadingMediaInfo &&
                 needsManualConfirmation &&
                 originalMediaQuery && (
                     <ManualSearchPrompt
                         originalQuery={originalMediaQuery}
-                        onConfirmMedia={handleConfirmMedia}
-                        onCancel={handleCancelManualSearch}
+                        onConfirmMedia={() => {}}
+                        onCancel={() => {}}
                     />
                 )}
-
             {showScrobbleRelatedUI &&
                 !isLoadingMediaInfo &&
                 showStartPrompt &&
                 !userConfirmedAction && (
-                    <StartWatchPrompt onConfirm={handleConfirmStartWatching} />
+                    <StartWatchPrompt
+                        onConfirm={() => setUserConfirmedAction(true)}
+                    />
                 )}
             {showScrobbleRelatedUI &&
                 !isLoadingMediaInfo &&
                 showRewatchPrompt &&
                 !userConfirmedAction && (
-                    <RewatchPrompt onConfirm={handleConfirmRewatch} />
+                    <RewatchPrompt
+                        onConfirm={() => {
+                            setUserConfirmedAction(true);
+                            setIsRewatchSession(true);
+                        }}
+                    />
                 )}
 
             {showScrobbleRelatedUI &&
@@ -1436,11 +1471,25 @@ export const ScrobbleManager = () => {
                             setIsProcessingScrobbleAction(false);
                         }}
                         isProcessingAction={isProcessingScrobbleAction}
-                        // --- PROPS MODIFIED ---
                         ratings={ratings}
                         onRate={handleRate}
+                        onOpenCommentModal={handleOpenCommentModal}
                     />
                 )}
+
+            <CommentModal
+                isOpen={isCommentModalOpen}
+                onClose={handleCloseCommentModal}
+                isLoading={isLoadingComments}
+                comments={comments}
+                mediaInfo={mediaInfo}
+                ratings={ratings}
+                commentType={commentModalType}
+                onPostComment={handlePostComment}
+                onUpdateComment={handleUpdateComment}
+                onDeleteComment={handleDeleteComment}
+                onRate={handleRate}
+            />
         </>
     );
 };

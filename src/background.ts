@@ -22,6 +22,7 @@ import {
     ScrobbleStopResponseData,
     SeasonEpisodeObj,
     ShowMediaInfo,
+    TraktComment,
     TraktRating,
     WatchStatusInfo
 } from './utils/types';
@@ -75,6 +76,34 @@ function resetActiveScrobbleState() {
         previousScrobbledUrl: ''
     };
     console.log('Active scrobble state reset.');
+}
+
+let cachedUsername: string | null = null;
+async function getUsername(): Promise<string> {
+    if (cachedUsername) return cachedUsername;
+
+    const data = await chrome.storage.local.get('traktUsername');
+    if (data.traktUsername) {
+        cachedUsername = data.traktUsername;
+        return data.traktUsername;
+    }
+
+    console.log('Username not cached, fetching from Trakt settings...');
+    const settings = await callApi<any>(
+        'https://api.trakt.tv/users/settings',
+        'GET'
+    );
+    const username = settings?.user?.username;
+
+    if (username) {
+        cachedUsername = username;
+        await chrome.storage.local.set({ traktUsername: username });
+        return username;
+    }
+
+    throw new Error(
+        'Could not determine Trakt username. The user might need to re-authenticate.'
+    );
 }
 
 chrome.runtime.onMessage.addListener(
@@ -137,7 +166,6 @@ chrome.runtime.onMessage.addListener(
                 }
 
                 if (confidence !== 'high') {
-                    // ... (This media identification block remains the same)
                     let attemptedTmdbLookup = false;
 
                     if (siteConfig.usesTmdbId) {
@@ -160,7 +188,7 @@ chrome.runtime.onMessage.addListener(
                                             'GET'
                                         );
                                     } catch (movieError: any) {
-                                        // Ignore
+                                        //Ignore
                                     }
                                     if (
                                         !lookupResults ||
@@ -174,7 +202,7 @@ chrome.runtime.onMessage.addListener(
                                                 'GET'
                                             );
                                         } catch (showError: any) {
-                                            // Ignore
+                                            //Ignore
                                         }
                                     }
                                 } else {
@@ -186,7 +214,7 @@ chrome.runtime.onMessage.addListener(
                                             'GET'
                                         );
                                     } catch (lookupError: any) {
-                                        // Ignore
+                                        //Ignore
                                     }
                                 }
 
@@ -195,7 +223,7 @@ chrome.runtime.onMessage.addListener(
                                     confidence = 'high';
                                 }
                             } catch (error) {
-                                // Ignore
+                                //Ignore
                             }
                         }
                     }
@@ -255,12 +283,11 @@ chrome.runtime.onMessage.addListener(
                                 }
                             }
                         } catch (error) {
-                            // Ignore
+                            //Ignore
                         }
                     }
                 }
 
-                // --- BLOCK MODIFIED (CORRECTED AGAIN) ---
                 if (confidence === 'high' && mediaInfoResult) {
                     console.log(
                         'High confidence match. Fetching status details...'
@@ -281,7 +308,6 @@ chrome.runtime.onMessage.addListener(
                         }
 
                         if (movieTraktId) {
-                            // --- MOVIE ---
                             try {
                                 const movieHistory = await callApi<any[]>(
                                     `https://api.trakt.tv/sync/history/movies/${movieTraktId}?limit=1`,
@@ -318,7 +344,6 @@ chrome.runtime.onMessage.addListener(
                                 console.warn('Error fetching movie ratings', e);
                             }
                         } else if (showTraktId) {
-                            // --- SHOW ---
                             try {
                                 progressInfo =
                                     await callApi<TraktShowWatchedProgress>(
@@ -431,7 +456,6 @@ chrome.runtime.onMessage.addListener(
                         console.error('Error fetching status details:', error);
                     }
                 }
-                // --- END MODIFICATION ---
 
                 const responsePayload: MediaStatusPayload = {
                     mediaInfo: mediaInfoResult,
@@ -445,7 +469,6 @@ chrome.runtime.onMessage.addListener(
                 return true;
             }
 
-            // ... (All other action handlers from 'confirmMedia' to the end remain the same)
             if (request.action === 'confirmMedia') {
                 const confirmedMedia = request.params as MediaInfoResponse;
                 try {
@@ -521,7 +544,6 @@ chrome.runtime.onMessage.addListener(
                             { ids: { trakt: episodeTraktId }, rating }
                         ];
                     } else {
-                        // rateSeason
                         const seasons = await callApi<any[]>(
                             `https://api.trakt.tv/shows/${mediaInfo.show.ids.trakt}/seasons`
                         );
@@ -555,7 +577,6 @@ chrome.runtime.onMessage.addListener(
                 return true;
             }
 
-            // ... (rest of the file remains unchanged)
             if (request.action === 'manualSearch') {
                 const params = request.params as {
                     type: string;
@@ -852,12 +873,186 @@ chrome.runtime.onMessage.addListener(
                 }
                 return true;
             }
+
+            if (request.action === 'getComments') {
+                const { type, mediaInfo, episodeInfo } = request.params;
+                try {
+                    const username = await getUsername();
+                    const url = `https://api.trakt.tv/users/${username}/comments/${type}s/all`;
+                    const allComments = await callApi<any[]>(
+                        url,
+                        'GET',
+                        null,
+                        true
+                    );
+
+                    let filteredComments: TraktComment[] = [];
+
+                    if (type === 'movie' && isMovieMediaInfo(mediaInfo)) {
+                        const id = mediaInfo.movie.ids.trakt;
+                        filteredComments = allComments
+                            .filter((c) => c.movie?.ids?.trakt === id)
+                            .map((c) => c.comment);
+                    } else if (type === 'show' && isShowMediaInfo(mediaInfo)) {
+                        const id = mediaInfo.show.ids.trakt;
+                        filteredComments = allComments
+                            .filter((c) => c.show?.ids?.trakt === id)
+                            .map((c) => c.comment);
+                    } else if (
+                        type === 'season' &&
+                        isShowMediaInfo(mediaInfo) &&
+                        episodeInfo
+                    ) {
+                        const id = mediaInfo.show.ids.trakt;
+                        filteredComments = allComments
+                            .filter(
+                                (c) =>
+                                    c.show?.ids?.trakt === id &&
+                                    c.season?.number === episodeInfo.season
+                            )
+                            .map((c) => c.comment);
+                    } else if (
+                        type === 'episode' &&
+                        isShowMediaInfo(mediaInfo) &&
+                        episodeInfo
+                    ) {
+                        const id = mediaInfo.show.ids.trakt;
+                        filteredComments = allComments
+                            .filter(
+                                (c) =>
+                                    c.show?.ids?.trakt === id &&
+                                    c.episode?.season === episodeInfo.season &&
+                                    c.episode?.number === episodeInfo.number
+                            )
+                            .map((c) => c.comment);
+                    }
+
+                    sendResponse({ success: true, data: filteredComments });
+                } catch (e) {
+                    sendResponse({
+                        success: false,
+                        error:
+                            e instanceof Error
+                                ? e.message
+                                : 'Failed to get comments.'
+                    });
+                }
+                return true;
+            }
+
+            if (request.action === 'postComment') {
+                const { type, mediaInfo, episodeInfo, comment, spoiler } =
+                    request.params;
+                const body: any = { comment, spoiler };
+
+                try {
+                    if (type === 'movie' && isMovieMediaInfo(mediaInfo)) {
+                        body.movie = { ids: mediaInfo.movie.ids };
+                    } else if (type === 'show' && isShowMediaInfo(mediaInfo)) {
+                        body.show = { ids: mediaInfo.show.ids };
+                    } else if (
+                        type === 'season' &&
+                        isShowMediaInfo(mediaInfo) &&
+                        episodeInfo
+                    ) {
+                        const seasons = await callApi<any[]>(
+                            `https://api.trakt.tv/shows/${mediaInfo.show.ids.trakt}/seasons`
+                        );
+                        const seasonId = seasons.find(
+                            (s) => s.number === episodeInfo.season
+                        )?.ids?.trakt;
+                        if (!seasonId)
+                            throw new Error(
+                                'Could not find Trakt ID for the season.'
+                            );
+                        body.season = { ids: { trakt: seasonId } };
+                    } else if (
+                        type === 'episode' &&
+                        isShowMediaInfo(mediaInfo) &&
+                        episodeInfo
+                    ) {
+                        const epDetails = await callApi<any>(
+                            `https://api.trakt.tv/shows/${mediaInfo.show.ids.trakt}/seasons/${episodeInfo.season}/episodes/${episodeInfo.number}`
+                        );
+                        const episodeId = epDetails?.ids?.trakt;
+                        if (!episodeId)
+                            throw new Error(
+                                'Could not find Trakt ID for the episode.'
+                            );
+                        body.episode = { ids: { trakt: episodeId } };
+                    } else {
+                        throw new Error(
+                            'Invalid media type for posting comment.'
+                        );
+                    }
+
+                    const newComment = await callApi<TraktComment>(
+                        'https://api.trakt.tv/comments',
+                        'POST',
+                        body,
+                        true
+                    );
+                    sendResponse({ success: true, data: newComment });
+                } catch (e) {
+                    sendResponse({
+                        success: false,
+                        error:
+                            e instanceof Error
+                                ? e.message
+                                : 'Failed to post comment.'
+                    });
+                }
+                return true;
+            }
+
+            if (request.action === 'updateComment') {
+                const { commentId, comment, spoiler } = request.params;
+                try {
+                    const updatedComment = await callApi<TraktComment>(
+                        `https://api.trakt.tv/comments/${commentId}`,
+                        'PUT',
+                        { comment, spoiler },
+                        true
+                    );
+                    sendResponse({ success: true, data: updatedComment });
+                } catch (e) {
+                    sendResponse({
+                        success: false,
+                        error:
+                            e instanceof Error
+                                ? e.message
+                                : 'Failed to update comment.'
+                    });
+                }
+                return true;
+            }
+
+            if (request.action === 'deleteComment') {
+                const { commentId } = request.params;
+                try {
+                    await callApi<void>(
+                        `https://api.trakt.tv/comments/${commentId}`,
+                        'DELETE',
+                        null,
+                        true
+                    );
+                    sendResponse({ success: true });
+                } catch (e) {
+                    sendResponse({
+                        success: false,
+                        error:
+                            e instanceof Error
+                                ? e.message
+                                : 'Failed to delete comment.'
+                    });
+                }
+                return true;
+            }
         })();
         return true;
     }
 );
 
-// ... (onRemoved and onUpdated listeners remain the same)
 chrome.tabs.onRemoved.addListener(async (tabId, removeInfo) => {
     if (activeScrobble.tabId === tabId && activeScrobble.mediaInfo) {
         if (
@@ -878,7 +1073,7 @@ chrome.tabs.onRemoved.addListener(async (tabId, removeInfo) => {
                     payload
                 );
             } catch (error) {
-                // Ignore
+                //Ignore
             }
         } else if (activeScrobble.status === 'started') {
             try {
@@ -893,7 +1088,7 @@ chrome.tabs.onRemoved.addListener(async (tabId, removeInfo) => {
                     payload
                 );
             } catch (error) {
-                // Ignore
+                //Ignore
             }
         }
         resetActiveScrobbleState();
@@ -939,7 +1134,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
                         payload
                     );
                 } catch (error) {
-                    // Ignore
+                    //Ignore
                 }
             } else if (activeScrobble.status === 'started') {
                 try {
@@ -954,7 +1149,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
                         payload
                     );
                 } catch (error) {
-                    // Ignore
+                    //Ignore
                 }
             }
             resetActiveScrobbleState();

@@ -115,18 +115,16 @@ export interface WatchStatusInfo {
     isCompleted?: boolean;
 }
 
-// --- RATING TYPES: MODIFIED ---
 export interface IndividualRating {
     userRating: number | null;
     ratedAt?: string;
 }
 
 export interface MediaRatings {
-    show?: IndividualRating; // For a movie, this holds the movie's rating
+    show?: IndividualRating;
     season?: IndividualRating;
     episode?: IndividualRating;
 }
-// --- END MODIFICATION ---
 
 export interface MediaStatusPayload {
     mediaInfo: MediaInfoResponse | null;
@@ -134,7 +132,7 @@ export interface MediaStatusPayload {
     confidence: 'high' | 'low';
     watchStatus?: WatchStatusInfo;
     progressInfo?: TraktShowWatchedProgress | null;
-    ratingInfo?: MediaRatings; // <-- UPDATED
+    ratingInfo?: MediaRatings;
 }
 
 export interface RequestScrobbleStartParams {
@@ -218,7 +216,6 @@ export interface ConfirmMediaRequest {
     params: MediaInfoResponse;
 }
 
-// --- RATING REQUESTS: MODIFIED ---
 export interface RateShowRequest {
     action: 'rateShow';
     params: { mediaInfo: ShowMediaInfo; rating: number };
@@ -243,7 +240,71 @@ export interface RateEpisodeRequest {
         rating: number;
     };
 }
-// --- END MODIFICATION ---
+
+export interface TraktComment {
+    id: number;
+    parent_id: number;
+    created_at: string;
+    updated_at: string;
+    comment: string;
+    spoiler: boolean;
+    review: boolean;
+    replies: number;
+    likes: number;
+    user_stats: {
+        rating: number | null;
+        play_count: number;
+        completed_count: number;
+    };
+    user: {
+        username: string;
+        private: boolean;
+        name: string;
+        vip: boolean;
+        vip_ep: boolean;
+        ids: {
+            slug: string;
+        };
+    };
+}
+
+export type CommentableType = 'movie' | 'show' | 'season' | 'episode';
+
+export interface GetCommentsRequest {
+    action: 'getComments';
+    params: {
+        type: CommentableType;
+        mediaInfo: MediaInfoResponse;
+        episodeInfo?: SeasonEpisodeObj;
+    };
+}
+
+export interface PostCommentRequest {
+    action: 'postComment';
+    params: {
+        type: CommentableType;
+        mediaInfo: MediaInfoResponse;
+        episodeInfo?: SeasonEpisodeObj;
+        comment: string;
+        spoiler: boolean;
+    };
+}
+
+export interface UpdateCommentRequest {
+    action: 'updateComment';
+    params: {
+        commentId: number;
+        comment: string;
+        spoiler: boolean;
+    };
+}
+
+export interface DeleteCommentRequest {
+    action: 'deleteComment';
+    params: {
+        commentId: number;
+    };
+}
 
 export type MessageRequest =
     | MediaInfoRequest
@@ -256,11 +317,14 @@ export type MessageRequest =
     | RequestScrobblePauseRequest
     | RequestScrobbleStopRequest
     | RequestManualAddToHistoryRequest
-    // --- ADDED NEW REQUESTS ---
     | RateShowRequest
     | RateMovieRequest
     | RateSeasonRequest
-    | RateEpisodeRequest;
+    | RateEpisodeRequest
+    | GetCommentsRequest
+    | PostCommentRequest
+    | UpdateCommentRequest
+    | DeleteCommentRequest;
 
 export interface MessageResponse<T> {
     success: boolean;
