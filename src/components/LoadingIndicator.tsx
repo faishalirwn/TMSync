@@ -16,14 +16,18 @@ export const LoadingIndicator: React.FC<LoadingIndicatorProps> = ({
     };
 
     return (
-        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[1000000000] flex items-center justify-center space-x-2 bg-white/80 backdrop-blur-sm px-4 py-2 rounded-md shadow">
+        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[1000000000] flex items-center justify-center space-x-2 bg-(--color-surface-1)/80 backdrop-blur-sm px-4 py-2 rounded-md shadow">
             <div
-                className={`animate-spin rounded-full border-t-blue-500 border-r-blue-500 border-b-blue-200 border-l-blue-200 ${sizeClasses[size]}`}
+                className={`animate-spin rounded-full border-t-(--color-accent-primary) border-r-(--color-accent-primary) border-b-(--color-accent-primary)/40 border-l-(--color-accent-primary)/40 ${sizeClasses[size]}`}
                 role="status"
             >
                 <span className="sr-only">{text}</span>{' '}
             </div>
-            {text && <span className="text-sm text-gray-700">{text}</span>}
+            {text && (
+                <span className="text-sm text-(--color-text-primary)">
+                    {text}
+                </span>
+            )}
         </div>
     );
 };

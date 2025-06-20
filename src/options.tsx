@@ -326,164 +326,168 @@ const Options: React.FC = () => {
     }, []);
 
     return (
-        <div className="p-6 max-w-md mx-auto mt-10 bg-white rounded-lg shadow-md">
-            <h1 className="text-2xl font-bold text-center mb-6 text-gray-800">
-                TMSync Options
-            </h1>
+        <div className="bg-(--color-background) text-(--color-text-primary) min-h-screen">
+            <div className="p-6 max-w-md mx-auto mt-10 bg-(--color-surface-1) rounded-lg shadow-md">
+                <h1 className="text-2xl font-bold text-center mb-6 text-(--color-text-primary)">
+                    TMSync Options
+                </h1>
 
-            {isLoading ? (
-                <div className="flex justify-center items-center h-20">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
-                </div>
-            ) : (
-                <div className="space-y-4">
-                    {error && (
-                        <div
-                            className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative"
-                            role="alert"
-                        >
-                            <strong className="font-bold">Error:</strong>
-                            <span className="block sm:inline ml-2">
-                                {error}
-                            </span>
-                        </div>
-                    )}
-
-                    {isLoggedIn && username ? (
-                        <div className="text-center">
-                            <p className="text-lg text-green-700">
-                                Logged in as:{' '}
-                                <strong className="font-semibold">
-                                    {username}
-                                </strong>
-                            </p>
-                            <button
-                                onClick={handleLogout}
-                                className="mt-4 w-full bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline transition duration-150 ease-in-out"
+                {isLoading ? (
+                    <div className="flex justify-center items-center h-20">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-(--color-accent-primary)"></div>
+                    </div>
+                ) : (
+                    <div className="space-y-4">
+                        {error && (
+                            <div
+                                className="bg-red-900/30 border border-red-500/50 text-(--color-danger-text) px-4 py-3 rounded relative"
+                                role="alert"
                             >
-                                Logout from Trakt.tv
-                            </button>
-                        </div>
-                    ) : (
-                        <div className="text-center">
-                            <p className="text-gray-600 mb-4">
-                                Connect your Trakt.tv account to sync your watch
-                                history.
-                            </p>
-                            <button
-                                onClick={handleLogin}
-                                className="w-full bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline transition duration-150 ease-in-out"
-                            >
-                                Login with Trakt.tv
-                            </button>
-                        </div>
-                    )}
-                </div>
-            )}
-            {isLoggedIn && (
-                <div className="mt-8 pt-6 border-t border-gray-300">
-                    <h2 className="text-xl font-semibold mb-4 text-gray-700">
-                        Quick Links on Trakt.tv
-                    </h2>
-                    {isLoadingPrefs ? (
-                        <p>Loading preferences...</p>
-                    ) : (
-                        <>
-                            <input
-                                type="text"
-                                placeholder="Search sites..."
-                                className="w-full p-2 border border-gray-300 rounded mb-4"
-                                value={siteSearchTerm}
-                                onChange={(e) =>
-                                    setSiteSearchTerm(e.target.value)
-                                }
-                            />
-                            <ul className="space-y-2">
-                                {availableSitesForQuickLinks
-                                    .filter((site) =>
-                                        site.name
-                                            .toLowerCase()
-                                            .includes(
-                                                siteSearchTerm.toLowerCase()
-                                            )
-                                    )
-                                    .sort(
-                                        (a, b) =>
-                                            (quickLinkPrefs[a.key]?.order ??
-                                                999) -
-                                            (quickLinkPrefs[b.key]?.order ??
-                                                999)
-                                    )
-                                    .map((site, index, arr) => (
-                                        <li
-                                            key={site.key}
-                                            className="flex items-center justify-between p-3 bg-gray-50 rounded-md shadow-sm"
-                                        >
-                                            <div className="flex items-center">
-                                                <img
-                                                    src={site.logo}
-                                                    alt={site.name}
-                                                    className="w-5 h-5 mr-3 object-contain"
-                                                />
-                                                <span className="text-gray-800">
-                                                    {site.name}
-                                                </span>
-                                            </div>
-                                            <div className="flex items-center space-x-2">
-                                                <button
-                                                    onClick={() =>
-                                                        handleMoveSite(
-                                                            site.key,
-                                                            'up'
-                                                        )
-                                                    }
-                                                    disabled={
-                                                        quickLinkPrefs[site.key]
-                                                            ?.order === 0
-                                                    }
-                                                    className="text-xs p-1 disabled:opacity-50"
-                                                >
-                                                    ⬆️
-                                                </button>
-                                                <button
-                                                    onClick={() =>
-                                                        handleMoveSite(
-                                                            site.key,
-                                                            'down'
-                                                        )
-                                                    }
-                                                    disabled={
-                                                        quickLinkPrefs[site.key]
-                                                            ?.order ===
-                                                        arr.length - 1
-                                                    }
-                                                    className="text-xs p-1 disabled:opacity-50"
-                                                >
-                                                    ⬇️
-                                                </button>
+                                <strong className="font-bold">Error:</strong>
+                                <span className="block sm:inline ml-2">
+                                    {error}
+                                </span>
+                            </div>
+                        )}
 
-                                                <button
-                                                    onClick={() =>
-                                                        handleToggleSite(
-                                                            site.key
-                                                        )
-                                                    }
-                                                    className={`w-12 h-6 rounded-full p-1 transition-colors duration-200 ease-in-out focus:outline-none
-                                                    ${quickLinkPrefs[site.key]?.enabled ? 'bg-blue-500' : 'bg-gray-300'}`}
-                                                >
-                                                    <span
-                                                        className={`block w-4 h-4 rounded-full bg-white shadow transform transition-transform duration-200 ease-in-out
-                                                        ${quickLinkPrefs[site.key]?.enabled ? 'translate-x-6' : 'translate-x-0'}`}
+                        {isLoggedIn && username ? (
+                            <div className="text-center">
+                                <p className="text-lg text-(--color-success-text)">
+                                    Logged in as:{' '}
+                                    <strong className="font-semibold">
+                                        {username}
+                                    </strong>
+                                </p>
+                                <button
+                                    onClick={handleLogout}
+                                    className="mt-4 w-full bg-(--color-danger) hover:bg-(--color-danger-hover) text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline transition duration-150 ease-in-out"
+                                >
+                                    Logout from Trakt.tv
+                                </button>
+                            </div>
+                        ) : (
+                            <div className="text-center">
+                                <p className="text-(--color-text-secondary) mb-4">
+                                    Connect your Trakt.tv account to sync your
+                                    watch history.
+                                </p>
+                                <button
+                                    onClick={handleLogin}
+                                    className="w-full bg-(--color-accent-primary) hover:bg-(--color-accent-primary-hover) text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline transition duration-150 ease-in-out"
+                                >
+                                    Login with Trakt.tv
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                )}
+                {isLoggedIn && (
+                    <div className="mt-8 pt-6 border-t border-(--color-border)">
+                        <h2 className="text-xl font-semibold mb-4 text-(--color-text-primary)">
+                            Quick Links on Trakt.tv
+                        </h2>
+                        {isLoadingPrefs ? (
+                            <p>Loading preferences...</p>
+                        ) : (
+                            <>
+                                <input
+                                    type="text"
+                                    placeholder="Search sites..."
+                                    className="w-full p-2 border border-(--color-border) rounded mb-4 bg-(--color-background) text-(--color-text-primary) focus:ring-2 focus:ring-(--color-accent-primary) focus:outline-none"
+                                    value={siteSearchTerm}
+                                    onChange={(e) =>
+                                        setSiteSearchTerm(e.target.value)
+                                    }
+                                />
+                                <ul className="space-y-2">
+                                    {availableSitesForQuickLinks
+                                        .filter((site) =>
+                                            site.name
+                                                .toLowerCase()
+                                                .includes(
+                                                    siteSearchTerm.toLowerCase()
+                                                )
+                                        )
+                                        .sort(
+                                            (a, b) =>
+                                                (quickLinkPrefs[a.key]?.order ??
+                                                    999) -
+                                                (quickLinkPrefs[b.key]?.order ??
+                                                    999)
+                                        )
+                                        .map((site, index, arr) => (
+                                            <li
+                                                key={site.key}
+                                                className="flex items-center justify-between p-3 bg-(--color-surface-2) rounded-md shadow-sm"
+                                            >
+                                                <div className="flex items-center">
+                                                    <img
+                                                        src={site.logo}
+                                                        alt={site.name}
+                                                        className="w-5 h-5 mr-3 object-contain"
                                                     />
-                                                </button>
-                                            </div>
-                                        </li>
-                                    ))}
-                            </ul>
-                        </>
-                    )}
-                </div>
-            )}
+                                                    <span className="text-(--color-text-primary)">
+                                                        {site.name}
+                                                    </span>
+                                                </div>
+                                                <div className="flex items-center space-x-2">
+                                                    <button
+                                                        onClick={() =>
+                                                            handleMoveSite(
+                                                                site.key,
+                                                                'up'
+                                                            )
+                                                        }
+                                                        disabled={
+                                                            quickLinkPrefs[
+                                                                site.key
+                                                            ]?.order === 0
+                                                        }
+                                                        className="text-xs p-1 disabled:opacity-50"
+                                                    >
+                                                        ⬆️
+                                                    </button>
+                                                    <button
+                                                        onClick={() =>
+                                                            handleMoveSite(
+                                                                site.key,
+                                                                'down'
+                                                            )
+                                                        }
+                                                        disabled={
+                                                            quickLinkPrefs[
+                                                                site.key
+                                                            ]?.order ===
+                                                            arr.length - 1
+                                                        }
+                                                        className="text-xs p-1 disabled:opacity-50"
+                                                    >
+                                                        ⬇️
+                                                    </button>
+
+                                                    <button
+                                                        onClick={() =>
+                                                            handleToggleSite(
+                                                                site.key
+                                                            )
+                                                        }
+                                                        className={`w-12 h-6 rounded-full p-1 transition-colors duration-200 ease-in-out focus:outline-none
+                                                    ${quickLinkPrefs[site.key]?.enabled ? 'bg-(--color-accent-primary)' : 'bg-(--color-surface-3)'}`}
+                                                    >
+                                                        <span
+                                                            className={`block w-4 h-4 rounded-full bg-white shadow transform transition-transform duration-200 ease-in-out
+                                                        ${quickLinkPrefs[site.key]?.enabled ? 'translate-x-6' : 'translate-x-0'}`}
+                                                        />
+                                                    </button>
+                                                </div>
+                                            </li>
+                                        ))}
+                                </ul>
+                            </>
+                        )}
+                    </div>
+                )}
+            </div>
         </div>
     );
 };

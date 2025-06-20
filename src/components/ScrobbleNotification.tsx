@@ -18,7 +18,7 @@ const Star: React.FC<{
         onClick={readOnly ? undefined : onClick}
         onMouseEnter={readOnly ? undefined : onMouseEnter}
         onMouseLeave={readOnly ? undefined : onMouseLeave}
-        className={`w-4 h-4 cursor-${readOnly ? 'default' : 'pointer'} ${filled ? 'text-yellow-400' : 'text-gray-300'}`}
+        className={`w-4 h-4 cursor-${readOnly ? 'default' : 'pointer'} ${filled ? 'text-(--color-star-filled)' : 'text-(--color-star-empty)'}`}
         fill="currentColor"
         viewBox="0 0 20 20"
         xmlns="http://www.w3.org/2000/svg"
@@ -37,15 +37,15 @@ const StarRatingInput: React.FC<{
     const [hoverRating, setHoverRating] = useState(0);
 
     return (
-        <div className="mt-2 pt-2 border-t border-gray-100 first-of-type:border-t-0 first-of-type:pt-1 first-of-type:mt-1">
+        <div className="mt-2 pt-2 border-t border-(--color-border) first-of-type:border-t-0 first-of-type:pt-1 first-of-type:mt-1">
             <div className="flex justify-between items-center">
-                <p className="text-xs text-gray-500 mb-0.5 text-left">
+                <p className="text-xs text-(--color-text-secondary) mb-0.5 text-left">
                     {label}:
                 </p>
                 {onCommentClick && (
                     <button
                         onClick={onCommentClick}
-                        className="text-xs text-blue-600 hover:underline disabled:opacity-50"
+                        className="text-xs text-(--color-accent-primary) hover:underline disabled:opacity-50"
                         disabled={isSubmitting}
                     >
                         Comment
@@ -146,20 +146,20 @@ export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
         isShow && 'number' in mediaInfo ? mediaInfo.number : undefined;
 
     const containerClasses = `fixed bottom-0 left-1/2 -translate-x-1/2 z-[999999999] transition-all duration-250 ease-in-out pointer-events-none`;
-    const contentWrapperClasses = `bg-white w-72 text-base text-center overflow-hidden shadow-lg rounded-t-md transition-[max-height] duration-250 ease-in-out ${isExpanded ? 'max-h-[500px]' : 'max-h-2 hover:max-h-[500px]'} pointer-events-auto`;
+    const contentWrapperClasses = `bg-(--color-surface-1) w-72 text-base text-center overflow-hidden shadow-lg rounded-t-md transition-[max-height] duration-250 ease-in-out ${isExpanded ? 'max-h-[500px]' : 'max-h-2 hover:max-h-[500px]'} pointer-events-auto`;
 
     let statusText = '';
-    let statusColor = 'text-gray-700';
+    let statusColor = 'text-(--color-text-primary)';
 
     if (isEffectivelyScrobbled) {
         statusText = 'Added to Trakt History';
-        statusColor = 'text-green-600';
+        statusColor = 'text-(--color-success-text)';
     } else if (liveScrobbleStatus === 'started') {
         statusText = 'Scrobbling to Trakt...';
-        statusColor = 'text-blue-600';
+        statusColor = 'text-(--color-accent-primary)';
     } else if (liveScrobbleStatus === 'paused') {
         statusText = 'Scrobbling Paused';
-        statusColor = 'text-yellow-600';
+        statusColor = 'text-(--color-warning-text)';
     }
 
     return (
@@ -177,13 +177,13 @@ export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
                             {statusText}
                         </p>
                     )}
-                    <p className="text-black text-sm m-0 p-0 truncate">
+                    <p className="text-(--color-text-primary) text-sm m-0 p-0 truncate">
                         {title} {year && `(${year})`}
                     </p>
                     {isShow &&
                         season !== undefined &&
                         episode !== undefined && (
-                            <p className="text-gray-600 text-xs m-0 p-0">
+                            <p className="text-(--color-text-secondary) text-xs m-0 p-0">
                                 S{String(season).padStart(2, '0')} E
                                 {String(episode).padStart(2, '0')}
                             </p>
@@ -255,10 +255,10 @@ export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
                                 />
                             )}
 
-                            <div className="mt-2 border-t border-gray-200 pt-2">
+                            <div className="mt-2 border-t border-(--color-border) pt-2">
                                 {isEffectivelyScrobbled ? (
                                     <button
-                                        className="text-red-500 px-2 py-1 rounded border-none cursor-pointer text-xs hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
+                                        className="text-(--color-danger) px-2 py-1 rounded border-none cursor-pointer text-xs hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
                                         onClick={onUndoScrobble}
                                         disabled={
                                             isProcessingAction ||
@@ -270,7 +270,7 @@ export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
                                 ) : (
                                     liveScrobbleStatus === 'idle' && (
                                         <button
-                                            className="text-blue-600 w-full px-2 py-1 rounded border-none cursor-pointer my-1 text-sm hover:bg-blue-50 disabled:opacity-70 disabled:cursor-wait flex items-center justify-center"
+                                            className="text-(--color-accent-primary) w-full px-2 py-1 rounded border-none cursor-pointer my-1 text-sm hover:bg-(--color-surface-2) disabled:opacity-70 disabled:cursor-wait flex items-center justify-center"
                                             onClick={onManualScrobble}
                                             disabled={isProcessingAction}
                                         >

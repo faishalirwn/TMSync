@@ -26,7 +26,7 @@ export const RewatchPrompt: React.FC<RewatchPromptProps> = ({ onConfirm }) => {
             </span>
             <button
                 onClick={onConfirm}
-                className="bg-white text-purple-600 hover:bg-purple-50 font-semibold text-xs px-3 py-1 rounded-full shadow transition duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-purple-600 focus:ring-white"
+                className="bg-(--color-surface-1) text-(--color-accent-secondary) hover:bg-(--color-surface-2) font-semibold text-xs px-3 py-1 rounded-full shadow transition duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-purple-600 focus:ring-(--color-surface-1)"
             >
                 Confirm Rewatch
             </button>

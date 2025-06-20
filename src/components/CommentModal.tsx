@@ -18,7 +18,7 @@ const Star: React.FC<{
         onClick={readOnly ? undefined : onClick}
         onMouseEnter={readOnly ? undefined : onMouseEnter}
         onMouseLeave={readOnly ? undefined : onMouseLeave}
-        className={`w-5 h-5 cursor-${readOnly ? 'default' : 'pointer'} ${filled ? 'text-yellow-400' : 'text-gray-300'}`}
+        className={`w-5 h-5 cursor-${readOnly ? 'default' : 'pointer'} ${filled ? 'text-(--color-star-filled)' : 'text-(--color-star-empty)'}`}
         fill="currentColor"
         viewBox="0 0 20 20"
         xmlns="http://www.w3.org/2000/svg"
@@ -36,7 +36,7 @@ const ModalStarRating: React.FC<{
     const [hover, setHover] = useState(0);
     return (
         <div className="mt-2">
-            <p className="text-xs text-gray-400">{label}</p>
+            <p className="text-xs text-(--color-text-secondary)">{label}</p>
             <div
                 className="flex items-center space-x-1"
                 onMouseLeave={() => setHover(0)}
@@ -196,11 +196,11 @@ export const CommentModal: React.FC<CommentModalProps> = ({
 
     return (
         <div className="fixed inset-0 bg-black/50 z-[1000000000] flex items-center justify-center p-4">
-            <div className="bg-gray-800 text-white rounded-lg shadow-xl w-full max-w-4xl h-[80vh] flex flex-col">
-                <div className="flex justify-between items-center p-4 border-b border-gray-700">
+            <div className="bg-(--color-surface-1) text-(--color-text-primary) rounded-lg shadow-xl w-full max-w-4xl h-[80vh] flex flex-col">
+                <div className="flex justify-between items-center p-4 border-b border-(--color-border)">
                     <div>
                         <h2 className="text-xl font-bold">{getTitle()}</h2>
-                        <p className="text-sm text-gray-400">
+                        <p className="text-sm text-(--color-text-secondary)">
                             Review for:{' '}
                             <span className="capitalize font-semibold">
                                 {commentType}
@@ -209,18 +209,18 @@ export const CommentModal: React.FC<CommentModalProps> = ({
                     </div>
                     <button
                         onClick={onClose}
-                        className="text-2xl hover:text-red-500 cursor-pointer"
+                        className="text-2xl hover:text-(--color-danger) cursor-pointer"
                     >
                         ×
                     </button>
                 </div>
 
                 <div className="flex flex-grow overflow-hidden">
-                    <div className="w-1/3 border-r border-gray-700 flex flex-col">
-                        <div className="p-2 border-b border-gray-700">
+                    <div className="w-1/3 border-r border-(--color-border) flex flex-col">
+                        <div className="p-2 border-b border-(--color-border)">
                             <button
                                 onClick={handleNewComment}
-                                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded text-sm cursor-pointer"
+                                className="w-full bg-(--color-accent-primary) hover:bg-(--color-accent-primary-hover) text-(--color-text-primary) font-bold py-2 px-4 rounded text-sm cursor-pointer"
                             >
                                 + New Comment
                             </button>
@@ -231,14 +231,14 @@ export const CommentModal: React.FC<CommentModalProps> = ({
                                     Loading comments...
                                 </p>
                             ) : comments.length === 0 ? (
-                                <p className="p-4 text-center text-gray-400">
+                                <p className="p-4 text-center text-(--color-text-secondary)">
                                     No comments found.
                                 </p>
                             ) : (
                                 comments.map((comment) => (
                                     <div
                                         key={comment.id}
-                                        className={`p-3 border-b border-gray-700 cursor-pointer ${selectedCommentId === comment.id ? 'bg-gray-700' : 'hover:bg-gray-700/50'}`}
+                                        className={`p-3 border-b border-(--color-border) cursor-pointer ${selectedCommentId === comment.id ? 'bg-(--color-surface-2)' : 'hover:bg-(--color-surface-2)/50'}`}
                                     >
                                         <div className="flex justify-between items-start">
                                             <div
@@ -249,7 +249,7 @@ export const CommentModal: React.FC<CommentModalProps> = ({
                                                 <p className="text-sm line-clamp-2">
                                                     {comment.comment}
                                                 </p>
-                                                <p className="text-xs text-gray-400 mt-1">
+                                                <p className="text-xs text-(--color-text-secondary) mt-1">
                                                     {new Date(
                                                         comment.created_at
                                                     ).toLocaleString()}
@@ -260,7 +260,7 @@ export const CommentModal: React.FC<CommentModalProps> = ({
                                                     handleDelete(comment.id)
                                                 }
                                                 disabled={isSubmitting}
-                                                className="text-gray-400 hover:text-red-500 disabled:opacity-50 text-xl ml-2"
+                                                className="text-(--color-text-secondary) hover:text-(--color-danger) disabled:opacity-50 text-xl ml-2"
                                             >
                                                 ×
                                             </button>
@@ -277,10 +277,10 @@ export const CommentModal: React.FC<CommentModalProps> = ({
                             value={editorText}
                             onChange={(e) => setEditorText(e.target.value)}
                             placeholder="Write your review or shout here... (at least 5 words)"
-                            className={`w-full flex-grow bg-gray-900 border rounded-md p-3 text-base resize-none focus:outline-none focus:ring-2 ${validationError ? 'border-red-500 focus:ring-red-500' : 'border-gray-600 focus:ring-blue-500'}`}
+                            className={`w-full flex-grow bg-(--color-background) border rounded-md p-3 text-base resize-none focus:outline-none focus:ring-2 ${validationError ? 'border-(--color-danger) focus:ring-(--color-danger)' : 'border-(--color-border) focus:ring-(--color-accent-primary)'}`}
                         />
                         {validationError && (
-                            <p className="text-red-500 text-sm mt-1">
+                            <p className="text-(--color-danger) text-sm mt-1">
                                 {validationError}
                             </p>
                         )}
@@ -292,7 +292,7 @@ export const CommentModal: React.FC<CommentModalProps> = ({
                                     onChange={(e) =>
                                         setIsSpoiler(e.target.checked)
                                     }
-                                    className="form-checkbox h-5 w-5 bg-gray-700 border-gray-600 text-blue-500 focus:ring-blue-500"
+                                    className="form-checkbox h-5 w-5 bg-(--color-surface-2) border-(--color-border) text-(--color-accent-primary) focus:ring-(--color-accent-primary)"
                                 />
                                 <span className="text-sm">
                                     This comment contains spoilers
@@ -321,17 +321,17 @@ export const CommentModal: React.FC<CommentModalProps> = ({
                     </div>
                 </div>
 
-                <div className="p-4 border-t border-gray-700 flex justify-end space-x-3">
+                <div className="p-4 border-t border-(--color-border) flex justify-end space-x-3">
                     <button
                         onClick={onClose}
-                        className="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded font-semibold cursor-pointer"
+                        className="px-4 py-2 bg-(--color-surface-3) hover:bg-(--color-surface-2) rounded font-semibold cursor-pointer"
                     >
                         Close
                     </button>
                     <button
                         onClick={handleSave}
                         disabled={isSubmitting || !editorText.trim()}
-                        className="px-4 py-2 bg-green-600 hover:bg-green-500 rounded font-semibold disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                        className="px-4 py-2 bg-(--color-success) hover:bg-(--color-success-hover) rounded font-semibold disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                     >
                         {isSubmitting ? 'Saving...' : 'Save Comment'}
                     </button>

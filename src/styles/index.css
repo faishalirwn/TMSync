@@ -1,6 +1,42 @@
 @import 'tailwindcss';
 
 @theme {
+    /* Base Colors */
+    --color-background: oklch(19.5% 0.024 258); /* Near black with a cool tint */
+    --color-surface-1: oklch(24% 0.024 258); /* Slightly lighter surface */
+    --color-surface-2: oklch(28% 0.024 258); /* Lighter for interactive elements */
+    --color-surface-3: oklch(35% 0.022 258); /* Lighter for borders/dividers */
+
+    /* Text Colors */
+    --color-text-primary: oklch(95% 0.01 258); /* Off-white for primary text */
+    --color-text-secondary: oklch(65% 0.01 258); /* Gray for secondary text */
+    --color-text-tertiary: oklch(45% 0.01 258); /* Darker gray for subtle text */
+    --color-text-inverted: oklch(15% 0.02 258); /* For use on light backgrounds */
+
+    /* Accent Colors */
+    --color-accent-primary: oklch(62.3% 0.214 259.815); /* blue-500 */
+    --color-accent-primary-hover: oklch(54.6% 0.245 262.881); /* blue-600 */
+    --color-accent-secondary: oklch(58.5% 0.233 277.117); /* indigo-500 */
+    --color-accent-secondary-hover: oklch(51.1% 0.262 276.966); /* indigo-600 */
+
+    /* Semantic Colors */
+    --color-success: oklch(72.3% 0.219 149.579); /* green-500 */
+    --color-success-hover: oklch(62.7% 0.194 149.214); /* green-600 */
+    --color-success-text: oklch(87.1% 0.15 154.449); /* green-300 */
+    --color-warning: oklch(85.2% 0.199 91.936); /* yellow-400 */
+    --color-warning-text: oklch(94.5% 0.129 101.54); /* yellow-200 */
+    --color-danger: oklch(70.4% 0.191 22.216); /* red-400 */
+    --color-danger-hover: oklch(63.7% 0.237 25.331); /* red-500 */
+    --color-danger-text: oklch(88.5% 0.062 18.334); /* red-200 */
+
+    /* Border Color */
+    --color-border: oklch(35% 0.022 258); /* Same as surface-3 */
+
+    /* Component-specific */
+    --color-star-filled: oklch(90.5% 0.182 98.111); /* yellow-300 */
+    --color-star-empty: oklch(45% 0.01 258); /* text-tertiary */
+
+    /* Animations */
     --animate-fade-in-scale: fade-in-scale 0.3s ease-out;
     @keyframes fade-in-scale {
         0% {

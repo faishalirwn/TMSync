@@ -35,7 +35,7 @@ export const StartWatchPrompt: React.FC<StartWatchPromptProps> = ({
             </span>
             <button
                 onClick={onConfirm}
-                className="bg-white text-blue-600 hover:bg-blue-50 font-semibold text-xs px-3 py-1 rounded-full shadow transition duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-blue-600 focus:ring-white"
+                className="bg-(--color-surface-1) text-(--color-accent-primary) hover:bg-(--color-surface-2) font-semibold text-xs px-3 py-1 rounded-full shadow transition duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-blue-600 focus:ring-(--color-surface-1)"
             >
                 Confirm
             </button>

@@ -91,7 +91,7 @@ export const ManualSearchPrompt: React.FC<ManualSearchPromptProps> = ({
     };
 
     return (
-        <div className="tmsync-manual-search fixed bottom-[60px] left-1/2 -translate-x-1/2 z-[1000000000] bg-white border border-gray-300 rounded-lg p-4 shadow-lg w-[350px] text-gray-800">
+        <div className="tmsync-manual-search fixed bottom-[60px] left-1/2 -translate-x-1/2 z-[1000000000] bg-(--color-surface-1) border border-(--color-border) rounded-lg p-4 shadow-lg w-[350px] text-(--color-text-primary)">
             <p className="m-0 mb-2.5 text-sm">
                 Couldn't automatically identify "{originalQuery.query}". Please
                 confirm or search:
@@ -99,13 +99,13 @@ export const ManualSearchPrompt: React.FC<ManualSearchPromptProps> = ({
             <div className="flex">
                 <input
                     type="text"
-                    className="w-[calc(100%-80px)] p-2 mr-1 border border-gray-300 rounded"
+                    className="w-[calc(100%-80px)] p-2 mr-1 border border-(--color-border) rounded bg-(--color-background) text-(--color-text-primary) focus:ring-2 focus:ring-(--color-accent-primary) focus:outline-none"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     placeholder="Search on Trakt..."
                 />
                 <button
-                    className="px-3 py-2 cursor-pointer border-none rounded ml-1 bg-blue-500 text-white disabled:opacity-50"
+                    className="px-3 py-2 cursor-pointer border-none rounded ml-1 bg-(--color-accent-primary) text-(--color-text-primary) disabled:opacity-50"
                     onClick={handleSearch}
                     disabled={isLoading}
                 >
@@ -113,12 +113,14 @@ export const ManualSearchPrompt: React.FC<ManualSearchPromptProps> = ({
                 </button>
             </div>
 
-            {error && <p className="text-red-600 text-xs mt-1">{error}</p>}
+            {error && (
+                <p className="text-(--color-danger) text-xs mt-1">{error}</p>
+            )}
 
             {isLoading && searchResults.length === 0 && <p>Loading...</p>}
 
             {!isLoading && searchResults.length > 0 && (
-                <div className="max-h-[200px] overflow-y-auto mt-2.5 border-t border-gray-200 pt-2.5">
+                <div className="max-h-[200px] overflow-y-auto mt-2.5 border-t border-(--color-border) pt-2.5">
                     {searchResults.map((item) => {
                         const key = isMovieMediaInfo(item)
                             ? item.movie.ids?.trakt
@@ -128,13 +130,13 @@ export const ManualSearchPrompt: React.FC<ManualSearchPromptProps> = ({
                         return (
                             <div
                                 key={key}
-                                className="p-2 border-b border-gray-200 flex justify-between items-center"
+                                className="p-2 border-b border-(--color-border) flex justify-between items-center"
                             >
                                 <span>
                                     {getTitle(item)} ({getYear(item)})
                                 </span>
                                 <button
-                                    className="px-2 py-1 cursor-pointer border-none rounded bg-green-500 text-white text-xs disabled:opacity-50"
+                                    className="px-2 py-1 cursor-pointer border-none rounded bg-(--color-success) text-white text-xs disabled:opacity-50"
                                     onClick={() => handleSelect(item)}
                                 >
                                     Select
@@ -146,7 +148,7 @@ export const ManualSearchPrompt: React.FC<ManualSearchPromptProps> = ({
             )}
 
             <button
-                className="px-3 py-2 cursor-pointer border-none rounded ml-1 bg-red-600 text-white mt-2.5 block w-full disabled:opacity-50"
+                className="px-3 py-2 cursor-pointer border-none rounded ml-1 bg-(--color-danger) text-white mt-2.5 block w-full disabled:opacity-50"
                 onClick={onCancel}
                 disabled={isLoading}
             >
