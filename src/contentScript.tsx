@@ -7,9 +7,30 @@ const isIframe = window.self !== window.top;
 let reactRoot: Root | null = null;
 let videoMonitorIntervalId: number | null = null;
 let iframeVideoEl: HTMLVideoElement | null = null;
-let iframeTimeUpdateThrottleTimer: number | null = null;
 
 const IFRAME_VIDEO_PROGRESS_UPDATE_THROTTLE_MS = 2000;
+
+let timeUpdateProcessingScheduled = false;
+let latestVideoState: { currentTime: number; duration: number } | null = null;
+
+function processThrottledIframeTimeUpdate() {
+    if (latestVideoState) {
+        console.log(
+            'TMSync Iframe: Posting throttled TimeUpdate event',
+            latestVideoState
+        );
+        window.top?.postMessage(
+            {
+                type: 'TMSYNC_IFRAME_TIMEUPDATE',
+                ...latestVideoState,
+                sourceId: 'tmsync-iframe-player'
+            },
+            '*'
+        );
+        latestVideoState = null;
+    }
+    timeUpdateProcessingScheduled = false;
+}
 
 function handleIframePlay(event: Event) {
     const video = event.target as HTMLVideoElement;
@@ -67,35 +88,23 @@ function handleIframeEnded(event: Event) {
 
 function handleIframeTimeUpdate(event: Event) {
     const video = event.target as HTMLVideoElement;
-    if (!video || video.paused || isNaN(video.duration) || video.duration === 0)
+    // The `video.paused` check is removed here. The event itself implies progress.
+    if (!video || isNaN(video.duration) || video.duration === 0) {
         return;
-
-    if (iframeTimeUpdateThrottleTimer) {
-        clearTimeout(iframeTimeUpdateThrottleTimer);
     }
 
-    iframeTimeUpdateThrottleTimer = window.setTimeout(() => {
-        if (
-            !video ||
-            video.paused ||
-            isNaN(video.duration) ||
-            video.duration === 0
-        )
-            return;
-        console.log('TMSync Iframe: TimeUpdate event (throttled)', {
-            currentTime: video.currentTime,
-            duration: video.duration
-        });
-        window.top?.postMessage(
-            {
-                type: 'TMSYNC_IFRAME_TIMEUPDATE',
-                currentTime: video.currentTime,
-                duration: video.duration,
-                sourceId: 'tmsync-iframe-player'
-            },
-            '*'
+    latestVideoState = {
+        currentTime: video.currentTime,
+        duration: video.duration
+    };
+
+    if (!timeUpdateProcessingScheduled) {
+        timeUpdateProcessingScheduled = true;
+        setTimeout(
+            processThrottledIframeTimeUpdate,
+            IFRAME_VIDEO_PROGRESS_UPDATE_THROTTLE_MS
         );
-    }, IFRAME_VIDEO_PROGRESS_UPDATE_THROTTLE_MS);
+    }
 }
 
 function attachIframeVideoListeners(videoElement: HTMLVideoElement) {
@@ -137,9 +146,6 @@ function detachIframeVideoListeners() {
         iframeVideoEl.removeEventListener('pause', handleIframePause);
         iframeVideoEl.removeEventListener('ended', handleIframeEnded);
         iframeVideoEl.removeEventListener('timeupdate', handleIframeTimeUpdate);
-        if (iframeTimeUpdateThrottleTimer) {
-            clearTimeout(iframeTimeUpdateThrottleTimer);
-        }
         iframeVideoEl = null;
     }
 }

@@ -481,31 +481,19 @@ export const ScrobbleManager = () => {
     ]);
 
     const commonTimeUpdateHandler = useCallback(() => {
-        if (pageUnloadRef.current) return;
-
-        let currentVideoTime = 0;
-        let currentVideoDuration = 0;
-
-        if (videoRef.current && !videoRef.current.paused) {
-            currentVideoTime = videoRef.current.currentTime;
-            currentVideoDuration = videoRef.current.duration;
-        } else if (
-            isIframePlayerActive &&
-            latestVideoStateForThrottleRef.current
-        ) {
-            console.warn(
-                'commonTimeUpdateHandler called without progress for iframe. This path needs review.'
-            );
-            return;
-        } else {
+        if (pageUnloadRef.current || !videoRef.current) {
             return;
         }
 
-        if (isNaN(currentVideoDuration) || currentVideoDuration === 0) return;
+        const { currentTime, duration } = videoRef.current;
+
+        if (isNaN(duration) || duration === 0) {
+            return;
+        }
 
         latestVideoStateForThrottleRef.current = {
-            currentTime: currentVideoTime,
-            duration: currentVideoDuration
+            currentTime,
+            duration
         };
 
         if (!timeUpdateProcessingScheduledRef.current) {
@@ -515,7 +503,7 @@ export const ScrobbleManager = () => {
                 VIDEO_PROGRESS_UPDATE_THROTTLE_MS
             );
         }
-    }, [isIframePlayerActive, processThrottledTimeUpdate]);
+    }, [processThrottledTimeUpdate]);
 
     const commonTimeUpdateHandlerWithProgress = useCallback(
         (progress: number) => {
@@ -558,14 +546,7 @@ export const ScrobbleManager = () => {
     }, [commonEndedHandler, isIframePlayerActive]);
 
     const handleLocalVideoTimeUpdate = useCallback(() => {
-        if (
-            isIframePlayerActive ||
-            !videoRef.current ||
-            videoRef.current.paused
-        )
-            return;
-        if (isNaN(videoRef.current.duration) || videoRef.current.duration === 0)
-            return;
+        if (isIframePlayerActive) return;
         commonTimeUpdateHandler();
     }, [commonTimeUpdateHandler, isIframePlayerActive]);
 
