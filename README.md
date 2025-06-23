@@ -23,12 +23,11 @@ TMSync is a browser extension designed to seamlessly integrate various streaming
 
 ## 📺 Supported Sites
 
--   cineby.app
--   freek.to
--   hydrahd.me / hydrahd.ac
 -   hexa.watch
 -   xprime.tv
--   _(and various embedded players)_
+-   cineby.app (unmaintained)
+-   freek.to (unmaintained)
+-   hydrahd.me / hydrahd.ac (unmaintained)
 
 ## 🛠️ Tech Stack
 
