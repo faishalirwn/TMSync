@@ -9,7 +9,7 @@ module.exports = {
     entry: {
         popup: path.join(srcDir, 'popup.tsx'),
         options: path.join(srcDir, 'options.tsx'),
-        background: path.join(srcDir, 'background.ts'),
+        background: path.join(srcDir, 'background/index.ts'),
         contentScript: path.join(srcDir, 'contentScript.tsx'),
         traktContentScript: path.join(srcDir, 'traktContentScript.tsx')
     },
