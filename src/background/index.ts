@@ -1,4 +1,3 @@
-import { MessageRequest } from '../utils/types';
 import {
     handleConfirmMedia,
     handleManualSearch,
@@ -28,6 +27,7 @@ import {
 import { scrobbleState, resetActiveScrobbleState } from './state';
 import { callApi } from '../utils/api';
 import { isMovieMediaInfo, isShowMediaInfo } from '../utils/typeGuards';
+import { MessageRequest } from '../types/messaging';
 
 type MessageHandler = (
     params: any,

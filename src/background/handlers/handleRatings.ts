@@ -1,25 +1,19 @@
-import { callApi } from '../../utils/api';
 import {
-    MovieMediaInfo,
-    RateEpisodeRequest,
-    RateMovieRequest,
-    RateSeasonRequest,
-    RateShowRequest,
-    ShowMediaInfo
-} from '../../utils/types';
+    RateEpisodeParams,
+    RateMovieParams,
+    RateSeasonParams,
+    RateShowParams
+} from '../../types/messaging';
+import { callApi } from '../../utils/api';
 
-export async function handleRateMovie(
-    params: RateMovieRequest['params']
-): Promise<void> {
+export async function handleRateMovie(params: RateMovieParams): Promise<void> {
     const body = {
         movies: [{ ids: params.mediaInfo.movie.ids, rating: params.rating }]
     };
     await callApi(`https://api.trakt.tv/sync/ratings`, 'POST', body);
 }
 
-export async function handleRateShow(
-    params: RateShowRequest['params']
-): Promise<void> {
+export async function handleRateShow(params: RateShowParams): Promise<void> {
     const body = {
         shows: [{ ids: params.mediaInfo.show.ids, rating: params.rating }]
     };
@@ -27,7 +21,7 @@ export async function handleRateShow(
 }
 
 export async function handleRateSeason(
-    params: RateSeasonRequest['params']
+    params: RateSeasonParams
 ): Promise<void> {
     const seasons = await callApi<any[]>(
         `https://api.trakt.tv/shows/${params.mediaInfo.show.ids.trakt}/seasons`
@@ -42,7 +36,7 @@ export async function handleRateSeason(
 }
 
 export async function handleRateEpisode(
-    params: RateEpisodeRequest['params']
+    params: RateEpisodeParams
 ): Promise<void> {
     const epDetails = await callApi<any>(
         `https://api.trakt.tv/shows/${params.mediaInfo.show.ids.trakt}/seasons/${params.episodeInfo.season}/episodes/${params.episodeInfo.number}`

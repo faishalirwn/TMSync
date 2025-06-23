@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { isShowMediaInfo, isMovieMediaInfo } from '../../../utils/typeGuards';
+import { TraktComment } from '../../../types/trakt';
 import {
     CommentableType,
     MediaInfoResponse,
-    MediaRatings,
-    TraktComment
-} from '../../../utils/types';
+    MediaRatings
+} from '../../../types/media';
 
 const Star: React.FC<{
     filled: boolean;

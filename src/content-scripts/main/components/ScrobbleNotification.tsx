@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { isMovieMediaInfo, isShowMediaInfo } from '../../../utils/typeGuards';
 import {
-    MediaRatings,
-    ScrobbleNotificationMediaType,
     ActiveScrobbleStatus,
-    CommentableType
-} from '../../../utils/types';
+    ScrobbleNotificationMediaType
+} from '../../../types/scrobbling';
+import { CommentableType, MediaRatings } from '../../../types/media';
 
 const Star: React.FC<{
     filled: boolean;

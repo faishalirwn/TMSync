@@ -1,20 +1,21 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import {
-    MediaInfoResponse,
-    MediaRatings,
-    MediaStatusPayload,
-    MessageRequest,
-    MessageResponse,
-    SeasonEpisodeObj,
-    TraktComment,
-    CommentableType
-} from '../utils/types';
-import { isShowMediaInfo, isMovieMediaInfo } from '../utils/typeGuards';
-import { TraktShowWatchedProgress } from '../utils/types/traktApi';
 import { getLocalRewatchInfo } from '../utils/helpers/localRewatch';
 import { SiteConfigBase } from '../utils/siteConfigs/baseConfig';
 import { getCurrentSiteConfig } from '../utils/siteConfigs';
 import { HighlightType } from '../utils/highlighting';
+import {
+    MediaInfoResponse,
+    MediaRatings,
+    SeasonEpisodeObj,
+    CommentableType
+} from '../types/media';
+import { TraktComment, TraktShowWatchedProgress } from '../types/trakt';
+import {
+    MessageRequest,
+    MessageResponse,
+    MediaStatusPayload
+} from '../types/messaging';
+import { isMovieMediaInfo, isShowMediaInfo } from '../utils/typeGuards';
 
 export type UIState =
     | 'loading'

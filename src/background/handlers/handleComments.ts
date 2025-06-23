@@ -1,12 +1,12 @@
+import {
+    DeleteCommentParams,
+    GetCommentsParams,
+    PostCommentParams,
+    UpdateCommentParams
+} from '../../types/messaging';
+import { TraktComment } from '../../types/trakt';
 import { callApi } from '../../utils/api';
 import { isMovieMediaInfo, isShowMediaInfo } from '../../utils/typeGuards';
-import {
-    DeleteCommentRequest,
-    GetCommentsRequest,
-    PostCommentRequest,
-    TraktComment,
-    UpdateCommentRequest
-} from '../../utils/types';
 
 let cachedUsername: string | null = null;
 async function getUsername(): Promise<string> {
@@ -27,7 +27,7 @@ async function getUsername(): Promise<string> {
 }
 
 export async function handleGetComments(
-    params: GetCommentsRequest['params']
+    params: GetCommentsParams
 ): Promise<TraktComment[]> {
     const { type, mediaInfo, episodeInfo } = params;
     const username = await getUsername();
@@ -71,7 +71,7 @@ export async function handleGetComments(
 }
 
 export async function handlePostComment(
-    params: PostCommentRequest['params']
+    params: PostCommentParams
 ): Promise<TraktComment> {
     const { type, mediaInfo, episodeInfo, comment, spoiler } = params;
     const body: any = { comment, spoiler };
@@ -112,7 +112,7 @@ export async function handlePostComment(
 }
 
 export async function handleUpdateComment(
-    params: UpdateCommentRequest['params']
+    params: UpdateCommentParams
 ): Promise<TraktComment> {
     const { commentId, comment, spoiler } = params;
     return await callApi<TraktComment>(
@@ -123,7 +123,7 @@ export async function handleUpdateComment(
 }
 
 export async function handleDeleteComment(
-    params: DeleteCommentRequest['params']
+    params: DeleteCommentParams
 ): Promise<void> {
     await callApi<void>(
         `https://api.trakt.tv/comments/${params.commentId}`,

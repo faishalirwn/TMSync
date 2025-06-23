@@ -1,14 +1,13 @@
-import { callApi } from '../../utils/api';
-import { isMovieMediaInfo, isShowMediaInfo } from '../../utils/typeGuards';
+import { MediaInfoResponse, SeasonEpisodeObj } from '../../types/media';
 import {
     RequestScrobblePauseParams,
     RequestScrobbleStartParams,
-    RequestScrobbleStopParams,
-    ScrobbleBody,
-    ScrobbleStopResponseData,
-    SeasonEpisodeObj
-} from '../../utils/types';
-import { MediaInfoResponse } from '../../utils/types';
+    RequestScrobbleStopParams
+} from '../../types/messaging';
+import { ScrobbleStopResponseData } from '../../types/scrobbling';
+import { ScrobbleBody } from '../../types/trakt';
+import { callApi } from '../../utils/api';
+import { isMovieMediaInfo, isShowMediaInfo } from '../../utils/typeGuards';
 import { scrobbleState, resetActiveScrobbleState } from '../state';
 
 const TRAKT_SCROBBLE_COMPLETION_THRESHOLD = 80;

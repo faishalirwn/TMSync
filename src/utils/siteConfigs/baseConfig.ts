@@ -1,6 +1,6 @@
 import { TraktPageInfo } from '../../content-scripts/trakt';
 import { waitForElm } from '../content';
-import { SeasonEpisodeObj } from '../types';
+import { SeasonEpisodeObj } from '../../types/media';
 
 interface MediaInfoSelectors {
     title: string;

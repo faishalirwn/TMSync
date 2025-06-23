@@ -1,10 +1,10 @@
-import { callApi } from '../../utils/api';
-import { isMovieMediaInfo, isShowMediaInfo } from '../../utils/typeGuards';
 import {
-    HistoryBody,
     RequestManualAddToHistoryParams,
     ScrobbleResponse
-} from '../../utils/types';
+} from '../../types/messaging';
+import { HistoryBody } from '../../types/trakt';
+import { callApi } from '../../utils/api';
+import { isMovieMediaInfo, isShowMediaInfo } from '../../utils/typeGuards';
 
 export async function handleManualAddToHistory(
     params: RequestManualAddToHistoryParams

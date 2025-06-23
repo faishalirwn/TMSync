@@ -1,4 +1,4 @@
-import { ActiveScrobbleState } from '../utils/types';
+import { ActiveScrobbleState } from '../types/scrobbling';
 
 const initialState: ActiveScrobbleState = {
     tabId: null,

@@ -1,4 +1,8 @@
-import { MediaInfoResponse, MovieMediaInfo, ShowMediaInfo } from './types';
+import {
+    MediaInfoResponse,
+    MovieMediaInfo,
+    ShowMediaInfo
+} from '../types/media';
 
 export function isMovieMediaInfo(
     media: MediaInfoResponse | null | undefined

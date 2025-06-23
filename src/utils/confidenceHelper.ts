@@ -1,5 +1,5 @@
+import { MovieMediaInfo, ShowMediaInfo } from '../types/media';
 import { isMovieMediaInfo, isShowMediaInfo } from './typeGuards';
-import { MovieMediaInfo, ShowMediaInfo } from './types';
 
 export function getTitleSimilarity(
     queryTitle: string,

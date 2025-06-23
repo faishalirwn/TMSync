@@ -1,18 +1,19 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import {
-    MediaInfoResponse,
-    SeasonEpisodeObj,
-    ActiveScrobbleStatus,
-    RequestScrobbleStartParams,
-    RequestScrobblePauseParams,
-    RequestScrobbleStopParams,
-    ScrobbleStopResponseData,
-    RequestManualAddToHistoryParams,
-    MessageRequest,
-    MessageResponse
-} from '../utils/types';
 import { saveLocalRewatchInfo } from '../utils/helpers/localRewatch';
 import { isShowMediaInfo } from '../utils/typeGuards';
+import { MediaInfoResponse, SeasonEpisodeObj } from '../types/media';
+import {
+    ActiveScrobbleStatus,
+    ScrobbleStopResponseData
+} from '../types/scrobbling';
+import {
+    MessageRequest,
+    MessageResponse,
+    RequestManualAddToHistoryParams,
+    RequestScrobblePauseParams,
+    RequestScrobbleStartParams,
+    RequestScrobbleStopParams
+} from '../types/messaging';
 
 const VIDEO_PROGRESS_UPDATE_THROTTLE_MS = 2000;
 const WATCHING_PING_INTERVAL_MS = 5 * 60 * 1000;

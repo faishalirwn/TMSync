@@ -1,16 +1,15 @@
 import React, { useState, useEffect } from 'react';
+import { isMovieMediaInfo, isShowMediaInfo } from '../../../utils/typeGuards';
 import {
     MediaInfoResponse,
-    MessageResponse,
     MovieMediaInfo,
-    ShowMediaInfo,
-    MessageRequest
-} from '../../../utils/types';
-import { isMovieMediaInfo, isShowMediaInfo } from '../../../utils/typeGuards';
+    ShowMediaInfo
+} from '../../../types/media';
+import { MessageRequest, MessageResponse } from '../../../types/messaging';
 
 interface ManualSearchPromptProps {
     originalQuery: { type: string; query: string; years: string };
-    onConfirmMedia: (selectedMedia: MediaInfoResponse) => void;
+    onConfirmMedia: (selectedMedia: MediaInfoResponse) => void | Promise<void>;
     onCancel: () => void;
 }
 

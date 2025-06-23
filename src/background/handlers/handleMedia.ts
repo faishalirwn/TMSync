@@ -5,17 +5,13 @@ import { isMovieMediaInfo, isShowMediaInfo } from '../../utils/typeGuards';
 import {
     MediaInfoResponse,
     MediaRatings,
-    MediaStatusPayload,
     MovieMediaInfo,
-    ShowMediaInfo,
-    WatchStatusInfo
-} from '../../utils/types';
-import { TraktShowWatchedProgress } from '../../utils/types/traktApi';
-
-// Define the missing type locally
-export type ScoredMediaInfo = MediaInfoResponse & {
-    confidenceScore: number;
-};
+    ScoredMediaInfo,
+    ShowMediaInfo
+} from '../../types/media';
+import { MediaStatusPayload } from '../../types/messaging';
+import { WatchStatusInfo } from '../../types/scrobbling';
+import { TraktShowWatchedProgress } from '../../types/trakt';
 
 async function fetchStatusDetails(mediaInfo: MediaInfoResponse, url: string) {
     const siteConfig = getCurrentSiteConfig(new URL(url).hostname);
