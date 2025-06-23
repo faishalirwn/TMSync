@@ -192,6 +192,16 @@ function injectReactApp(): void {
 
         shadowRootElement.appendChild(reactAppContainer);
 
+        window.addEventListener(
+            'keydown',
+            (event) => {
+                if (event.composedPath().includes(container!)) {
+                    event.stopImmediatePropagation();
+                }
+            },
+            { capture: true }
+        );
+
         const tailwindCssUrl = chrome.runtime.getURL('css/styles.css');
         fetch(tailwindCssUrl)
             .then((response) => response.text())
