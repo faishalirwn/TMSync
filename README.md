@@ -37,6 +37,9 @@ TMSync is a browser extension designed to seamlessly integrate various streaming
 -   **Bundler:** Webpack
 -   **Package Manager:** pnpm
 -   **Linting/Formatting:** ESLint & Prettier
+-   **Key Architectural Patterns:**
+    -   Stateful logic is encapsulated in **Custom Hooks** (`useMediaLifecycle`, `useScrobbling`, `useTraktAuth`).
+    -   The background script uses a modular **Handler/Dispatcher Pattern** for message routing.
 
 ## 🚀 Getting Started
 
@@ -113,20 +116,43 @@ This will generate the final, minified extension files in the `dist/` directory.
 
 ## 📂 Project Structure
 
+The project is organized by feature/entry point to improve code co-location and maintainability.
+
 ```
 /
-├── public/               # Static assets (manifest.json, html shells, icons)
-├── src/                  # Main source code
-│   ├── components/       # React components (UI)
-│   ├── styles/           # Global styles and Tailwind config
-│   ├── utils/            # Helpers, API clients, site configs, types
-│   ├── background.ts     # Extension service worker (core logic)
-│   ├── contentScript.tsx # Injects UI onto streaming sites
-│   └── traktContentScript.tsx # Injects UI onto Trakt.tv
-└── webpack/              # Webpack configuration files
+├── public/                 # Static assets (manifest.json, html shells, icons)
+├── src/
+│   ├── background/         # Logic for the extension's service worker
+│   │   ├── handlers/       # Modular logic for each background message action
+│   │   └── index.ts        # Main background entry point and message dispatcher
+│   ├── content-scripts/
+│   │   ├── main/           # Injected on streaming sites
+│   │   │   ├── components/ # React components for the main content script UI
+│   │   │   └── index.tsx   # Entry point for the main content script
+│   │   └── trakt/          # Injected on trakt.tv
+│   │       └── index.tsx   # Entry point for the Trakt content script
+│   ├── hooks/              # Shared, reusable React hooks
+│   ├── options/            # The React app for the options page
+│   ├── popup/              # The React app for the browser action popup
+│   ├── styles/             # Global styles and Tailwind configuration
+│   ├── types/              # Shared TypeScript type definitions
+│   └── utils/              # Shared utilities (API helpers, site configs, etc.)
+└── webpack/                # Webpack configuration files
 ```
 
 ## 📝 Architectural Notes
+
+### UI State Management (Custom Hooks)
+
+To avoid "God Components", complex stateful logic is extracted into custom hooks. This keeps components lean and focused on rendering, while the hooks manage the underlying complexity.
+
+-   **`useMediaLifecycle`**: The "controller" hook for the main content script. It's responsible for identifying media on the page, fetching its data from Trakt, and managing the high-level UI state (e.g., showing a "start" vs. "rewatch" prompt).
+-   **`useScrobbling`**: A focused hook that manages only the video player interaction and the scrobbling state machine (idle, started, paused).
+-   **`useTraktAuth`**: Encapsulates all logic for OAuth authentication, providing a clean interface to log in, log out, and check auth status.
+
+### Background Script (Handler Pattern)
+
+The background script's `onMessage` listener avoids becoming a massive `if/else` block by using a handler pattern. The main `index.ts` file acts as a simple dispatcher that maps message actions to dedicated handler functions located in the `src/background/handlers/` directory. This makes the core logic highly modular, testable, and easy to extend.
 
 ### Event Handling and Cross-Extension Conflicts
 
@@ -134,7 +160,7 @@ A significant challenge in this project is preventing keyboard events within the
 
 The root cause is **Shadow DOM Event Retargeting**. Because our UI is rendered in a Shadow DOM for style isolation, events originating from it have their `target` retargeted to the Shadow Host element when they cross into the main document. This breaks the logic of other extensions that try to inspect the event's origin, causing them to misfire.
 
-The current solution involves a global "guard" listener implemented in `src/contentScript.tsx`:
+The current solution involves a global "guard" listener implemented in `src/content-scripts/main/index.tsx`:
 
 -   It attaches a `keydown` listener to `window` with `{ capture: true }` to run as early as possible.
 -   It uses `event.composedPath()` to identify the event's true origin, even from within the Shadow DOM.
