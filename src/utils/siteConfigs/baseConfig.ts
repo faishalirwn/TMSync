@@ -1,4 +1,4 @@
-import { TraktPageInfo } from '../../traktContentScript';
+import { TraktPageInfo } from '../../content-scripts/trakt';
 import { waitForElm } from '../content';
 import { SeasonEpisodeObj } from '../types';
 

@@ -5,8 +5,8 @@ import {
     MovieMediaInfo,
     ShowMediaInfo,
     MessageRequest
-} from '../utils/types';
-import { isMovieMediaInfo, isShowMediaInfo } from '../utils/typeGuards';
+} from '../../../utils/types';
+import { isMovieMediaInfo, isShowMediaInfo } from '../../../utils/typeGuards';
 
 interface ManualSearchPromptProps {
     originalQuery: { type: string; query: string; years: string };

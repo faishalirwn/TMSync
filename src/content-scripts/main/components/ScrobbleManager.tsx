@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo } from 'react';
-import { useMediaLifecycle } from '../hooks/useMediaLifecycle';
-import { useScrobbling } from '../hooks/useScrobbling';
+import { useMediaLifecycle } from '../../../hooks/useMediaLifecycle';
+import { useScrobbling } from '../../../hooks/useScrobbling';
 
 import { ScrobbleNotification } from './ScrobbleNotification';
 import { ManualSearchPrompt } from './ManualSearchPrompt';
@@ -8,12 +8,12 @@ import { LoadingIndicator } from './LoadingIndicator';
 import { StartWatchPrompt } from './StartWatchPrompt';
 import { RewatchPrompt } from './RewatchPrompt';
 import { CommentModal } from './CommentModal';
-import { ScrobbleNotificationMediaType } from '../utils/types';
-import { isShowMediaInfo } from '../utils/typeGuards';
+import { ScrobbleNotificationMediaType } from '../../../utils/types';
+import { isShowMediaInfo } from '../../../utils/typeGuards';
 import {
     clearHighlighting,
     setupEpisodeHighlighting
-} from '../utils/highlighting';
+} from '../../../utils/highlighting';
 
 export const ScrobbleManager = () => {
     const {

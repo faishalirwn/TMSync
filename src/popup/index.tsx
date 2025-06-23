@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { createRoot } from 'react-dom/client';
-import './styles/index.css';
+import '../styles/index.css';
 
 const Popup: React.FC = () => {
     const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);

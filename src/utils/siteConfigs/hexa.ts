@@ -1,4 +1,4 @@
-import { TraktPageInfo } from '../../traktContentScript';
+import { TraktPageInfo } from '../../content-scripts/trakt';
 import { createSiteConfig, SiteConfigBase } from './baseConfig';
 
 export const hexaWatchConfig: SiteConfigBase = createSiteConfig({

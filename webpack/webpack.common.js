@@ -7,11 +7,11 @@ const srcDir = path.join(__dirname, '..', 'src');
 
 module.exports = {
     entry: {
-        popup: path.join(srcDir, 'popup.tsx'),
-        options: path.join(srcDir, 'options.tsx'),
+        popup: path.join(srcDir, 'popup/index.tsx'),
+        options: path.join(srcDir, 'options/index.tsx'),
         background: path.join(srcDir, 'background/index.ts'),
-        contentScript: path.join(srcDir, 'contentScript.tsx'),
-        traktContentScript: path.join(srcDir, 'traktContentScript.tsx')
+        contentScript: path.join(srcDir, 'content-scripts/main/index.tsx'),
+        traktContentScript: path.join(srcDir, 'content-scripts/trakt/index.tsx')
     },
     output: {
         path: path.join(__dirname, '../dist/js'),

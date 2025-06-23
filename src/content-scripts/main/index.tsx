@@ -1,4 +1,4 @@
-import './styles/index.css';
+import '../../styles/index.css';
 import React from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import { ScrobbleManager } from './components/ScrobbleManager';

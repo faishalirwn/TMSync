@@ -1,9 +1,9 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import './styles/index.css';
-import { useTraktAuth } from './hooks/useTraktAuth';
-import { useQuickLinkPreferences } from './hooks/useQuickLinkPreferences';
-import { UserQuickLinkPrefs } from './hooks/useQuickLinkPreferences';
+import '../styles/index.css';
+import { useTraktAuth } from '../hooks/useTraktAuth';
+import { useQuickLinkPreferences } from '../hooks/useQuickLinkPreferences';
+import { UserQuickLinkPrefs } from '../hooks/useQuickLinkPreferences';
 
 export { UserQuickLinkPrefs };
 

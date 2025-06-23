@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { createRoot, Root } from 'react-dom/client';
-import './styles/index.css';
-import { siteConfigs } from './utils/siteConfigs';
-import { SiteConfigBase } from './utils/siteConfigs/baseConfig';
-import { UserQuickLinkPrefs } from './options';
+import '../../styles/index.css';
+import { siteConfigs } from '../../utils/siteConfigs';
+import { SiteConfigBase } from '../../utils/siteConfigs/baseConfig';
+import { UserQuickLinkPrefs } from '../../options';
 
 export interface TraktPageInfo {
     type: 'movie' | 'show';
