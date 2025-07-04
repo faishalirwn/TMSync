@@ -1,0 +1,93 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., v1.0.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and Release
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Enable Corepack
+      run: corepack enable
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20.x
+        cache: 'pnpm'
+
+    - name: Install dependencies
+      run: pnpm install --frozen-lockfile
+
+    - name: Run quality checks
+      run: |
+        pnpm type-check
+        pnpm lint:check
+        pnpm format:check
+        pnpm test run
+
+    - name: Build extension
+      run: pnpm build
+
+    - name: Create extension package
+      run: |
+        cd dist
+        zip -r ../tmsync-extension.zip ./*
+        cd ..
+
+    - name: Get version from tag
+      id: get_version
+      run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+    - name: Create Release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ steps.get_version.outputs.VERSION }}
+        release_name: TMSync ${{ steps.get_version.outputs.VERSION }}
+        body: |
+          ## Changes in this Release
+          
+          - Extension package ready for browser installation
+          - All quality checks passed
+          
+          ## Installation
+          
+          1. Download `tmsync-extension.zip`
+          2. Extract the contents
+          3. Load the extension in developer mode in your browser
+          
+          ## Browser Support
+          
+          - Chrome/Chromium-based browsers
+          - Firefox (with manifest v2 compatibility)
+          
+        draft: false
+        prerelease: false
+
+    - name: Upload Release Asset
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./tmsync-extension.zip
+        asset_name: tmsync-extension.zip
+        asset_content_type: application/zip
