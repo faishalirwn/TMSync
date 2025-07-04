@@ -11,6 +11,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `pnpm build` - Create production build
 - `pnpm clean` - Remove dist directory
 
+**Quality & Testing**:
+- `pnpm format` - Auto-format all code with Prettier
+- `pnpm lint` - Run ESLint with auto-fix
+- `pnpm lint:check` - Check linting without fixing
+- `pnpm type-check` - TypeScript type checking
+- `pnpm test` - Run tests with Vitest
+- `pnpm test:watch` - Run tests in watch mode
+- `pnpm test:coverage` - Run tests with coverage report
+- `pnpm test:ui` - Run tests with UI interface
+- `pnpm check-all` - Run all quality checks
+- `pnpm fix-all` - Auto-fix all issues possible
+
 **Environment Setup**:
 - Copy `.env.example` to `.env` and configure Trakt.tv API credentials
 - Required variables: `TRAKT_CLIENT_ID`, `TRAKT_CLIENT_SECRET`
@@ -96,3 +108,31 @@ The extension uses a global keydown event guard to prevent conflicts with other 
 - React component state managed through custom hooks
 - Extension-wide state (scrobbling status) managed in background script
 - Local storage used for rewatch tracking and user preferences
+
+## Development Roadmap
+
+**Phase 1: Development Infrastructure & Best Practices** ✅ COMPLETED
+- Comprehensive package.json scripts for development workflow
+- Vitest testing framework with Chrome extension mocks
+- Pre-commit hooks with Husky + lint-staged for code quality
+- Enhanced TypeScript configuration with stricter settings
+- GitHub Actions CI/CD pipeline for automated testing and releases
+
+**Phase 2: Multi-Service Architecture Foundation** 🚧 NEXT
+- Create TrackerService interface defining common operations
+- Implement service-specific classes (TraktService, AnilistService, MalService)
+- Add service configuration management for API keys and settings
+- Create MediaIdentifier service for cross-service mapping
+- Implement confidence scoring for media matching
+- Add database mapping utilities for episode/season reconciliation
+
+**Phase 3: UI/UX Multi-Service Integration**
+- Refactor rating system with service-specific translation
+- Create service-aware comment/notes system
+- Add multi-service status indicators
+- Implement service-specific confirmation prompts
+
+**Phase 4: Advanced Features & Edge Cases**
+- Implement EpisodeMapper service for complex show structures
+- Add crowd-sourced mapping support
+- Create user-driven corrections and community validation
