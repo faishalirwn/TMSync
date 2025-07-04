@@ -595,8 +595,44 @@ export class TraktService {
         mediaInfo: MediaInfoResponse,
         episodeInfo?: SeasonEpisodeObj
     ): Promise<TraktComment[]> {
-        // Implementation will be moved from handleComments
-        throw new Error('getComments method not yet implemented');
+        const username = await this.getUsername();
+        const url = `https://api.trakt.tv/users/${username}/comments/${type}s/all`;
+        const allComments = await this.callApi<any[]>(url);
+
+        if (type === 'movie' && mediaInfo.type === 'movie') {
+            const id = mediaInfo.movie.ids.trakt;
+            return allComments
+                .filter((c: any) => c.movie?.ids?.trakt === id)
+                .map((c: any) => c.comment);
+        }
+        if (type === 'show' && mediaInfo.type === 'show') {
+            const id = mediaInfo.show.ids.trakt;
+            return allComments
+                .filter((c: any) => c.show?.ids?.trakt === id)
+                .map((c: any) => c.comment);
+        }
+        if (type === 'season' && mediaInfo.type === 'show' && episodeInfo) {
+            const id = mediaInfo.show.ids.trakt;
+            return allComments
+                .filter(
+                    (c: any) =>
+                        c.show?.ids?.trakt === id &&
+                        c.season?.number === episodeInfo.season
+                )
+                .map((c: any) => c.comment);
+        }
+        if (type === 'episode' && mediaInfo.type === 'show' && episodeInfo) {
+            const id = mediaInfo.show.ids.trakt;
+            return allComments
+                .filter(
+                    (c: any) =>
+                        c.show?.ids?.trakt === id &&
+                        c.episode?.season === episodeInfo.season &&
+                        c.episode?.number === episodeInfo.number
+                )
+                .map((c: any) => c.comment);
+        }
+        return [];
     }
 
     /**
@@ -609,8 +645,46 @@ export class TraktService {
         spoiler: boolean,
         episodeInfo?: SeasonEpisodeObj
     ): Promise<TraktComment> {
-        // Implementation will be moved from handleComments
-        throw new Error('postComment method not yet implemented');
+        const body: any = { comment, spoiler };
+
+        if (type === 'movie' && mediaInfo.type === 'movie') {
+            body.movie = { ids: mediaInfo.movie.ids };
+        } else if (type === 'show' && mediaInfo.type === 'show') {
+            body.show = { ids: mediaInfo.show.ids };
+        } else if (
+            type === 'season' &&
+            mediaInfo.type === 'show' &&
+            episodeInfo
+        ) {
+            const seasons = await this.callApi<any[]>(
+                `https://api.trakt.tv/shows/${mediaInfo.show.ids.trakt}/seasons`
+            );
+            const seasonId = seasons.find(
+                (s: any) => s.number === episodeInfo.season
+            )?.ids?.trakt;
+            if (!seasonId)
+                throw new Error('Could not find Trakt ID for the season.');
+            body.season = { ids: { trakt: seasonId } };
+        } else if (
+            type === 'episode' &&
+            mediaInfo.type === 'show' &&
+            episodeInfo
+        ) {
+            const epDetails = await this.callApi<any>(
+                `https://api.trakt.tv/shows/${mediaInfo.show.ids.trakt}/seasons/${episodeInfo.season}/episodes/${episodeInfo.number}`
+            );
+            const episodeId = epDetails?.ids?.trakt;
+            if (!episodeId)
+                throw new Error('Could not find Trakt ID for the episode.');
+            body.episode = { ids: { trakt: episodeId } };
+        } else {
+            throw new Error('Invalid media type for posting comment.');
+        }
+        return await this.callApi<TraktComment>(
+            'https://api.trakt.tv/comments',
+            'POST',
+            body
+        );
     }
 
     /**
