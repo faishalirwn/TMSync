@@ -2,16 +2,24 @@
 
 @theme {
     /* Base Colors */
-    --color-background: oklch(19.5% 0.024 258); /* Near black with a cool tint */
+    --color-background: oklch(
+        19.5% 0.024 258
+    ); /* Near black with a cool tint */
     --color-surface-1: oklch(24% 0.024 258); /* Slightly lighter surface */
-    --color-surface-2: oklch(28% 0.024 258); /* Lighter for interactive elements */
+    --color-surface-2: oklch(
+        28% 0.024 258
+    ); /* Lighter for interactive elements */
     --color-surface-3: oklch(35% 0.022 258); /* Lighter for borders/dividers */
 
     /* Text Colors */
     --color-text-primary: oklch(95% 0.01 258); /* Off-white for primary text */
     --color-text-secondary: oklch(65% 0.01 258); /* Gray for secondary text */
-    --color-text-tertiary: oklch(45% 0.01 258); /* Darker gray for subtle text */
-    --color-text-inverted: oklch(15% 0.02 258); /* For use on light backgrounds */
+    --color-text-tertiary: oklch(
+        45% 0.01 258
+    ); /* Darker gray for subtle text */
+    --color-text-inverted: oklch(
+        15% 0.02 258
+    ); /* For use on light backgrounds */
 
     /* Accent Colors */
     --color-accent-primary: oklch(62.3% 0.214 259.815); /* blue-500 */
