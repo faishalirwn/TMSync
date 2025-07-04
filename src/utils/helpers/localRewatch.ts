@@ -33,7 +33,7 @@ export async function saveLocalRewatchInfo(
         const allProgress: LocalRewatchProgressStorage =
             data[REWATCH_STORAGE_KEY] || {};
 
-        let nextExpected: { season: number; number: number } | null = {
+        const nextExpected: { season: number; number: number } | null = {
             season: watchedSeason,
             number: watchedEpisode + 1
         };

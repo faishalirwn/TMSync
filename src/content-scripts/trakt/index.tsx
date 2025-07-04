@@ -30,7 +30,7 @@ interface QuickLinkConfig {
 
 function getTraktPageInfo(): TraktPageInfo | null {
     const path = window.location.pathname.split('/');
-    let info: Partial<TraktPageInfo> = {};
+    const info: Partial<TraktPageInfo> = {};
 
     const tmdbLinkElement = document.getElementById(
         'external-link-tmdb'

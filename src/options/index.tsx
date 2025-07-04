@@ -5,7 +5,7 @@ import { useTraktAuth } from '../hooks/useTraktAuth';
 import { useQuickLinkPreferences } from '../hooks/useQuickLinkPreferences';
 import { UserQuickLinkPrefs } from '../hooks/useQuickLinkPreferences';
 
-export { UserQuickLinkPrefs };
+export type { UserQuickLinkPrefs };
 
 const Options: React.FC = () => {
     const { isLoggedIn, username, isLoading, error, login, logout } =
