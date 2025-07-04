@@ -78,21 +78,115 @@ export class TraktService {
      * Initiate OAuth login flow
      */
     async login(): Promise<void> {
-        // Implementation will be moved from useTraktAuth
-        throw new Error('Login method not yet implemented');
+        let redirectUri: string | undefined;
+        try {
+            redirectUri = chrome.identity.getRedirectURL();
+            if (!redirectUri) throw new Error('Could not get redirect URL.');
+        } catch (err) {
+            console.error('Error getting redirect URL:', err);
+            throw new Error('Failed to configure authentication redirect.');
+        }
+
+        const authUrl = `https://trakt.tv/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code`;
+
+        try {
+            const redirectUrlResponse = await chrome.identity.launchWebAuthFlow(
+                {
+                    url: authUrl,
+                    interactive: true
+                }
+            );
+
+            if (chrome.runtime.lastError || !redirectUrlResponse) {
+                throw new Error(
+                    chrome.runtime.lastError?.message ||
+                        'Authentication cancelled or failed.'
+                );
+            }
+
+            const url = new URL(redirectUrlResponse);
+            const code = url.searchParams.get('code');
+
+            if (!code) {
+                throw new Error('Could not get authorization code from Trakt.');
+            }
+
+            const tokenResponse = await fetch(
+                'https://api.trakt.tv/oauth/token',
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        code: code,
+                        client_id: clientId,
+                        client_secret: clientSecret,
+                        redirect_uri: redirectUri,
+                        grant_type: 'authorization_code'
+                    })
+                }
+            );
+
+            const tokenData = await tokenResponse.json();
+            if (!tokenResponse.ok) {
+                throw new Error(
+                    `Token exchange failed: ${tokenData.error_description || tokenResponse.statusText}`
+                );
+            }
+
+            const expiresAt = Date.now() + tokenData.expires_in * 1000;
+            await chrome.storage.local.set({
+                traktAccessToken: tokenData.access_token,
+                traktRefreshToken: tokenData.refresh_token,
+                traktTokenExpiresAt: expiresAt
+            });
+
+            // Fetch and cache user info
+            const settings = await this.getUserSettings();
+            if (settings?.user?.username) {
+                this.cachedUsername = settings.user.username;
+                await chrome.storage.local.set({
+                    traktUsername: settings.user.username
+                });
+            }
+        } catch (err) {
+            console.error('Error during login process:', err);
+            throw err instanceof Error
+                ? err
+                : new Error('An unexpected error occurred during login.');
+        }
     }
 
     /**
      * Logout and clear stored tokens
      */
     async logout(): Promise<void> {
-        await chrome.storage.local.remove([
-            'traktAccessToken',
-            'traktRefreshToken',
-            'traktTokenExpiresAt',
-            'traktUsername'
-        ]);
-        this.cachedUsername = null;
+        try {
+            const tokenData = await chrome.storage.local.get([
+                'traktAccessToken'
+            ]);
+            if (tokenData.traktAccessToken) {
+                await fetch('https://api.trakt.tv/oauth/revoke', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${tokenData.traktAccessToken}`,
+                        'trakt-api-key': clientId,
+                        'trakt-api-version': '2'
+                    },
+                    body: JSON.stringify({ token: tokenData.traktAccessToken })
+                });
+            }
+        } catch (err) {
+            console.error('Error revoking token (continuing logout):', err);
+        } finally {
+            await chrome.storage.local.remove([
+                'traktAccessToken',
+                'traktRefreshToken',
+                'traktTokenExpiresAt',
+                'traktUsername'
+            ]);
+            this.cachedUsername = null;
+        }
     }
 
     /**
