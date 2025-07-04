@@ -16,6 +16,9 @@ import { WatchStatusInfo, ScrobbleStopResponseData } from '../types/scrobbling';
  *
  * This service encapsulates authentication, media operations, scrobbling,
  * ratings, comments, and user data management for Trakt.tv.
+ *
+ * TODO: Implement TrackerService interface after converting return types
+ * to service-agnostic types (ServiceProgressInfo, ServiceComment, etc.)
  */
 export class TraktService {
     private isRefreshing = false;
