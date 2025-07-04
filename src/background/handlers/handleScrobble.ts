@@ -5,31 +5,8 @@ import {
     RequestScrobbleStopParams
 } from '../../types/messaging';
 import { ScrobbleStopResponseData } from '../../types/scrobbling';
-import { ScrobbleBody } from '../../types/trakt';
-import { callApi } from '../../utils/api';
-import { isMovieMediaInfo, isShowMediaInfo } from '../../utils/typeGuards';
+import { traktService } from '../../services/TraktService';
 import { scrobbleState, resetActiveScrobbleState } from '../state';
-
-const TRAKT_SCROBBLE_COMPLETION_THRESHOLD = 80;
-
-function buildTraktScrobblePayload(
-    mediaInfo: MediaInfoResponse,
-    episodeInfo: SeasonEpisodeObj | undefined | null,
-    progress: number
-): ScrobbleBody {
-    const payload: ScrobbleBody = { progress };
-    if (isMovieMediaInfo(mediaInfo)) {
-        payload.movie = mediaInfo.movie;
-    } else if (isShowMediaInfo(mediaInfo) && episodeInfo) {
-        payload.show = mediaInfo.show;
-        payload.episode = episodeInfo;
-    } else {
-        throw new Error(
-            'Invalid mediaInfo or missing episodeInfo for show to build scrobble payload'
-        );
-    }
-    return payload;
-}
 
 export async function handleScrobbleStart(
     params: RequestScrobbleStartParams,
@@ -38,39 +15,34 @@ export async function handleScrobbleStart(
     if (!sender.tab?.id) throw new Error('Tab ID missing for scrobble start');
     const tabId = sender.tab.id;
 
+    // If there's an active scrobble on a different tab, pause it first
     if (
         scrobbleState.current.tabId &&
         scrobbleState.current.tabId !== tabId &&
         scrobbleState.current.status === 'started'
     ) {
-        const oldPayload = buildTraktScrobblePayload(
+        await traktService.pauseScrobble(
             scrobbleState.current.mediaInfo!,
-            scrobbleState.current.episodeInfo,
+            scrobbleState.current.episodeInfo || null,
             scrobbleState.current.currentProgress
-        );
-        await callApi(
-            `https://api.trakt.tv/scrobble/pause`,
-            'POST',
-            oldPayload
         );
     }
 
-    const payload = buildTraktScrobblePayload(
+    // Start the new scrobble
+    await traktService.startScrobble(
         params.mediaInfo,
-        params.episodeInfo,
+        params.episodeInfo || null,
         params.progress
     );
-    await callApi(`https://api.trakt.tv/scrobble/start`, 'POST', payload);
 
+    // Update the global scrobble state
     scrobbleState.current = {
         tabId: tabId,
         mediaInfo: params.mediaInfo,
         episodeInfo: params.episodeInfo,
         currentProgress: params.progress,
         status: 'started',
-        traktMediaType: isMovieMediaInfo(params.mediaInfo)
-            ? 'movie'
-            : 'episode',
+        traktMediaType: params.mediaInfo.type === 'movie' ? 'movie' : 'episode',
         lastUpdateTime: Date.now(),
         previousScrobbledUrl: sender.tab.url
     };
@@ -88,13 +60,14 @@ export async function handleScrobblePause(
         throw new Error('Scrobble not active on this tab or not started.');
     }
 
-    const payload = buildTraktScrobblePayload(
+    // Pause the scrobble via TraktService
+    await traktService.pauseScrobble(
         params.mediaInfo,
-        params.episodeInfo,
+        params.episodeInfo || null,
         params.progress
     );
-    await callApi(`https://api.trakt.tv/scrobble/pause`, 'POST', payload);
 
+    // Update the global scrobble state
     scrobbleState.current.currentProgress = params.progress;
     scrobbleState.current.status = 'paused';
     scrobbleState.current.lastUpdateTime = Date.now();
@@ -109,27 +82,15 @@ export async function handleScrobbleStop(
         throw new Error('Scrobble not active on this tab for stop.');
     }
 
-    const payload = buildTraktScrobblePayload(
+    // Stop the scrobble via TraktService (it handles completion logic internally)
+    const responseData = await traktService.stopScrobble(
         params.mediaInfo,
-        params.episodeInfo,
+        params.episodeInfo || null,
         params.progress
     );
-    const traktResponse = await callApi<any>(
-        `https://api.trakt.tv/scrobble/stop`,
-        'POST',
-        payload
-    );
 
-    let responseData: ScrobbleStopResponseData = { action: 'error' };
-    if (params.progress >= TRAKT_SCROBBLE_COMPLETION_THRESHOLD) {
-        // The primary source for the history ID is the `id` property on the response.
-        // The complex fallback has been removed to fix the type error.
-        const historyId = traktResponse?.id;
-        responseData = { action: 'watched', traktHistoryId: historyId };
-    } else {
-        responseData = { action: 'paused_incomplete' };
-    }
-
+    // Reset the global scrobble state
     resetActiveScrobbleState();
+
     return responseData;
 }
