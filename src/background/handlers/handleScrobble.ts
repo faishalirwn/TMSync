@@ -1,4 +1,3 @@
-import { MediaInfoResponse, SeasonEpisodeObj } from '../../types/media';
 import {
     RequestScrobblePauseParams,
     RequestScrobbleStartParams,

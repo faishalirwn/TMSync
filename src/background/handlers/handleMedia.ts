@@ -1,117 +1,29 @@
-import { callApi } from '../../utils/api';
+import { traktService } from '../../services/TraktService';
 import { calculateConfidence } from '../../utils/confidenceHelper';
 import { getCurrentSiteConfig } from '../../utils/siteConfigs';
-import { isMovieMediaInfo, isShowMediaInfo } from '../../utils/typeGuards';
 import {
     MediaInfoResponse,
-    MediaRatings,
     MovieMediaInfo,
     ScoredMediaInfo,
     ShowMediaInfo
 } from '../../types/media';
 import { MediaStatusPayload } from '../../types/messaging';
-import { WatchStatusInfo } from '../../types/scrobbling';
-import { TraktShowWatchedProgress } from '../../types/trakt';
 
 async function fetchStatusDetails(mediaInfo: MediaInfoResponse, url: string) {
     const siteConfig = getCurrentSiteConfig(new URL(url).hostname);
     if (!siteConfig)
         throw new Error('Could not get site config for status details.');
 
-    const watchStatus: WatchStatusInfo = {
-        isInHistory: false,
-        isCompleted: false
-    };
-    let progressInfo: TraktShowWatchedProgress | null = null;
-    const ratingInfo: MediaRatings = {};
-    const movieTraktId = isMovieMediaInfo(mediaInfo)
-        ? mediaInfo.movie.ids?.trakt
-        : undefined;
-    const showTraktId = isShowMediaInfo(mediaInfo)
-        ? mediaInfo.show.ids?.trakt
-        : undefined;
+    const episodeInfo = siteConfig.getSeasonEpisodeObj(url);
 
-    if (movieTraktId) {
-        const [history, ratings] = await Promise.all([
-            callApi<any[]>(
-                `https://api.trakt.tv/sync/history/movies/${movieTraktId}?limit=1`
-            ).catch(() => []),
-            callApi<any[]>(`https://api.trakt.tv/sync/ratings/movies`).catch(
-                () => []
-            )
-        ]);
-        if (history?.[0]?.watched_at) {
-            watchStatus.isInHistory = true;
-            watchStatus.lastWatchedAt = history[0].watched_at;
-        }
-        const movieRating = ratings.find(
-            (r) => r.movie.ids.trakt === movieTraktId
+    if (episodeInfo) {
+        return await traktService.getMediaStatusWithEpisode(
+            mediaInfo,
+            episodeInfo
         );
-        if (movieRating)
-            ratingInfo.show = {
-                userRating: movieRating.rating,
-                ratedAt: movieRating.rated_at
-            };
-    } else if (showTraktId) {
-        progressInfo = await callApi<TraktShowWatchedProgress>(
-            `https://api.trakt.tv/shows/${showTraktId}/progress/watched?hidden=false&specials=false`
-        ).catch(() => null);
-        if (progressInfo?.last_watched_at) {
-            watchStatus.isInHistory = true;
-            watchStatus.lastWatchedAt = progressInfo.last_watched_at;
-        }
-        watchStatus.isCompleted =
-            !!progressInfo &&
-            progressInfo.aired > 0 &&
-            progressInfo.aired === progressInfo.completed;
-
-        const [showRatings, seasonRatings, episodeRatings] = await Promise.all([
-            callApi<any[]>(`https://api.trakt.tv/sync/ratings/shows`).catch(
-                () => []
-            ),
-            callApi<any[]>(`https://api.trakt.tv/sync/ratings/seasons`).catch(
-                () => []
-            ),
-            callApi<any[]>(`https://api.trakt.tv/sync/ratings/episodes`).catch(
-                () => []
-            )
-        ]);
-
-        const showRating = showRatings.find(
-            (r) => r.show.ids.trakt === showTraktId
-        );
-        if (showRating)
-            ratingInfo.show = {
-                userRating: showRating.rating,
-                ratedAt: showRating.rated_at
-            };
-
-        const episodeInfo = siteConfig.getSeasonEpisodeObj(url);
-        if (episodeInfo) {
-            const seasonRating = seasonRatings.find(
-                (r) =>
-                    r.show.ids.trakt === showTraktId &&
-                    r.season.number === episodeInfo.season
-            );
-            if (seasonRating)
-                ratingInfo.season = {
-                    userRating: seasonRating.rating,
-                    ratedAt: seasonRating.rated_at
-                };
-            const episodeRating = episodeRatings.find(
-                (r) =>
-                    r.show.ids.trakt === showTraktId &&
-                    r.episode.season === episodeInfo.season &&
-                    r.episode.number === episodeInfo.number
-            );
-            if (episodeRating)
-                ratingInfo.episode = {
-                    userRating: episodeRating.rating,
-                    ratedAt: episodeRating.rated_at
-                };
-        }
+    } else {
+        return await traktService.getMediaStatus(mediaInfo);
     }
-    return { watchStatus, progressInfo, ratingInfo };
 }
 
 export async function handleMediaInfo(
@@ -145,30 +57,30 @@ export async function handleMediaInfo(
         if (tmdbId) {
             const mediaTypeGuess = siteConfig.getMediaType(url) || 'movie'; // Default to movie if detection fails
             try {
-                const lookupResults = await callApi<MediaInfoResponse[]>(
-                    `https://api.trakt.tv/search/tmdb/${tmdbId}?type=${mediaTypeGuess}&extended=full`
+                const lookupResults = await traktService.getMediaByTmdbId(
+                    tmdbId,
+                    mediaTypeGuess as 'movie' | 'show'
                 );
-                if (lookupResults.length > 0)
-                    mediaInfoResult = lookupResults[0];
-            } catch (e) {
+                const results = lookupResults ? [lookupResults] : [];
+                if (results.length > 0) mediaInfoResult = results[0];
+            } catch {
                 // If the first guess fails (e.g., movie for a show), try the other.
                 if (mediaTypeGuess === 'movie') {
-                    const lookupResults = await callApi<MediaInfoResponse[]>(
-                        `https://api.trakt.tv/search/tmdb/${tmdbId}?type=show&extended=full`
+                    const lookupResult = await traktService.getMediaByTmdbId(
+                        tmdbId,
+                        'show'
                     );
-                    if (lookupResults.length > 0)
-                        mediaInfoResult = lookupResults[0];
+                    if (lookupResult) mediaInfoResult = lookupResult;
                 }
             }
         }
     }
 
     if (!mediaInfoResult) {
-        const searchParams = new URLSearchParams({ query: params.query });
-        const searchUrl = `https://api.trakt.tv/search/${params.type}?${searchParams.toString()}&extended=full`;
-        const searchResults = await callApi<MediaInfoResponse[]>(
-            searchUrl,
-            'GET'
+        const searchResults = await traktService.searchMedia(
+            params.query,
+            params.type as 'movie' | 'show',
+            params.years
         );
         if (searchResults.length > 0) {
             const scoredResults = searchResults
@@ -212,9 +124,10 @@ export async function handleManualSearch(params: {
     type: string;
     query: string;
 }): Promise<(MovieMediaInfo | ShowMediaInfo)[]> {
-    const searchParams = new URLSearchParams({ query: params.query });
-    const searchUrl = `https://api.trakt.tv/search/${params.type}?${searchParams.toString()}&extended=full&limit=10`;
-    return await callApi(searchUrl, 'GET');
+    return await traktService.searchMedia(
+        params.query,
+        params.type as 'movie' | 'show'
+    );
 }
 
 export async function handleConfirmMedia(
