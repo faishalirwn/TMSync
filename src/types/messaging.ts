@@ -52,7 +52,8 @@ export interface ManualSearchParams {
     query: string;
 }
 export interface UndoScrobbleParams {
-    historyId: number;
+    historyId?: number; // Legacy field for backwards compatibility
+    serviceHistoryIds?: { [serviceType: string]: number | string };
 }
 export interface RateMovieParams {
     mediaInfo: MovieMediaInfo;

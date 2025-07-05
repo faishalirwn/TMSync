@@ -193,15 +193,13 @@ export class AniListService implements TrackerService {
         type: 'movie' | 'show',
         years?: string
     ): Promise<MediaInfoResponse[]> {
-        // Map our type to AniList type (only shows/anime for now)
-        if (type !== 'show') {
-            return []; // AniList focuses on anime/manga, not movies
-        }
+        // Search both anime shows and movies
+        const anilistType = type === 'movie' ? 'ANIME' : 'ANIME'; // AniList uses ANIME for both
 
         const searchQuery = `
-            query ($search: String, $seasonYear: Int) {
+            query ($search: String, $seasonYear: Int, $type: MediaType) {
                 Page(page: 1, perPage: 10) {
-                    media(search: $search, type: ANIME, seasonYear: $seasonYear) {
+                    media(search: $search, type: $type, seasonYear: $seasonYear) {
                         id
                         idMal
                         title {
@@ -226,7 +224,10 @@ export class AniListService implements TrackerService {
             }
         `;
 
-        const variables: any = { search: query };
+        const variables: any = {
+            search: query,
+            type: anilistType
+        };
         if (years) {
             const year = parseInt(years);
             if (!isNaN(year)) {
@@ -335,15 +336,26 @@ export class AniListService implements TrackerService {
         mediaInfo: MediaInfoResponse,
         episodeInfo: SeasonEpisodeObj | null
     ): Promise<{ historyId?: number | string }> {
-        if (!this.accessToken) {
+        // Check authentication by attempting to get the token from storage
+        const tokenData = await chrome.storage.local.get([
+            'anilistAccessToken'
+        ]);
+        if (!tokenData.anilistAccessToken) {
             throw new Error('Not authenticated with AniList');
         }
 
-        if (mediaInfo.type !== 'show') {
-            throw new Error('AniList currently only supports TV shows/anime');
-        }
+        // AniList supports both anime shows and movies
 
         // Search AniList directly for the media
+        const mediaTitle =
+            mediaInfo.type === 'movie'
+                ? mediaInfo.movie.title
+                : mediaInfo.show.title;
+        const mediaYear =
+            mediaInfo.type === 'movie'
+                ? mediaInfo.movie.year
+                : mediaInfo.show.year;
+
         const searchQuery = `
             query ($search: String, $seasonYear: Int) {
                 Page(page: 1, perPage: 5) {
@@ -359,9 +371,9 @@ export class AniListService implements TrackerService {
             }
         `;
 
-        const searchVariables: any = { search: mediaInfo.show.title };
-        if (mediaInfo.show.year) {
-            searchVariables.seasonYear = mediaInfo.show.year;
+        const searchVariables: any = { search: mediaTitle };
+        if (mediaYear) {
+            searchVariables.seasonYear = mediaYear;
         }
 
         const searchResponse = await this.makeGraphQLRequest(
@@ -372,9 +384,7 @@ export class AniListService implements TrackerService {
         const mediaList = searchResponse.data?.Page?.media || [];
 
         if (mediaList.length === 0) {
-            throw new Error(
-                `Could not find anime "${mediaInfo.show.title}" on AniList`
-            );
+            throw new Error(`Could not find anime "${mediaTitle}" on AniList`);
         }
 
         // Use first result (could improve with better matching later)
@@ -382,9 +392,19 @@ export class AniListService implements TrackerService {
         const anilistId = anilistMedia.id;
 
         // Determine if this is completion or just progress update
-        const episodeNumber = episodeInfo?.number || 1;
-        const totalEpisodes = anilistMedia.episodes;
-        const isCompleted = totalEpisodes && episodeNumber >= totalEpisodes;
+        let episodeNumber = 1;
+        let isCompleted = false;
+
+        if (mediaInfo.type === 'movie') {
+            // Movies are always "completed" when watched
+            episodeNumber = 1;
+            isCompleted = true;
+        } else {
+            // TV shows use episode info
+            episodeNumber = episodeInfo?.number || 1;
+            const totalEpisodes = anilistMedia.episodes;
+            isCompleted = totalEpisodes && episodeNumber >= totalEpisodes;
+        }
 
         // Use SaveMediaListEntry mutation
         const mutation = `
@@ -415,14 +435,19 @@ export class AniListService implements TrackerService {
         }
 
         const entry = mutationResponse.data.SaveMediaListEntry;
-        return { historyId: entry.id.toString() };
+        // Keep ID as number to avoid precision issues with large integers
+        return { historyId: entry.id };
     }
 
     /**
      * Remove item from watch history
      */
     async removeFromHistory(historyId: number | string): Promise<void> {
-        if (!this.accessToken) {
+        // Check authentication by attempting to get the token from storage
+        const tokenData = await chrome.storage.local.get([
+            'anilistAccessToken'
+        ]);
+        if (!tokenData.anilistAccessToken) {
             throw new Error('Not authenticated with AniList');
         }
 
@@ -435,12 +460,38 @@ export class AniListService implements TrackerService {
             }
         `;
 
-        const variables = {
-            id:
-                typeof historyId === 'string'
-                    ? parseInt(historyId, 10)
-                    : historyId
-        };
+        // Ensure ID is handled as a proper number for GraphQL Int type
+        let numericId: number;
+        if (typeof historyId === 'string') {
+            numericId = parseInt(historyId, 10);
+            // Check if the parsed number is valid and within safe integer range
+            if (isNaN(numericId) || !Number.isSafeInteger(numericId)) {
+                throw new Error(`Invalid AniList entry ID: ${historyId}`);
+            }
+        } else {
+            numericId = historyId;
+            if (!Number.isSafeInteger(numericId)) {
+                throw new Error(
+                    `AniList entry ID exceeds safe integer range: ${historyId}`
+                );
+            }
+        }
+
+        // AniList uses 32-bit signed integers for IDs, check if this ID is within range
+        const MAX_32BIT_INT = 2147483647;
+        const MIN_32BIT_INT = -2147483648;
+
+        if (numericId > MAX_32BIT_INT || numericId < MIN_32BIT_INT) {
+            // This is likely a Trakt ID or other service ID that can't be used with AniList
+            console.log(
+                `⚠️ Skipping AniList removal - ID ${numericId} appears to be from another service (exceeds 32-bit range)`
+            );
+            throw new Error(
+                `Cannot remove AniList entry: ID ${numericId} is not a valid AniList ID (likely from another service)`
+            );
+        }
+
+        const variables = { id: numericId };
 
         const response = await this.makeGraphQLRequest(mutation, variables);
 

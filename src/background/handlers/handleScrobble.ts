@@ -208,6 +208,23 @@ export async function handleScrobbleStop(
     const realTimeScrobblingServices =
         await filterEnabledAuthenticatedServices(allRealTimeServices);
 
+    // Get services that support progress tracking (filtered by user preferences + auth)
+    const allProgressTrackingServices =
+        serviceRegistry.getServicesWithCapability('supportsProgressTracking');
+    const progressTrackingServices = await filterEnabledAuthenticatedServices(
+        allProgressTrackingServices
+    );
+
+    console.log('🎯 Processing stop with services:');
+    console.log(
+        '- Real-time scrobbling services:',
+        realTimeScrobblingServices.length
+    );
+    console.log(
+        '- Progress tracking services:',
+        progressTrackingServices.length
+    );
+
     // Use primary service for stop response (fallback to traktService for legacy compatibility)
     const primaryService = realTimeScrobblingServices[0] || traktService;
     const serviceResponse = await primaryService.stopScrobble(
@@ -215,6 +232,73 @@ export async function handleScrobbleStop(
         params.episodeInfo || null,
         params.progress
     );
+
+    // Collect service-specific history IDs
+    const serviceHistoryIds: { [serviceType: string]: number | string } = {};
+
+    // Add Trakt history ID if available
+    if (serviceResponse.historyId) {
+        const primaryServiceType = primaryService.getCapabilities().serviceType;
+        serviceHistoryIds[primaryServiceType] = serviceResponse.historyId;
+        console.log(
+            `💾 Stored ${primaryServiceType} history ID: ${serviceResponse.historyId}`
+        );
+    }
+
+    // Process progress tracking services in parallel (for completion threshold)
+    if (progressTrackingServices.length > 0) {
+        console.log('📊 Processing progress tracking services...');
+
+        // Process all progress tracking services concurrently
+        const progressTrackingPromises = progressTrackingServices.map(
+            async (service) => {
+                const serviceType = service.getCapabilities().serviceType;
+                try {
+                    console.log(`📈 Adding to history on ${serviceType}...`);
+                    const result = await service.addToHistory(
+                        params.mediaInfo,
+                        params.episodeInfo || null
+                    );
+                    console.log(
+                        `✅ Successfully added to history on ${serviceType}:`,
+                        result
+                    );
+
+                    // Store service-specific history ID
+                    if (result.historyId) {
+                        serviceHistoryIds[serviceType] = result.historyId;
+                        console.log(
+                            `💾 Stored ${serviceType} history ID: ${result.historyId}`
+                        );
+                    }
+
+                    // Update service status to indicate successful tracking
+                    serviceStatusManager.updateServiceActivity(
+                        serviceType,
+                        'idle'
+                    );
+
+                    return { serviceType, success: true, result };
+                } catch (error) {
+                    console.error(
+                        `❌ Failed to add to history on ${serviceType}:`,
+                        error
+                    );
+                    serviceStatusManager.updateServiceActivity(
+                        serviceType,
+                        'error',
+                        error instanceof Error
+                            ? error.message
+                            : 'Progress tracking failed'
+                    );
+                    return { serviceType, success: false, error };
+                }
+            }
+        );
+
+        // Wait for all progress tracking operations to complete
+        await Promise.allSettled(progressTrackingPromises);
+    }
 
     // Reset the global scrobble state
     resetActiveScrobbleState();
@@ -225,7 +309,11 @@ export async function handleScrobbleStop(
         traktHistoryId:
             typeof serviceResponse.historyId === 'string'
                 ? parseInt(serviceResponse.historyId, 10)
-                : serviceResponse.historyId
+                : serviceResponse.historyId,
+        serviceHistoryIds:
+            Object.keys(serviceHistoryIds).length > 0
+                ? serviceHistoryIds
+                : undefined
     };
 
     console.log('🎯 Mapped scrobble stop response:', {

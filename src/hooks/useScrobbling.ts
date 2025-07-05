@@ -30,6 +30,9 @@ export function useScrobbling(
     const [progress, setProgress] = useState(0);
     const [isProcessing, setIsProcessing] = useState(false);
     const historyIdRef = useRef<number | null>(null);
+    const serviceHistoryIdsRef = useRef<{
+        [serviceType: string]: number | string;
+    }>({});
 
     const videoRef = useRef<HTMLVideoElement | null>(null);
     const lastPingTimeRef = useRef(0);
@@ -126,6 +129,17 @@ export function useScrobbling(
                     response.data.traktHistoryId
                 );
                 historyIdRef.current = response.data.traktHistoryId;
+
+                // Store service-specific history IDs for proper undo functionality
+                if (response.data.serviceHistoryIds) {
+                    serviceHistoryIdsRef.current =
+                        response.data.serviceHistoryIds;
+                    console.log(
+                        '💾 Stored service-specific history IDs:',
+                        response.data.serviceHistoryIds
+                    );
+                }
+
                 if (
                     isRewatchSession &&
                     isShowMediaInfo(mediaInfo) &&
@@ -351,14 +365,31 @@ export function useScrobbling(
     }, [mediaInfo, episodeInfo, status, sendMessage, sendScrobblePause]);
 
     const undoScrobble = useCallback(async () => {
-        if (!historyIdRef.current) return false;
+        if (
+            !historyIdRef.current &&
+            Object.keys(serviceHistoryIdsRef.current).length === 0
+        ) {
+            return false;
+        }
         setIsProcessing(true);
+
+        // Prefer service-specific IDs if available, fallback to legacy single ID
+        const undoParams =
+            Object.keys(serviceHistoryIdsRef.current).length > 0
+                ? { serviceHistoryIds: serviceHistoryIdsRef.current }
+                : { historyId: historyIdRef.current! };
+
+        console.log('🔄 Sending undo request with params:', undoParams);
+
         const response = await sendMessage({
             action: 'undoScrobble',
-            params: { historyId: historyIdRef.current }
+            params: undoParams
         });
+
         if (response.success) {
             historyIdRef.current = null;
+            serviceHistoryIdsRef.current = {};
+            console.log('✅ Cleared all history IDs after successful undo');
         }
         setIsProcessing(false);
         return response.success;

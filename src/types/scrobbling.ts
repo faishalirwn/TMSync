@@ -24,6 +24,7 @@ export interface WatchStatusInfo {
 export interface ScrobbleStopResponseData {
     traktHistoryId?: number;
     action: 'watched' | 'paused_incomplete' | 'error';
+    serviceHistoryIds?: { [serviceType: string]: number | string };
 }
 
 export type ScrobbleNotificationMediaType =
