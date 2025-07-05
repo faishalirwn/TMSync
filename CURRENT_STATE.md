@@ -7,7 +7,14 @@
 - **Type system**: Service-agnostic types implemented across codebase
 
 ## Last Major Work
-**Current**: Real-time service status indicators system (Problem 1 ✅ Complete)
+**Current**: Global service control toggles (Problem 2 🔄 In Progress)
+- ✅ Created service preference storage system with chrome.storage.sync
+- ✅ Built useServicePreferences hook for React integration
+- ✅ Added ServiceControlPanel component with toggle switches to options page
+- ✅ UI working: toggles persist on reload, auth-independent preferences
+- 🔄 Next: Wire up background filtering to respect user preferences
+
+**Previous**: Real-time service status indicators system (Problem 1 ✅ Complete)
 - ✅ Created ServiceStatusManager for centralized status management
 - ✅ Built useServiceStatus hook for React integration
 - ✅ Added ServiceStatusIndicator component with visual status badges

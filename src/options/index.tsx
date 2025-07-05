@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import '../styles/index.css';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { AuthenticationHub } from '../components/AuthenticationHub';
+import { ServiceControlPanel } from '../components/ServiceControlPanel';
 import { useMultiServiceAuth } from '../hooks/useMultiServiceAuth';
 import { useQuickLinkPreferences } from '../hooks/useQuickLinkPreferences';
 import { UserQuickLinkPrefs } from '../hooks/useQuickLinkPreferences';
@@ -45,6 +46,9 @@ const Options: React.FC = () => {
                     {/* Authentication Hub */}
                     <AuthenticationHub />
                 </div>
+
+                {/* Service Control Panel */}
+                {isServicesInitialized && <ServiceControlPanel />}
 
                 {hasAnyAuthenticated && isServicesInitialized && (
                     <div className="bg-(--color-surface-1) rounded-lg shadow-md p-6">

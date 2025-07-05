@@ -3,7 +3,7 @@ import { useServiceAuth } from './useServiceAuth';
 import { serviceRegistry } from '../services/ServiceRegistry';
 import { ServiceType } from '../types/serviceTypes';
 
-interface ServiceAuthInfo {
+export interface ServiceAuthInfo {
     serviceType: ServiceType;
     isLoggedIn: boolean;
     username: string | null;
@@ -128,7 +128,9 @@ export function useMultiServiceAuth(): UseMultiServiceAuthReturn {
                 checkAuthStatus: auth.checkAuthStatus,
                 clearError: auth.clearError,
                 capabilities: {
-                    supportsScrobbling: capabilities.supportsScrobbling,
+                    supportsScrobbling:
+                        capabilities.supportsRealTimeScrobbling ||
+                        capabilities.supportsProgressTracking,
                     supportsRatings: capabilities.supportsRatings,
                     supportsComments: capabilities.supportsComments,
                     supportedMediaTypes: capabilities.supportedMediaTypes

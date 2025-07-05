@@ -143,14 +143,16 @@ The extension uses a global keydown event guard to prevent conflicts with other 
 When starting a new session or after context compaction:
 1. Read `TODO.md` for current phase and pending tasks
 2. Read `CURRENT_STATE.md` for recent work and architecture status
-3. Run `git log --oneline -5` to see recent commits
-4. Check current git status with `git status`
-5. Verify system health with `npm run type-check`
+3. Read `DESIGN_DECISIONS.md` for product design rationale and user preferences
+4. Run `git log --oneline -5` to see recent commits
+5. Check current git status with `git status`
+6. Verify system health with `npm run type-check`
 
 **File-Based State Management**:
 - `TODO.md` - Current problems to solve and phase status (problem-solving focused, not task-execution)
 - `CURRENT_STATE.md` - Architecture status and last major work (update after significant changes)
 - `CLAUDE.md` - Timeless development guidelines and architecture documentation
+- `DESIGN_DECISIONS.md` - Product design decisions and rationale (collaborative UX/product choices)
 
 **Creative Collaboration Guidelines**:
 - TODOs are problems to solve, not tasks to execute - approach them with creative thinking

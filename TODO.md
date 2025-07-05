@@ -4,6 +4,7 @@
 
 ### Recently Completed
 - **Problem 1: Users Don't Know Which Services Are Active** ✅ Complete
+- **Problem 2: Users Can't Control Which Services Handle Their Actions** 🔄 In Progress
 - **Problem 3: Service Authentication Infrastructure** ✅ Complete
 
 ### Next Problems to Solve
