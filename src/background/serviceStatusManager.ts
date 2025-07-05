@@ -11,6 +11,7 @@ import {
     MultiServiceStatus
 } from '../types/serviceStatus';
 import { serviceRegistry } from '../services/ServiceRegistry';
+import { isServiceEnabled } from '../utils/servicePreferences';
 
 class ServiceStatusManager {
     private serviceStatuses: Map<ServiceType, ServiceStatus> = new Map();
@@ -19,6 +20,42 @@ class ServiceStatusManager {
     constructor() {
         // Don't initialize immediately - wait for services to be registered
         // We'll call this manually after services are initialized
+        this.setupStorageListener();
+    }
+
+    /**
+     * Listen for service preference changes and update statuses
+     */
+    private setupStorageListener(): void {
+        chrome.storage.onChanged.addListener(async (changes, namespace) => {
+            if (namespace === 'sync' && changes.servicePreferences) {
+                // Service preferences changed, update all service statuses
+                await this.updateServicePreferenceStatuses();
+            }
+        });
+    }
+
+    /**
+     * Update all service statuses based on current preferences
+     */
+    private async updateServicePreferenceStatuses(): Promise<void> {
+        const services = serviceRegistry.getAllServices();
+
+        for (const service of services) {
+            const serviceType = service.getCapabilities().serviceType;
+            const userEnabled = await isServiceEnabled(serviceType);
+            const currentStatus = this.serviceStatuses.get(serviceType);
+
+            if (currentStatus) {
+                const newActivityState = userEnabled
+                    ? currentStatus.activityState === 'disabled'
+                        ? 'idle'
+                        : currentStatus.activityState
+                    : 'disabled';
+
+                this.updateServiceActivity(serviceType, newActivityState);
+            }
+        }
     }
 
     /**

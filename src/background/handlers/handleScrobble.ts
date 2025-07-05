@@ -151,14 +151,20 @@ export async function handleScrobblePause(
     // Get services that support progress tracking (currently unused)
     // const progressTrackingServices = serviceRegistry.getServicesWithCapability('supportsProgressTracking');
 
-    // Update status to pausing for real-time scrobbling services
-    realTimeScrobblingServices.forEach((service) => {
+    // Update status for all real-time services (including disabled ones)
+    for (const service of allRealTimeServices) {
         const serviceType = service.getCapabilities().serviceType;
-        serviceStatusManager.updateServiceActivity(
-            serviceType,
-            'pausing_scrobble'
-        );
-    });
+        const userEnabled = await isServiceEnabled(serviceType);
+
+        if (!userEnabled) {
+            serviceStatusManager.updateServiceActivity(serviceType, 'disabled');
+        } else {
+            serviceStatusManager.updateServiceActivity(
+                serviceType,
+                'pausing_scrobble'
+            );
+        }
+    }
 
     // Pause real-time scrobble on services that support it
     for (const service of realTimeScrobblingServices) {
