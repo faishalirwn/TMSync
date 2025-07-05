@@ -20,6 +20,7 @@ import {
     ServiceScrobbleResponse,
     ServiceCapabilities
 } from '../types/serviceTypes';
+import { scrobbleOperationManager } from '../background/scrobbleOperationManager';
 
 /**
  * TraktService - Handles all Trakt.tv API interactions
@@ -38,7 +39,8 @@ export class TraktService implements TrackerService {
     getCapabilities(): ServiceCapabilities {
         return {
             serviceType: 'trakt' as ServiceType,
-            supportsScrobbling: true,
+            supportsRealTimeScrobbling: true, // Trakt supports real-time scrobbling
+            supportsProgressTracking: false, // Trakt doesn't need completion-based tracking
             supportsRatings: true,
             supportsComments: true,
             supportsHistory: true,
@@ -442,15 +444,22 @@ export class TraktService implements TrackerService {
         episodeInfo: SeasonEpisodeObj | null,
         progress: number
     ): Promise<void> {
-        const payload = this.buildScrobblePayload(
+        return scrobbleOperationManager.executeOperation(
+            'pause',
             mediaInfo,
             episodeInfo,
-            progress
-        );
-        await this.callApi(
-            'https://api.trakt.tv/scrobble/pause',
-            'POST',
-            payload
+            async () => {
+                const payload = this.buildScrobblePayload(
+                    mediaInfo,
+                    episodeInfo,
+                    progress
+                );
+                await this.callApi(
+                    'https://api.trakt.tv/scrobble/pause',
+                    'POST',
+                    payload
+                );
+            }
         );
     }
 
@@ -462,30 +471,46 @@ export class TraktService implements TrackerService {
         episodeInfo: SeasonEpisodeObj | null,
         progress: number
     ): Promise<ServiceScrobbleResponse> {
-        const payload = this.buildScrobblePayload(
+        return scrobbleOperationManager.executeOperation(
+            'stop',
             mediaInfo,
             episodeInfo,
-            progress
-        );
-        const response = await this.callApi(
-            'https://api.trakt.tv/scrobble/stop',
-            'POST',
-            payload
-        );
+            async () => {
+                const payload = this.buildScrobblePayload(
+                    mediaInfo,
+                    episodeInfo,
+                    progress
+                );
+                const response = await this.callApi(
+                    'https://api.trakt.tv/scrobble/stop',
+                    'POST',
+                    payload
+                );
 
-        const COMPLETION_THRESHOLD = 80;
-        if (progress >= COMPLETION_THRESHOLD) {
-            return {
-                action: 'watched',
-                historyId: response?.id,
-                serviceType: 'trakt'
-            };
-        } else {
-            return {
-                action: 'paused_incomplete',
-                serviceType: 'trakt'
-            };
-        }
+                console.log('🛑 Trakt scrobble stop response:', {
+                    progress,
+                    responseAction: response?.action,
+                    responseId: response?.id
+                });
+
+                // Use Trakt's response to determine the action, not our own threshold
+                // Trakt decides based on its own logic whether this should be "scrobble" (watched) or "pause"
+                if (response?.action === 'scrobble') {
+                    return {
+                        action: 'watched',
+                        historyId: response?.id,
+                        serviceType: 'trakt'
+                    };
+                } else {
+                    // Trakt returned "pause" - meaning it doesn't consider this completed
+                    return {
+                        action: 'paused_incomplete',
+                        historyId: response?.id, // Still include ID in case it's useful
+                        serviceType: 'trakt'
+                    };
+                }
+            }
+        );
     }
 
     /**

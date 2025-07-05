@@ -57,6 +57,8 @@ const ServiceStatusBadge: React.FC<{
                 return 'Scrobbling';
             case 'pausing_scrobble':
                 return 'Pausing...';
+            case 'paused':
+                return 'Paused';
             case 'stopping_scrobble':
                 return 'Stopping...';
             case 'tracking_progress':

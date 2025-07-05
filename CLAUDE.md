@@ -155,6 +155,7 @@ When starting a new session or after context compaction:
 - `DESIGN_DECISIONS.md` - Product design decisions and rationale (collaborative UX/product choices)
 
 **Creative Collaboration Guidelines**:
+
 - TODOs are problems to solve, not tasks to execute - approach them with creative thinking
 - Challenge architectural decisions if you see better approaches or potential issues
 - Suggest alternative solutions when the success criteria could be met differently
@@ -162,7 +163,15 @@ When starting a new session or after context compaction:
 - Follow established patterns and user direction when technically sound
 - Question assumptions when they might lead to technical debt or poor UX
 
-**When to Challenge vs When to Follow**:
+**Debugging Protocol**:
+
+- **UI Issues**: Trace from what user sees → find actual rendering component (not assumed component)
+- **Component Issues**: Always `rg "import.*ComponentName"` to find real usage before debugging
+- **Duplicate Code**: Search for similar patterns, especially status/UI logic that might be duplicated
+- **Dead Code**: Remove unused components immediately when discovered to avoid confusion
+
+## When to Challenge vs When to Follow
+
 - **Challenge**: Technical debt risks, architectural inconsistencies, overlooked edge cases, better UX alternatives
 - **Follow**: Domain-specific decisions, intentional tradeoffs, technically sound approaches, explicit user preferences
 - **Collaborate**: Explore questions in TODO.md, suggest approaches from "Alternative Approaches" sections

@@ -14,6 +14,7 @@ This document captures product design decisions made during development to maint
 ### Selected Approach: Global Service Toggles
 
 **Design Decision**:
+
 - **Location**: Options page settings (not inline controls)
 - **Scope**: Global enable/disable per service (not per-action granularity)
 - **Default Behavior**: Use all available authenticated services

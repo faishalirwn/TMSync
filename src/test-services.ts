@@ -25,7 +25,14 @@ try {
         const capabilities = primaryService.getCapabilities();
         console.log('\n🎯 Primary Service Details:');
         console.log('- Type:', capabilities.serviceType);
-        console.log('- Supports scrobbling:', capabilities.supportsScrobbling);
+        console.log(
+            '- Supports real-time scrobbling:',
+            capabilities.supportsRealTimeScrobbling
+        );
+        console.log(
+            '- Supports progress tracking:',
+            capabilities.supportsProgressTracking
+        );
         console.log('- Supports ratings:', capabilities.supportsRatings);
         console.log('- Supports comments:', capabilities.supportsComments);
         console.log(

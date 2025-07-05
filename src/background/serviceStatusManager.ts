@@ -12,6 +12,7 @@ import {
 } from '../types/serviceStatus';
 import { serviceRegistry } from '../services/ServiceRegistry';
 import { isServiceEnabled } from '../utils/servicePreferences';
+import { scrobbleState } from './state';
 
 class ServiceStatusManager {
     private serviceStatuses: Map<ServiceType, ServiceStatus> = new Map();
@@ -49,13 +50,37 @@ class ServiceStatusManager {
             if (currentStatus) {
                 const newActivityState = userEnabled
                     ? currentStatus.activityState === 'disabled'
-                        ? 'idle'
+                        ? this.determineCurrentActivityState(serviceType)
                         : currentStatus.activityState
                     : 'disabled';
 
                 this.updateServiceActivity(serviceType, newActivityState);
             }
         }
+    }
+
+    /**
+     * Determine what activity state a service should have based on current global state
+     */
+    private determineCurrentActivityState(
+        serviceType: ServiceType
+    ): ServiceActivityState {
+        // Check if there's an active scrobble
+        if (scrobbleState.current.status === 'started') {
+            // Check if this service supports the current scrobble type
+            const service = serviceRegistry.getServiceByType(serviceType);
+            if (service?.getCapabilities().supportsRealTimeScrobbling) {
+                return 'scrobbling';
+            }
+        } else if (scrobbleState.current.status === 'paused') {
+            const service = serviceRegistry.getServiceByType(serviceType);
+            if (service?.getCapabilities().supportsRealTimeScrobbling) {
+                return 'paused';
+            }
+        }
+
+        // Default to idle if no active state
+        return 'idle';
     }
 
     /**

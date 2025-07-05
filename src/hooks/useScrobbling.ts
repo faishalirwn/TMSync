@@ -121,6 +121,10 @@ export function useScrobbling(
                 response.data.action === 'watched' &&
                 response.data.traktHistoryId
             ) {
+                console.log(
+                    '✅ Setting historyId to prevent future starts:',
+                    response.data.traktHistoryId
+                );
                 historyIdRef.current = response.data.traktHistoryId;
                 if (
                     isRewatchSession &&
@@ -171,6 +175,12 @@ export function useScrobbling(
                     latestProgress >= TRAKT_SCROBBLE_COMPLETION_THRESHOLD &&
                     !historyIdRef.current
                 ) {
+                    console.log(
+                        '🛑 Triggering stop - progress:',
+                        latestProgress,
+                        'historyId:',
+                        historyIdRef.current
+                    );
                     await sendScrobbleStop();
                 }
             }
@@ -184,12 +194,51 @@ export function useScrobbling(
         ]
     );
 
+    const lastProgressRef = useRef<number>(0);
+    const seekDetectedRef = useRef<boolean>(false);
+
     const handleTimeUpdate = useCallback(() => {
         if (!videoRef.current || pageUnloadRef.current) return;
         const { currentTime, duration } = videoRef.current;
         if (isNaN(duration) || duration === 0) return;
 
         const currentProgress = (currentTime / duration) * 100;
+
+        // Detect seeking: large jump in progress (>5% change)
+        const progressDelta = Math.abs(
+            currentProgress - lastProgressRef.current
+        );
+        if (progressDelta > 5) {
+            console.log('🔄 Seek detected:', {
+                from: lastProgressRef.current,
+                to: currentProgress,
+                delta: progressDelta
+            });
+            seekDetectedRef.current = true;
+            // Delay processing after seek to let video element settle
+            setTimeout(() => {
+                seekDetectedRef.current = false;
+            }, 1000);
+        }
+
+        lastProgressRef.current = currentProgress;
+
+        // Skip processing if we just detected a seek
+        if (seekDetectedRef.current) {
+            console.log('⏭️ Skipping progress update due to recent seek');
+            return;
+        }
+
+        // Debug logging for progress calculation
+        if (currentProgress > 80 || currentProgress < 5) {
+            console.log('📊 Video progress calculation:', {
+                currentTime,
+                duration,
+                calculatedProgress: currentProgress,
+                ratio: currentTime / duration
+            });
+        }
+
         if (!timeUpdateProcessingScheduledRef.current) {
             timeUpdateProcessingScheduledRef.current = true;
             setTimeout(
@@ -201,7 +250,18 @@ export function useScrobbling(
 
     const handlePlay = useCallback(() => {
         if (!mediaInfo || !userConfirmedAction) return;
-        if (status === 'idle' || status === 'paused') sendScrobbleStart();
+        if (historyIdRef.current) {
+            console.log(
+                '🚫 Skipping start on play - already completed (historyId:',
+                historyIdRef.current,
+                ')'
+            );
+            return;
+        }
+        if (status === 'idle' || status === 'paused') {
+            console.log('🚀 Starting on play event - status:', status);
+            sendScrobbleStart();
+        }
     }, [mediaInfo, userConfirmedAction, status, sendScrobbleStart]);
 
     const handlePause = useCallback(() => {
