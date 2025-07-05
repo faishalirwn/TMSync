@@ -127,6 +127,7 @@ export const AuthenticationHub: React.FC<AuthenticationHubProps> = ({
         hasAnyAuthenticated,
         isAnyLoading,
         hasAnyErrors,
+        isServicesInitialized,
         loginToAll,
         logoutFromAll,
         refreshAllStatus,
@@ -205,7 +206,18 @@ export const AuthenticationHub: React.FC<AuthenticationHubProps> = ({
                 ))}
             </div>
 
-            {services.length === 0 && (
+            {!isServicesInitialized && (
+                <div className="text-center py-8">
+                    <div className="inline-flex items-center px-4 py-2 bg-blue-50 border border-blue-200 rounded-lg">
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500 mr-2"></div>
+                        <span className="text-blue-700">
+                            Initializing services...
+                        </span>
+                    </div>
+                </div>
+            )}
+
+            {isServicesInitialized && services.length === 0 && (
                 <div className="text-center py-8 text-(--color-text-secondary)">
                     No tracking services configured
                 </div>

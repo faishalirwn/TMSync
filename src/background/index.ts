@@ -24,6 +24,7 @@ import {
     handleUpdateComment,
     handleDeleteComment
 } from './handlers/handleComments';
+import { handleAuthTokenExchange } from './handlers/handleAuth';
 import { scrobbleState, resetActiveScrobbleState } from './state';
 import { callApi } from '../utils/api';
 import { isMovieMediaInfo, isShowMediaInfo } from '../utils/typeGuards';
@@ -55,7 +56,9 @@ const messageHandlers: Record<string, MessageHandler> = {
     getComments: handleGetComments,
     postComment: handlePostComment,
     updateComment: handleUpdateComment,
-    deleteComment: handleDeleteComment
+    deleteComment: handleDeleteComment,
+    // Authentication
+    authTokenExchange: handleAuthTokenExchange
 };
 
 chrome.runtime.onMessage.addListener(

@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import '../styles/index.css';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 import { AuthenticationHub } from '../components/AuthenticationHub';
 import { useMultiServiceAuth } from '../hooks/useMultiServiceAuth';
 import { useQuickLinkPreferences } from '../hooks/useQuickLinkPreferences';
@@ -12,10 +13,17 @@ export type { UserQuickLinkPrefs };
 const Options: React.FC = () => {
     // Initialize services on component mount
     useEffect(() => {
-        initializeServices();
+        try {
+            console.log('Initializing services...');
+            initializeServices();
+            console.log('Services initialized successfully');
+        } catch (error) {
+            console.error('Error initializing services:', error);
+        }
     }, []);
 
-    const { hasAnyAuthenticated } = useMultiServiceAuth();
+    const { hasAnyAuthenticated, isServicesInitialized } =
+        useMultiServiceAuth();
     const {
         prefs,
         isLoading: isLoadingPrefs,
@@ -24,7 +32,7 @@ const Options: React.FC = () => {
         filteredSites,
         toggleSite,
         moveSite
-    } = useQuickLinkPreferences(hasAnyAuthenticated);
+    } = useQuickLinkPreferences(hasAnyAuthenticated && isServicesInitialized);
 
     return (
         <div className="bg-(--color-background) text-(--color-text-primary) min-h-screen">
@@ -38,7 +46,7 @@ const Options: React.FC = () => {
                     <AuthenticationHub />
                 </div>
 
-                {hasAnyAuthenticated && (
+                {hasAnyAuthenticated && isServicesInitialized && (
                     <div className="bg-(--color-surface-1) rounded-lg shadow-md p-6">
                         <h2 className="text-xl font-semibold mb-4 text-(--color-text-primary)">
                             Quick Links on Trakt.tv
@@ -129,7 +137,11 @@ const Options: React.FC = () => {
 const container = document.getElementById('root');
 if (container) {
     const root = createRoot(container);
-    root.render(<Options />);
+    root.render(
+        <ErrorBoundary>
+            <Options />
+        </ErrorBoundary>
+    );
 } else {
     console.error("Target container 'root' not found for Options page.");
 }

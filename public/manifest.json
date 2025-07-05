@@ -7,7 +7,7 @@
     },
     "options_page": "options.html",
     "permissions": ["identity", "storage"],
-    "host_permissions": ["https://api.trakt.tv/*/"],
+    "host_permissions": ["https://api.trakt.tv/*/", "https://anilist.co/*/", "https://graphql.anilist.co/"],
     "content_scripts": [
         {
             "js": ["js/vendor.js", "js/contentScript.js"],

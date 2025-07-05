@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useServiceAuth } from './useServiceAuth';
 import { serviceRegistry } from '../services/ServiceRegistry';
 import { ServiceType } from '../types/serviceTypes';
@@ -27,6 +27,7 @@ interface UseMultiServiceAuthReturn {
     hasAnyAuthenticated: boolean;
     isAnyLoading: boolean;
     hasAnyErrors: boolean;
+    isServicesInitialized: boolean;
     loginToAll: () => Promise<void>;
     logoutFromAll: () => Promise<void>;
     refreshAllStatus: () => Promise<void>;
@@ -40,15 +41,77 @@ interface UseMultiServiceAuthReturn {
  * @returns Aggregated auth state and bulk operations for all services
  */
 export function useMultiServiceAuth(): UseMultiServiceAuthReturn {
-    const allServices = serviceRegistry.getAllServices();
+    const [servicesInitialized, setServicesInitialized] = useState(false);
+    const [allServices, setAllServices] = useState(
+        serviceRegistry.getAllServices()
+    );
 
-    // Create individual auth hooks for each service
+    // Monitor service registry for changes
+    useEffect(() => {
+        const checkServices = () => {
+            const currentServices = serviceRegistry.getAllServices();
+            console.log(
+                'useMultiServiceAuth: Checking services, found:',
+                currentServices.length
+            );
+
+            if (currentServices.length > 0 && !servicesInitialized) {
+                console.log(
+                    'useMultiServiceAuth: Services initialized, updating state'
+                );
+                setAllServices(currentServices);
+                setServicesInitialized(true);
+            }
+        };
+
+        // Check immediately
+        checkServices();
+
+        // Set up a polling mechanism to check for service initialization
+        const interval = setInterval(checkServices, 100);
+
+        // Cleanup interval when services are found or component unmounts
+        if (servicesInitialized) {
+            clearInterval(interval);
+        }
+
+        return () => clearInterval(interval);
+    }, [servicesInitialized]);
+
+    // Always call hooks for the maximum possible number of services to avoid conditional hook calls
+    // This ensures we don't violate the Rules of Hooks
+    const traktAuth = useServiceAuth(
+        allServices.find((s) => s.getCapabilities().serviceType === 'trakt') ||
+            null
+    );
+    const anilistAuth = useServiceAuth(
+        allServices.find(
+            (s) => s.getCapabilities().serviceType === 'anilist'
+        ) || null
+    );
+
+    // Create service auth info array from the individual hooks
     const serviceAuthHooks = useMemo(() => {
-        return allServices.map((service) => ({
-            service,
-            auth: useServiceAuth(service)
-        }));
-    }, [allServices]);
+        const hooks = [];
+
+        // Add Trakt if available
+        const traktService = allServices.find(
+            (s) => s.getCapabilities().serviceType === 'trakt'
+        );
+        if (traktService) {
+            hooks.push({ service: traktService, auth: traktAuth });
+        }
+
+        // Add AniList if available
+        const anilistService = allServices.find(
+            (s) => s.getCapabilities().serviceType === 'anilist'
+        );
+        if (anilistService) {
+            hooks.push({ service: anilistService, auth: anilistAuth });
+        }
+
+        return hooks;
+    }, [allServices, traktAuth, anilistAuth]);
 
     // Transform to ServiceAuthInfo format
     const services: ServiceAuthInfo[] = useMemo(() => {
@@ -111,6 +174,7 @@ export function useMultiServiceAuth(): UseMultiServiceAuthReturn {
         hasAnyAuthenticated,
         isAnyLoading,
         hasAnyErrors,
+        isServicesInitialized: servicesInitialized,
         loginToAll,
         logoutFromAll,
         refreshAllStatus,

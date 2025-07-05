@@ -23,8 +23,10 @@ interface UseServiceAuthReturn extends ServiceAuthState {
  * @param service - The TrackerService instance to manage auth for
  * @returns Authentication state and methods for the service
  */
-export function useServiceAuth(service: TrackerService): UseServiceAuthReturn {
-    const serviceType = service.getCapabilities().serviceType;
+export function useServiceAuth(
+    service: TrackerService | null
+): UseServiceAuthReturn {
+    const serviceType = service?.getCapabilities().serviceType || 'trakt';
 
     const [state, setState] = useState<ServiceAuthState>({
         isLoggedIn: false,
@@ -43,6 +45,16 @@ export function useServiceAuth(service: TrackerService): UseServiceAuthReturn {
     }, [updateState]);
 
     const checkAuthStatus = useCallback(async () => {
+        if (!service) {
+            updateState({
+                isLoggedIn: false,
+                username: null,
+                isLoading: false,
+                error: null
+            });
+            return;
+        }
+
         updateState({ isLoading: true, error: null });
 
         try {
@@ -90,6 +102,14 @@ export function useServiceAuth(service: TrackerService): UseServiceAuthReturn {
     }, [service, serviceType, updateState]);
 
     const login = useCallback(async () => {
+        if (!service) {
+            updateState({
+                error: 'Service not available',
+                isLoading: false
+            });
+            return;
+        }
+
         updateState({ isLoading: true, error: null });
 
         try {
@@ -106,6 +126,14 @@ export function useServiceAuth(service: TrackerService): UseServiceAuthReturn {
     }, [service, serviceType, checkAuthStatus, updateState]);
 
     const logout = useCallback(async () => {
+        if (!service) {
+            updateState({
+                error: 'Service not available',
+                isLoading: false
+            });
+            return;
+        }
+
         updateState({ isLoading: true, error: null });
 
         try {

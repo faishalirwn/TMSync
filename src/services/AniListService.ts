@@ -23,7 +23,6 @@ export class AniListService implements TrackerService {
 
     // Configuration - would typically come from environment or config
     private readonly clientId = process.env.ANILIST_CLIENT_ID || '';
-    private readonly clientSecret = ''; // AniList doesn't use client secret for public apps
     private readonly apiEndpoint = 'https://graphql.anilist.co';
 
     /**
@@ -32,9 +31,9 @@ export class AniListService implements TrackerService {
     getCapabilities(): ServiceCapabilities {
         return {
             serviceType: 'anilist' as ServiceType,
-            supportsScrobbling: true,
+            supportsScrobbling: false, // AniList doesn't support real-time scrobbling like Trakt
             supportsRatings: true,
-            supportsComments: false, // AniList doesn't have a comments API like Trakt
+            supportsComments: true, // AniList supports notes/comments on list entries
             supportsHistory: true,
             supportsSearch: true,
             ratingScale: {
@@ -44,7 +43,7 @@ export class AniListService implements TrackerService {
                 serviceType: 'anilist'
             },
             authMethod: 'oauth',
-            supportedMediaTypes: ['show'], // AniList has ANIME/MANGA, we'll map shows to anime
+            supportedMediaTypes: ['show', 'movie'], // AniList supports anime TV shows and movies
             rateLimits: {
                 requestsPerMinute: 90,
                 requestsPerHour: 90 * 60 // AniList rate limit is roughly 90 requests per minute
@@ -108,19 +107,11 @@ export class AniListService implements TrackerService {
     }
 
     /**
-     * Initiate OAuth login flow for AniList
+     * Initiate OAuth login flow for AniList using implicit grant
      */
     async login(): Promise<void> {
-        let redirectUri: string | undefined;
-        try {
-            redirectUri = chrome.identity.getRedirectURL();
-            if (!redirectUri) throw new Error('Could not get redirect URL.');
-        } catch (err) {
-            console.error('Error getting redirect URL:', err);
-            throw new Error('Failed to configure authentication redirect.');
-        }
-
-        const authUrl = `https://anilist.co/api/v2/oauth/authorize?client_id=${this.clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code`;
+        // Use implicit grant flow - no redirect_uri needed for AniList
+        const authUrl = `https://anilist.co/api/v2/oauth/authorize?client_id=${this.clientId}&response_type=token`;
 
         try {
             const redirectUrlResponse = await chrome.identity.launchWebAuthFlow(
@@ -137,42 +128,27 @@ export class AniListService implements TrackerService {
                 );
             }
 
+            // Parse the access token from the URL fragment (not query params)
             const url = new URL(redirectUrlResponse);
-            const code = url.searchParams.get('code');
+            const fragment = url.hash.substring(1); // Remove the '#'
+            const params = new URLSearchParams(fragment);
 
-            if (!code) {
+            const accessToken = params.get('access_token');
+            const expiresIn = params.get('expires_in');
+
+            if (!accessToken) {
                 throw new Error(
-                    'Could not get authorization code from AniList.'
+                    'Could not get access token from AniList redirect.'
                 );
             }
 
-            // Exchange code for access token
-            const tokenResponse = await fetch(
-                'https://anilist.co/api/v2/oauth/token',
-                {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        grant_type: 'authorization_code',
-                        client_id: this.clientId,
-                        client_secret: this.clientSecret,
-                        redirect_uri: redirectUri,
-                        code: code
-                    })
-                }
-            );
+            // AniList tokens are long-lived (1 year by default)
+            const expiresAt = expiresIn
+                ? Date.now() + parseInt(expiresIn) * 1000
+                : Date.now() + 365 * 24 * 60 * 60 * 1000; // Default to 1 year
 
-            const tokenData = await tokenResponse.json();
-            if (!tokenResponse.ok) {
-                throw new Error(
-                    `Token exchange failed: ${tokenData.error_description || tokenResponse.statusText}`
-                );
-            }
-
-            // AniList tokens are long-lived (1 year)
-            const expiresAt = Date.now() + 365 * 24 * 60 * 60 * 1000; // 1 year
             await chrome.storage.local.set({
-                anilistAccessToken: tokenData.access_token,
+                anilistAccessToken: accessToken,
                 anilistTokenExpiresAt: expiresAt
             });
 
