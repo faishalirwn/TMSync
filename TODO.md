@@ -1,13 +1,39 @@
 # TMSync Development TODO
 
-## Current Phase: Phase 3 - UI/UX Multi-Service Integration
+## Current Phase: Phase 4 - Advanced Features & Edge Cases
 
-### Recently Completed
+### Recently Completed (Phase 3)
 - **Problem 1: Users Don't Know Which Services Are Active** ✅ Complete
-- **Problem 2: Users Can't Control Which Services Handle Their Actions** 🔄 In Progress
+- **Problem 2: Users Can't Control Which Services Handle Their Actions** ✅ Complete
 - **Problem 3: Service Authentication Infrastructure** ✅ Complete
 
-### Next Problems to Solve
+### Phase 4: Advanced Features & Edge Cases
+
+#### Priority 1: Complete AniList Integration
+**Current State**: Basic authentication implemented, missing core functionality
+
+**Success Criteria**: 
+- AniList supports real scrobbling/progress tracking (not just auth)
+- Media search and identification works for anime/manga
+- Rating system properly translates between Trakt (1-10) and AniList (1-100) scales  
+- Episode progress tracking for anime series
+
+**Next Steps**:
+- Implement real-time scrobbling for AniList (currently only has auth)
+- Add anime/manga media identification
+- Build progress tracking for episode completion
+- Add AniList-specific rating translations
+
+#### Priority 2: Media Identification & Cross-Service Mapping
+**Success Criteria**: Shows can be identified across different services even with naming differences
+
+**Deferred Items** (when needed):
+- EpisodeMapper for complex show structures
+- MediaIdentifier service for cross-service mapping  
+- Confidence scoring for media matching
+- Database mapping utilities for episode/season reconciliation
+
+### Completed Phase 3 Problems
 
 #### Problem 1: Users Don't Know Which Services Are Active ✅ COMPLETE
 **Success Criteria**: Users can see at a glance which tracking services are enabled and their status (authenticated, syncing, etc.)
@@ -19,18 +45,16 @@
 - Honest capability system - services only claim what they actually implement
 - Visual indicators with color-coded icons and descriptive text
 
-#### Problem 2: Users Can't Control Which Services Handle Their Actions
+#### Problem 2: Users Can't Control Which Services Handle Their Actions ✅ COMPLETE
 **Success Criteria**: Users can choose which services to scrobble to, rate on, comment to, etc., either globally or per-action
 
-**Questions to Consider**:
-- Should service selection be global settings or per-action choices?
-- How do we handle conflicts when services have different capabilities?
-- What's the UX for first-time users vs power users?
-
-**Alternative Approaches**:
-- Master toggle switches vs smart defaults with override options
-- Confirmation prompts vs background delegation to enabled services
-- Options page configuration vs inline controls
+**✅ Implemented Solution**:
+- Global service toggle switches in options page 
+- Real-time status updates when services are enabled/disabled
+- All handlers (scrobble, rate, comment, history) respect user preferences
+- Smart state recovery: re-enabled services resume appropriate state during active operations
+- Service filtering with both user preference AND authentication status checks
+- Default behavior: use all available authenticated services
 
 #### Problem 3: Service Authentication Is Scattered and Confusing
 **Success Criteria**: Users have a unified interface to authenticate with and manage multiple tracking services
@@ -45,10 +69,14 @@
 - Proactive re-auth vs on-demand error handling
 - Service-specific settings vs unified configuration
 
-#### Problem 4: Error States Provide Poor User Experience
+#### Problem 4: Error States Provide Poor User Experience 🔄 DEFERRED
 **Success Criteria**: When services fail, users understand what happened and how to fix it, without breaking their workflow
 
-**Questions to Consider**:
+**Decision**: Defer until we encounter specific API failures in real usage. Better to solve actual problems than theoretical ones.
+
+**Approach**: Tackle error handling organically when building other features and encountering real failure modes. This will drive better, more targeted solutions.
+
+**Questions to Consider** (when we encounter real errors):
 - How granular should error reporting be?
 - Should errors be service-specific or aggregated?
 - How do we handle partial failures (one service works, another doesn't)?
@@ -81,4 +109,4 @@ See CLAUDE.md Development Roadmap for Phase 4 items.
 
 ---
 *Last updated: 2025-07-05*
-*Current commit: d37470e - Implement real-time service status indicators system*
+*Current commit: 9aaf815 - Complete Phase 3: Multi-service UI/UX integration with service control toggles*
