@@ -32,10 +32,10 @@ export class AniListService implements TrackerService {
         return {
             serviceType: 'anilist' as ServiceType,
             supportsRealTimeScrobbling: false, // AniList doesn't support real-time scrobbling
-            supportsProgressTracking: false, // TODO: Not yet implemented - set to true when completed
+            supportsProgressTracking: true, // Episode progress tracking implemented
             supportsRatings: false, // TODO: Not yet implemented - set to true when completed
             supportsComments: false, // TODO: Not yet implemented - set to true when completed
-            supportsHistory: false, // TODO: Not yet implemented - set to true when completed
+            supportsHistory: true, // History add/remove implemented
             supportsSearch: true, // Search is implemented
             ratingScale: {
                 min: 1,
@@ -335,16 +335,122 @@ export class AniListService implements TrackerService {
         mediaInfo: MediaInfoResponse,
         episodeInfo: SeasonEpisodeObj | null
     ): Promise<{ historyId?: number | string }> {
-        // Implementation would use SaveMediaListEntry mutation
-        throw new Error('addToHistory not yet implemented for AniList');
+        if (!this.accessToken) {
+            throw new Error('Not authenticated with AniList');
+        }
+
+        if (mediaInfo.type !== 'show') {
+            throw new Error('AniList currently only supports TV shows/anime');
+        }
+
+        // Search AniList directly for the media
+        const searchQuery = `
+            query ($search: String, $seasonYear: Int) {
+                Page(page: 1, perPage: 5) {
+                    media(search: $search, type: ANIME, seasonYear: $seasonYear) {
+                        id
+                        episodes
+                        title {
+                            romaji
+                            english
+                        }
+                    }
+                }
+            }
+        `;
+
+        const searchVariables: any = { search: mediaInfo.show.title };
+        if (mediaInfo.show.year) {
+            searchVariables.seasonYear = mediaInfo.show.year;
+        }
+
+        const searchResponse = await this.makeGraphQLRequest(
+            searchQuery,
+            searchVariables,
+            false
+        );
+        const mediaList = searchResponse.data?.Page?.media || [];
+
+        if (mediaList.length === 0) {
+            throw new Error(
+                `Could not find anime "${mediaInfo.show.title}" on AniList`
+            );
+        }
+
+        // Use first result (could improve with better matching later)
+        const anilistMedia = mediaList[0];
+        const anilistId = anilistMedia.id;
+
+        // Determine if this is completion or just progress update
+        const episodeNumber = episodeInfo?.number || 1;
+        const totalEpisodes = anilistMedia.episodes;
+        const isCompleted = totalEpisodes && episodeNumber >= totalEpisodes;
+
+        // Use SaveMediaListEntry mutation
+        const mutation = `
+            mutation($mediaId: Int!, $status: MediaListStatus!, $progress: Int!) {
+                SaveMediaListEntry(mediaId: $mediaId, status: $status, progress: $progress) {
+                    id
+                    progress
+                    status
+                }
+            }
+        `;
+
+        const mutationVariables = {
+            mediaId: anilistId,
+            status: isCompleted ? 'COMPLETED' : 'CURRENT',
+            progress: episodeNumber
+        };
+
+        const mutationResponse = await this.makeGraphQLRequest(
+            mutation,
+            mutationVariables
+        );
+
+        if (mutationResponse.errors) {
+            throw new Error(
+                `AniList API error: ${mutationResponse.errors[0].message}`
+            );
+        }
+
+        const entry = mutationResponse.data.SaveMediaListEntry;
+        return { historyId: entry.id.toString() };
     }
 
     /**
      * Remove item from watch history
      */
     async removeFromHistory(historyId: number | string): Promise<void> {
-        // Implementation would delete MediaList entry
-        throw new Error('removeFromHistory not yet implemented for AniList');
+        if (!this.accessToken) {
+            throw new Error('Not authenticated with AniList');
+        }
+
+        // Use DeleteMediaListEntry mutation
+        const mutation = `
+            mutation($id: Int!) {
+                DeleteMediaListEntry(id: $id) {
+                    deleted
+                }
+            }
+        `;
+
+        const variables = {
+            id:
+                typeof historyId === 'string'
+                    ? parseInt(historyId, 10)
+                    : historyId
+        };
+
+        const response = await this.makeGraphQLRequest(mutation, variables);
+
+        if (response.errors) {
+            throw new Error(`AniList API error: ${response.errors[0].message}`);
+        }
+
+        if (!response.data.DeleteMediaListEntry?.deleted) {
+            throw new Error('Failed to remove entry from AniList');
+        }
     }
 
     /**
