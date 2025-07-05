@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { isShowMediaInfo, isMovieMediaInfo } from '../../../utils/typeGuards';
-import { TraktComment } from '../../../types/trakt';
+import { ServiceComment } from '../../../types/serviceTypes';
 import {
     CommentableType,
     MediaInfoResponse,
     MediaRatings
 } from '../../../types/media';
+import { ServiceMediaRatings } from '../../../types/serviceTypes';
 
 const Star: React.FC<{
     filled: boolean;
@@ -62,17 +63,17 @@ interface CommentModalProps {
     isOpen: boolean;
     onClose: () => void;
     isLoading: boolean;
-    comments: TraktComment[];
+    comments: ServiceComment[];
     mediaInfo: MediaInfoResponse | null;
-    ratings: MediaRatings | null;
+    ratings: ServiceMediaRatings | null;
     commentType: CommentableType | null;
     onPostComment: (comment: string, spoiler: boolean) => Promise<any>;
     onUpdateComment: (
-        commentId: number,
+        commentId: number | string,
         comment: string,
         spoiler: boolean
     ) => Promise<any>;
-    onDeleteComment: (commentId: number) => Promise<any>;
+    onDeleteComment: (commentId: number | string) => Promise<any>;
     onRate: (type: CommentableType, rating: number) => void;
 }
 
@@ -89,9 +90,9 @@ export const CommentModal: React.FC<CommentModalProps> = ({
     onDeleteComment,
     onRate
 }) => {
-    const [selectedCommentId, setSelectedCommentId] = useState<number | 'new'>(
-        'new'
-    );
+    const [selectedCommentId, setSelectedCommentId] = useState<
+        number | string | 'new'
+    >('new');
     const [editorText, setEditorText] = useState('');
     const [isSpoiler, setIsSpoiler] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -109,8 +110,8 @@ export const CommentModal: React.FC<CommentModalProps> = ({
             if (comments.length > 0) {
                 const mostRecent = comments.sort(
                     (a, b) =>
-                        new Date(b.created_at).getTime() -
-                        new Date(a.created_at).getTime()
+                        new Date(b.createdAt).getTime() -
+                        new Date(a.createdAt).getTime()
                 )[0];
                 setSelectedCommentId(mostRecent.id);
                 setEditorText(mostRecent.comment);
@@ -123,7 +124,7 @@ export const CommentModal: React.FC<CommentModalProps> = ({
         }
     }, [isOpen, comments]);
 
-    const handleSelectComment = (comment: TraktComment) => {
+    const handleSelectComment = (comment: ServiceComment) => {
         setSelectedCommentId(comment.id);
         setEditorText(comment.comment);
         setIsSpoiler(comment.spoiler);
@@ -173,7 +174,7 @@ export const CommentModal: React.FC<CommentModalProps> = ({
         setIsSubmitting(false);
     };
 
-    const handleDelete = async (commentId: number) => {
+    const handleDelete = async (commentId: number | string) => {
         if (window.confirm('Are you sure you want to delete this comment?')) {
             setIsSubmitting(true);
             await onDeleteComment(commentId);
@@ -251,7 +252,7 @@ export const CommentModal: React.FC<CommentModalProps> = ({
                                                 </p>
                                                 <p className="text-xs text-(--color-text-secondary) mt-1">
                                                     {new Date(
-                                                        comment.created_at
+                                                        comment.createdAt
                                                     ).toLocaleString()}
                                                 </p>
                                             </div>

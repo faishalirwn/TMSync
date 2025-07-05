@@ -10,6 +10,7 @@ import {
 } from './media';
 import { WatchStatusInfo } from './scrobbling';
 import { TraktShowWatchedProgress, TraktComment } from './trakt';
+import { ServiceProgressInfo, ServiceMediaRatings } from './serviceTypes';
 
 // --- Payloads ---
 export interface MediaStatusPayload {
@@ -17,8 +18,8 @@ export interface MediaStatusPayload {
     originalQuery: { type: string; query: string; years: string };
     confidence: 'high' | 'low';
     watchStatus?: WatchStatusInfo;
-    progressInfo?: TraktShowWatchedProgress | null;
-    ratingInfo?: MediaRatings;
+    progressInfo?: ServiceProgressInfo | null;
+    ratingInfo?: ServiceMediaRatings;
 }
 
 // --- Requests ---
@@ -84,12 +85,12 @@ export interface PostCommentParams {
     spoiler: boolean;
 }
 export interface UpdateCommentParams {
-    commentId: number;
+    commentId: number | string;
     comment: string;
     spoiler: boolean;
 }
 export interface DeleteCommentParams {
-    commentId: number;
+    commentId: number | string;
 }
 
 export type MessageRequest =

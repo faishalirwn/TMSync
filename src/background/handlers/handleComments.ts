@@ -4,19 +4,19 @@ import {
     PostCommentParams,
     UpdateCommentParams
 } from '../../types/messaging';
-import { TraktComment } from '../../types/trakt';
+import { ServiceComment } from '../../types/serviceTypes';
 import { traktService } from '../../services/TraktService';
 
 export async function handleGetComments(
     params: GetCommentsParams
-): Promise<TraktComment[]> {
+): Promise<ServiceComment[]> {
     const { type, mediaInfo, episodeInfo } = params;
     return await traktService.getComments(type, mediaInfo, episodeInfo);
 }
 
 export async function handlePostComment(
     params: PostCommentParams
-): Promise<TraktComment> {
+): Promise<ServiceComment> {
     const { type, mediaInfo, episodeInfo, comment, spoiler } = params;
     return await traktService.postComment(
         type,
@@ -29,7 +29,7 @@ export async function handlePostComment(
 
 export async function handleUpdateComment(
     params: UpdateCommentParams
-): Promise<TraktComment> {
+): Promise<ServiceComment> {
     const { commentId, comment, spoiler } = params;
     return await traktService.updateComment(commentId, comment, spoiler);
 }

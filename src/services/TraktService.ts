@@ -10,20 +10,53 @@ import {
     TraktShowWatchedProgress
 } from '../types/trakt';
 import { WatchStatusInfo, ScrobbleStopResponseData } from '../types/scrobbling';
+import { TrackerService } from '../types/services';
+import {
+    ServiceType,
+    ServiceComment,
+    ServiceProgressInfo,
+    ServiceMediaIds,
+    ServiceMediaRatings,
+    ServiceScrobbleResponse,
+    ServiceCapabilities
+} from '../types/serviceTypes';
 
 /**
  * TraktService - Handles all Trakt.tv API interactions
  *
  * This service encapsulates authentication, media operations, scrobbling,
  * ratings, comments, and user data management for Trakt.tv.
- *
- * TODO: Implement TrackerService interface after converting return types
- * to service-agnostic types (ServiceProgressInfo, ServiceComment, etc.)
  */
-export class TraktService {
+export class TraktService implements TrackerService {
     private isRefreshing = false;
     private refreshSubscribers: ((token: string) => void)[] = [];
     private cachedUsername: string | null = null;
+
+    /**
+     * Get service capabilities and configuration
+     */
+    getCapabilities(): ServiceCapabilities {
+        return {
+            serviceType: 'trakt' as ServiceType,
+            supportsScrobbling: true,
+            supportsRatings: true,
+            supportsComments: true,
+            supportsHistory: true,
+            supportsSearch: true,
+            ratingScale: {
+                min: 1,
+                max: 10,
+                step: 1,
+                serviceType: 'trakt'
+            },
+            authMethod: 'oauth',
+            supportedMediaTypes: ['movie', 'show'],
+            rateLimits: {
+                requestsPerMinute: 1000,
+                requestsPerHour: 5000
+            }
+        };
+    }
 
     /**
      * Authentication Methods
@@ -229,8 +262,8 @@ export class TraktService {
      */
     async getMediaStatus(mediaInfo: MediaInfoResponse): Promise<{
         watchStatus: WatchStatusInfo;
-        progressInfo: TraktShowWatchedProgress | null;
-        ratingInfo: MediaRatings;
+        progressInfo: ServiceProgressInfo | null;
+        ratingInfo: ServiceMediaRatings;
     }> {
         const watchStatus: WatchStatusInfo = {
             isInHistory: false,
@@ -312,7 +345,11 @@ export class TraktService {
             }
         }
 
-        return { watchStatus, progressInfo, ratingInfo };
+        return {
+            watchStatus,
+            progressInfo: this.convertToServiceProgressInfo(progressInfo),
+            ratingInfo: this.convertToServiceMediaRatings(ratingInfo)
+        };
     }
 
     /**
@@ -323,8 +360,8 @@ export class TraktService {
         episodeInfo?: SeasonEpisodeObj
     ): Promise<{
         watchStatus: WatchStatusInfo;
-        progressInfo: TraktShowWatchedProgress | null;
-        ratingInfo: MediaRatings;
+        progressInfo: ServiceProgressInfo | null;
+        ratingInfo: ServiceMediaRatings;
     }> {
         const result = await this.getMediaStatus(mediaInfo);
 
@@ -349,7 +386,8 @@ export class TraktService {
                 if (seasonRating) {
                     result.ratingInfo.season = {
                         userRating: seasonRating.rating,
-                        ratedAt: seasonRating.rated_at
+                        ratedAt: seasonRating.rated_at,
+                        serviceType: 'trakt'
                     };
                 }
 
@@ -362,7 +400,8 @@ export class TraktService {
                 if (episodeRating) {
                     result.ratingInfo.episode = {
                         userRating: episodeRating.rating,
-                        ratedAt: episodeRating.rated_at
+                        ratedAt: episodeRating.rated_at,
+                        serviceType: 'trakt'
                     };
                 }
             }
@@ -422,7 +461,7 @@ export class TraktService {
         mediaInfo: MediaInfoResponse,
         episodeInfo: SeasonEpisodeObj | null,
         progress: number
-    ): Promise<ScrobbleStopResponseData> {
+    ): Promise<ServiceScrobbleResponse> {
         const payload = this.buildScrobblePayload(
             mediaInfo,
             episodeInfo,
@@ -436,9 +475,16 @@ export class TraktService {
 
         const COMPLETION_THRESHOLD = 80;
         if (progress >= COMPLETION_THRESHOLD) {
-            return { action: 'watched', traktHistoryId: response?.id };
+            return {
+                action: 'watched',
+                historyId: response?.id,
+                serviceType: 'trakt'
+            };
         } else {
-            return { action: 'paused_incomplete' };
+            return {
+                action: 'paused_incomplete',
+                serviceType: 'trakt'
+            };
         }
     }
 
@@ -448,7 +494,7 @@ export class TraktService {
     async addToHistory(
         mediaInfo: MediaInfoResponse,
         episodeInfo: SeasonEpisodeObj | null
-    ): Promise<{ traktHistoryId?: number }> {
+    ): Promise<{ historyId?: number }> {
         const historyBody: any = {};
 
         if (mediaInfo.type === 'movie') {
@@ -497,7 +543,7 @@ export class TraktService {
             traktHistoryId = historyResponse[0].id;
         }
 
-        return { traktHistoryId };
+        return { historyId: traktHistoryId };
     }
 
     /**
@@ -516,7 +562,7 @@ export class TraktService {
     /**
      * Rate a movie
      */
-    async rateMovie(movieIds: any, rating: number): Promise<void> {
+    async rateMovie(movieIds: ServiceMediaIds, rating: number): Promise<void> {
         const body = {
             movies: [{ ids: movieIds, rating }]
         };
@@ -526,7 +572,7 @@ export class TraktService {
     /**
      * Rate a show
      */
-    async rateShow(showIds: any, rating: number): Promise<void> {
+    async rateShow(showIds: ServiceMediaIds, rating: number): Promise<void> {
         const body = {
             shows: [{ ids: showIds, rating }]
         };
@@ -537,7 +583,7 @@ export class TraktService {
      * Rate a season
      */
     async rateSeason(
-        showIds: any,
+        showIds: ServiceMediaIds,
         seasonNumber: number,
         rating: number
     ): Promise<void> {
@@ -562,7 +608,7 @@ export class TraktService {
      * Rate an episode
      */
     async rateEpisode(
-        showIds: any,
+        showIds: ServiceMediaIds,
         seasonNumber: number,
         episodeNumber: number,
         rating: number
@@ -597,7 +643,7 @@ export class TraktService {
         type: 'movie' | 'show' | 'season' | 'episode',
         mediaInfo: MediaInfoResponse,
         episodeInfo?: SeasonEpisodeObj
-    ): Promise<TraktComment[]> {
+    ): Promise<ServiceComment[]> {
         const username = await this.getUsername();
         const url = `https://api.trakt.tv/users/${username}/comments/${type}s/all`;
         const allComments = await this.callApi<any[]>(url);
@@ -606,13 +652,13 @@ export class TraktService {
             const id = mediaInfo.movie.ids.trakt;
             return allComments
                 .filter((c: any) => c.movie?.ids?.trakt === id)
-                .map((c: any) => c.comment);
+                .map((c: any) => this.convertToServiceComment(c.comment));
         }
         if (type === 'show' && mediaInfo.type === 'show') {
             const id = mediaInfo.show.ids.trakt;
             return allComments
                 .filter((c: any) => c.show?.ids?.trakt === id)
-                .map((c: any) => c.comment);
+                .map((c: any) => this.convertToServiceComment(c.comment));
         }
         if (type === 'season' && mediaInfo.type === 'show' && episodeInfo) {
             const id = mediaInfo.show.ids.trakt;
@@ -622,7 +668,7 @@ export class TraktService {
                         c.show?.ids?.trakt === id &&
                         c.season?.number === episodeInfo.season
                 )
-                .map((c: any) => c.comment);
+                .map((c: any) => this.convertToServiceComment(c.comment));
         }
         if (type === 'episode' && mediaInfo.type === 'show' && episodeInfo) {
             const id = mediaInfo.show.ids.trakt;
@@ -633,7 +679,7 @@ export class TraktService {
                         c.episode?.season === episodeInfo.season &&
                         c.episode?.number === episodeInfo.number
                 )
-                .map((c: any) => c.comment);
+                .map((c: any) => this.convertToServiceComment(c.comment));
         }
         return [];
     }
@@ -647,7 +693,7 @@ export class TraktService {
         comment: string,
         spoiler: boolean,
         episodeInfo?: SeasonEpisodeObj
-    ): Promise<TraktComment> {
+    ): Promise<ServiceComment> {
         const body: any = { comment, spoiler };
 
         if (type === 'movie' && mediaInfo.type === 'movie') {
@@ -683,21 +729,22 @@ export class TraktService {
         } else {
             throw new Error('Invalid media type for posting comment.');
         }
-        return await this.callApi<TraktComment>(
+        const response = await this.callApi<TraktComment>(
             'https://api.trakt.tv/comments',
             'POST',
             body
         );
+        return this.convertToServiceComment(response);
     }
 
     /**
      * Update existing comment
      */
     async updateComment(
-        commentId: number,
+        commentId: number | string,
         comment: string,
         spoiler: boolean
-    ): Promise<TraktComment> {
+    ): Promise<ServiceComment> {
         const response = await this.callApi(
             `https://api.trakt.tv/comments/${commentId}`,
             'PUT',
@@ -706,13 +753,13 @@ export class TraktService {
                 spoiler
             }
         );
-        return response;
+        return this.convertToServiceComment(response);
     }
 
     /**
      * Delete a comment
      */
-    async deleteComment(commentId: number): Promise<void> {
+    async deleteComment(commentId: number | string): Promise<void> {
         await this.callApi(
             `https://api.trakt.tv/comments/${commentId}`,
             'DELETE'
@@ -722,6 +769,74 @@ export class TraktService {
     /**
      * Private Helper Methods
      */
+
+    /**
+     * Convert TraktShowWatchedProgress to ServiceProgressInfo
+     */
+    private convertToServiceProgressInfo(
+        progress: TraktShowWatchedProgress | null
+    ): ServiceProgressInfo | null {
+        if (!progress) return null;
+
+        return {
+            aired: progress.aired,
+            completed: progress.completed,
+            lastWatchedAt: progress.last_watched_at,
+            serviceType: 'trakt'
+        };
+    }
+
+    /**
+     * Convert MediaRatings to ServiceMediaRatings
+     */
+    private convertToServiceMediaRatings(
+        ratings: MediaRatings
+    ): ServiceMediaRatings {
+        return {
+            show:
+                ratings.show && ratings.show.userRating !== null
+                    ? {
+                          userRating: ratings.show.userRating,
+                          ratedAt: ratings.show.ratedAt || '',
+                          serviceType: 'trakt'
+                      }
+                    : undefined,
+            season:
+                ratings.season && ratings.season.userRating !== null
+                    ? {
+                          userRating: ratings.season.userRating,
+                          ratedAt: ratings.season.ratedAt || '',
+                          serviceType: 'trakt'
+                      }
+                    : undefined,
+            episode:
+                ratings.episode && ratings.episode.userRating !== null
+                    ? {
+                          userRating: ratings.episode.userRating,
+                          ratedAt: ratings.episode.ratedAt || '',
+                          serviceType: 'trakt'
+                      }
+                    : undefined
+        };
+    }
+
+    /**
+     * Convert TraktComment to ServiceComment
+     */
+    private convertToServiceComment(comment: TraktComment): ServiceComment {
+        return {
+            id: comment.id,
+            comment: comment.comment,
+            spoiler: comment.spoiler,
+            createdAt: comment.created_at,
+            updatedAt: comment.updated_at,
+            user: {
+                username: comment.user.username,
+                name: comment.user.name
+            },
+            serviceType: 'trakt'
+        };
+    }
 
     /**
      * Build scrobble payload for API calls

@@ -11,6 +11,11 @@ import {
 } from '../types/media';
 import { TraktComment, TraktShowWatchedProgress } from '../types/trakt';
 import {
+    ServiceComment,
+    ServiceProgressInfo,
+    ServiceMediaRatings
+} from '../types/serviceTypes';
+import {
     MessageRequest,
     MessageResponse,
     MediaStatusPayload
@@ -64,9 +69,9 @@ export function useMediaLifecycle() {
     } | null>(null);
 
     // Associated Trakt Data State
-    const [ratings, setRatings] = useState<MediaRatings | null>(null);
+    const [ratings, setRatings] = useState<ServiceMediaRatings | null>(null);
     const [progressInfo, setProgressInfo] =
-        useState<TraktShowWatchedProgress | null>(null);
+        useState<ServiceProgressInfo | null>(null);
     const [highlightTarget, setHighlightTarget] = useState<{
         season: number;
         episode: number;
@@ -93,7 +98,7 @@ export function useMediaLifecycle() {
     const [isCommentModalOpen, setIsCommentModalOpen] = useState(false);
     const [commentModalType, setCommentModalType] =
         useState<CommentableType | null>(null);
-    const [comments, setComments] = useState<TraktComment[]>([]);
+    const [comments, setComments] = useState<ServiceComment[]>([]);
     const [isLoadingComments, setIsLoadingComments] = useState(false);
 
     const sendMessage = useCallback(
@@ -181,10 +186,10 @@ export function useMediaLifecycle() {
                         setUserConfirmedAction(true);
                     }
 
-                    if (traktProgress.last_episode) {
+                    if (traktProgress.lastEpisode) {
                         newHighlight = {
-                            season: traktProgress.last_episode.season,
-                            episode: traktProgress.last_episode.number,
+                            season: traktProgress.lastEpisode.season,
+                            episode: traktProgress.lastEpisode.number,
                             type: 'first_watch_last'
                         };
                     }
@@ -320,7 +325,7 @@ export function useMediaLifecycle() {
             setCommentModalType(type);
             setIsLoadingComments(true);
             setComments([]);
-            const response = await sendMessage<TraktComment[]>({
+            const response = await sendMessage<ServiceComment[]>({
                 action: 'getComments',
                 params: {
                     type,
@@ -342,7 +347,7 @@ export function useMediaLifecycle() {
     const postComment = useCallback(
         async (comment: string, spoiler: boolean) => {
             if (!mediaInfo || !commentModalType) return { success: false };
-            const response = await sendMessage<TraktComment>({
+            const response = await sendMessage<ServiceComment>({
                 action: 'postComment',
                 params: {
                     type: commentModalType,
@@ -360,8 +365,12 @@ export function useMediaLifecycle() {
     );
 
     const updateComment = useCallback(
-        async (commentId: number, comment: string, spoiler: boolean) => {
-            const response = await sendMessage<TraktComment>({
+        async (
+            commentId: number | string,
+            comment: string,
+            spoiler: boolean
+        ) => {
+            const response = await sendMessage<ServiceComment>({
                 action: 'updateComment',
                 params: { commentId, comment, spoiler }
             });
@@ -375,7 +384,7 @@ export function useMediaLifecycle() {
     );
 
     const deleteComment = useCallback(
-        async (commentId: number) => {
+        async (commentId: number | string) => {
             const response = await sendMessage({
                 action: 'deleteComment',
                 params: { commentId }

@@ -11,7 +11,7 @@ export async function handleManualAddToHistory(
         params.mediaInfo,
         params.episodeInfo || null
     );
-    return { traktHistoryId: result.traktHistoryId! };
+    return { traktHistoryId: result.historyId! };
 }
 
 export async function handleUndoScrobble(params: {

@@ -13,14 +13,24 @@ import { aniListService } from './AniListService';
  * Initialize and register all tracking services
  */
 export function initializeServices(): void {
-    // Register AniListService (fully implements TrackerService interface)
+    // Register TraktService (primary service)
+    serviceRegistry.registerService(traktService, {
+        serviceType: 'trakt',
+        enabled: true,
+        priority: 1 // Primary service (higher priority than AniList)
+    });
+
+    // Register AniListService (secondary service)
     serviceRegistry.registerService(aniListService, {
         serviceType: 'anilist',
         enabled: true,
-        priority: 1
+        priority: 2
     });
 
-    console.log('🎉 Multi-service architecture validated!');
+    console.log('🎉 Multi-service architecture completed!');
+    console.log(
+        '✅ TraktService successfully implements TrackerService interface'
+    );
     console.log(
         '✅ AniListService successfully implements TrackerService interface'
     );
@@ -28,10 +38,8 @@ export function initializeServices(): void {
         '✅ ServiceRegistry manages multiple services with capabilities'
     );
     console.log(
-        '📋 TraktService interface refinements identified and ready to implement'
+        '✅ Both services registered and ready for multi-service workflow'
     );
-
-    // TODO: Add TraktService once return types are converted to service-agnostic types
 
     console.log('Multi-service architecture initialized:');
     console.log(
