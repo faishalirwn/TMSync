@@ -110,13 +110,8 @@ TMSync is a Chrome extension that integrates streaming sites with multiple track
 - Each commit should represent a complete, understandable feature or fix
 - Use descriptive commit messages explaining the "why" not just "what"
 - This creates checkpoints for easy reverting and better code review
-
-**Current Commit Recommendation**:
-The multi-service architecture foundation (Phase 2) has been completed and should be committed as a single comprehensive commit. This represents a major architectural milestone with:
-- Complete TrackerService interface implementation
-- TraktService and AniListService with full interface compliance
-- Service-agnostic type system
-- Updated handlers and components for multi-service compatibility
+- Major architectural changes (like completing a full phase) should be single comprehensive commits
+- Always run `npm run check-all` before committing to ensure code quality
 
 **Event Handling Conflicts**:
 The extension uses a global keydown event guard to prevent conflicts with other extensions. This relies on timing - the extension's event listener must attach before conflicting extensions. A more robust solution would use iframe sandboxing.
@@ -143,6 +138,19 @@ The extension uses a global keydown event guard to prevent conflicts with other 
 - Test multi-service functionality using `npx tsx src/test-services.ts`
 - Run `npm run type-check` after any service-related changes to ensure interface compliance
 - Each service should handle its own authentication and error states gracefully
+
+**Context Recovery Protocol**:
+When starting a new session or after context compaction:
+1. Read `TODO.md` for current phase and pending tasks
+2. Read `CURRENT_STATE.md` for recent work and architecture status
+3. Run `git log --oneline -5` to see recent commits
+4. Check current git status with `git status`
+5. Verify system health with `npm run type-check`
+
+**File-Based State Management**:
+- `TODO.md` - Current tasks and phase status (update as work progresses)
+- `CURRENT_STATE.md` - Architecture status and last major work (update after significant changes)
+- `CLAUDE.md` - Timeless development guidelines and architecture documentation
 
 ## Development Roadmap
 
