@@ -9,6 +9,7 @@ import { serviceRegistry } from '../../services/ServiceRegistry';
 import { serviceStatusManager } from '../serviceStatusManager';
 import { scrobbleState, resetActiveScrobbleState } from '../state';
 import { filterEnabledAuthenticatedServices } from '../../utils/serviceFiltering';
+import { isServiceEnabled } from '../../utils/servicePreferences';
 
 export async function handleScrobbleStart(
     params: RequestScrobbleStartParams,
@@ -43,10 +44,17 @@ export async function handleScrobbleStart(
     // Get all services for status updates
     const allServices = serviceRegistry.getAllServices();
 
-    // Update status for different service types
-    allServices.forEach((service) => {
+    // Update status for different service types (handle async properly)
+    for (const service of allServices) {
         const serviceType = service.getCapabilities().serviceType;
         const capabilities = service.getCapabilities();
+
+        // Check if service is enabled by user preference
+        const userEnabled = await isServiceEnabled(serviceType);
+        if (!userEnabled) {
+            serviceStatusManager.updateServiceActivity(serviceType, 'disabled');
+            continue;
+        }
 
         if (capabilities.supportsRealTimeScrobbling) {
             serviceStatusManager.updateServiceActivity(
@@ -61,7 +69,7 @@ export async function handleScrobbleStart(
         } else {
             serviceStatusManager.updateServiceActivity(serviceType, 'idle');
         }
-    });
+    }
 
     // If there's an active scrobble on a different tab, pause it first
     if (
@@ -161,7 +169,7 @@ export async function handleScrobblePause(
                 params.episodeInfo || null,
                 params.progress
             );
-            serviceStatusManager.updateServiceActivity(serviceType, 'idle');
+            serviceStatusManager.updateServiceActivity(serviceType, 'paused');
         } catch (error) {
             console.error(`Failed to pause scrobble on ${serviceType}:`, error);
             serviceStatusManager.updateServiceActivity(

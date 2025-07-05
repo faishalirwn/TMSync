@@ -25,6 +25,8 @@ const ServiceStatusBadge: React.FC<ServiceStatusBadgeProps> = ({ status }) => {
             case 'pausing_scrobble':
             case 'stopping_scrobble':
                 return 'bg-blue-500 animate-pulse';
+            case 'paused':
+                return 'bg-blue-400';
             case 'tracking_progress':
                 return status.isAuthenticated ? 'bg-purple-500' : 'bg-gray-400';
             case 'updating_progress':
@@ -51,6 +53,8 @@ const ServiceStatusBadge: React.FC<ServiceStatusBadgeProps> = ({ status }) => {
                 return 'Scrobbling';
             case 'pausing_scrobble':
                 return 'Pausing scrobble...';
+            case 'paused':
+                return 'Paused';
             case 'stopping_scrobble':
                 return 'Stopping scrobble...';
             case 'tracking_progress':

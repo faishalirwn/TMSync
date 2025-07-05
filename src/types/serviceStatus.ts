@@ -12,13 +12,14 @@ export type ServiceActivityState =
     | 'starting_scrobble' // Sending real-time scrobble start request (Trakt)
     | 'scrobbling' // Active real-time scrobble session (Trakt)
     | 'pausing_scrobble' // Sending real-time scrobble pause request (Trakt)
+    | 'paused' // Scrobble is paused/waiting (better than 'ready')
     | 'stopping_scrobble' // Sending real-time scrobble stop request (Trakt)
     | 'tracking_progress' // Watching for completion threshold (AniList, MAL)
     | 'updating_progress' // Sending progress update request (AniList, MAL)
     | 'rating' // Sending rating request
     | 'commenting' // Sending comment request
     | 'error' // Service encountered an error
-    | 'disabled'; // Service disabled for this context
+    | 'disabled'; // Service disabled by user preference
 
 /**
  * Service status information for real-time display
