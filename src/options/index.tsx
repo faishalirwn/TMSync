@@ -1,15 +1,21 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import '../styles/index.css';
-import { useTraktAuth } from '../hooks/useTraktAuth';
+import { AuthenticationHub } from '../components/AuthenticationHub';
+import { useMultiServiceAuth } from '../hooks/useMultiServiceAuth';
 import { useQuickLinkPreferences } from '../hooks/useQuickLinkPreferences';
 import { UserQuickLinkPrefs } from '../hooks/useQuickLinkPreferences';
+import { initializeServices } from '../services';
 
 export type { UserQuickLinkPrefs };
 
 const Options: React.FC = () => {
-    const { isLoggedIn, username, isLoading, error, login, logout } =
-        useTraktAuth();
+    // Initialize services on component mount
+    useEffect(() => {
+        initializeServices();
+    }, []);
+
+    const { hasAnyAuthenticated } = useMultiServiceAuth();
     const {
         prefs,
         isLoading: isLoadingPrefs,
@@ -18,66 +24,22 @@ const Options: React.FC = () => {
         filteredSites,
         toggleSite,
         moveSite
-    } = useQuickLinkPreferences(isLoggedIn);
+    } = useQuickLinkPreferences(hasAnyAuthenticated);
 
     return (
         <div className="bg-(--color-background) text-(--color-text-primary) min-h-screen">
-            <div className="p-6 max-w-md mx-auto mt-10 bg-(--color-surface-1) rounded-lg shadow-md">
-                <h1 className="text-2xl font-bold text-center mb-6 text-(--color-text-primary)">
-                    TMSync Options
-                </h1>
+            <div className="p-6 max-w-4xl mx-auto mt-10 space-y-8">
+                <div className="bg-(--color-surface-1) rounded-lg shadow-md p-6">
+                    <h1 className="text-2xl font-bold text-center mb-6 text-(--color-text-primary)">
+                        TMSync Options
+                    </h1>
 
-                {isLoading ? (
-                    <div className="flex justify-center items-center h-20">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-(--color-accent-primary)"></div>
-                    </div>
-                ) : (
-                    <div className="space-y-4">
-                        {error && (
-                            <div
-                                className="bg-red-900/30 border border-red-500/50 text-(--color-danger-text) px-4 py-3 rounded relative"
-                                role="alert"
-                            >
-                                <strong className="font-bold">Error:</strong>
-                                <span className="block sm:inline ml-2">
-                                    {error}
-                                </span>
-                            </div>
-                        )}
+                    {/* Authentication Hub */}
+                    <AuthenticationHub />
+                </div>
 
-                        {isLoggedIn && username ? (
-                            <div className="text-center">
-                                <p className="text-lg text-(--color-success-text)">
-                                    Logged in as:{' '}
-                                    <strong className="font-semibold">
-                                        {username}
-                                    </strong>
-                                </p>
-                                <button
-                                    onClick={logout}
-                                    className="mt-4 w-full bg-(--color-danger) hover:bg-(--color-danger-hover) text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline transition duration-150 ease-in-out"
-                                >
-                                    Logout from Trakt.tv
-                                </button>
-                            </div>
-                        ) : (
-                            <div className="text-center">
-                                <p className="text-(--color-text-secondary) mb-4">
-                                    Connect your Trakt.tv account to sync your
-                                    watch history.
-                                </p>
-                                <button
-                                    onClick={login}
-                                    className="w-full bg-(--color-accent-primary) hover:bg-(--color-accent-primary-hover) text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline transition duration-150 ease-in-out"
-                                >
-                                    Login with Trakt.tv
-                                </button>
-                            </div>
-                        )}
-                    </div>
-                )}
-                {isLoggedIn && (
-                    <div className="mt-8 pt-6 border-t border-(--color-border)">
+                {hasAnyAuthenticated && (
+                    <div className="bg-(--color-surface-1) rounded-lg shadow-md p-6">
                         <h2 className="text-xl font-semibold mb-4 text-(--color-text-primary)">
                             Quick Links on Trakt.tv
                         </h2>

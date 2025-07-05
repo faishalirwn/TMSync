@@ -7,11 +7,15 @@
 - **Type system**: Service-agnostic types implemented across codebase
 
 ## Last Major Work
-**Commit**: `54d243d` - Complete multi-service architecture with TrackerService interface compliance
-- Made TraktService fully compatible with TrackerService interface
-- Updated all handlers/components to use service-agnostic types
-- Registered both services in ServiceRegistry with proper priorities
-- Fixed all TypeScript compilation errors
+**Current**: Implementing unified service authentication system
+- ✅ Created generic `useServiceAuth` hook for any TrackerService
+- ✅ Built `useMultiServiceAuth` hook for managing all services
+- ✅ Created `AuthenticationHub` component with unified UI
+- ✅ Updated options page to use new authentication system
+- ✅ Added AniList client ID (27973) to AniListService
+- 🔄 Ready to test AniList OAuth flow
+
+**Previous**: `54d243d` - Complete multi-service architecture with TrackerService interface compliance
 
 ## Development Environment
 - **Package manager**: pnpm

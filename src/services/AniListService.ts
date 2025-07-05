@@ -23,7 +23,7 @@ export class AniListService implements TrackerService {
 
     // Configuration - would typically come from environment or config
     private readonly clientId = process.env.ANILIST_CLIENT_ID || '';
-    private readonly clientSecret = process.env.ANILIST_CLIENT_SECRET || '';
+    private readonly clientSecret = ''; // AniList doesn't use client secret for public apps
     private readonly apiEndpoint = 'https://graphql.anilist.co';
 
     /**
