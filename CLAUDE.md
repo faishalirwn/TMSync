@@ -148,9 +148,22 @@ When starting a new session or after context compaction:
 5. Verify system health with `npm run type-check`
 
 **File-Based State Management**:
-- `TODO.md` - Current tasks and phase status (update as work progresses)
+- `TODO.md` - Current problems to solve and phase status (problem-solving focused, not task-execution)
 - `CURRENT_STATE.md` - Architecture status and last major work (update after significant changes)
 - `CLAUDE.md` - Timeless development guidelines and architecture documentation
+
+**Creative Collaboration Guidelines**:
+- TODOs are problems to solve, not tasks to execute - approach them with creative thinking
+- Challenge architectural decisions if you see better approaches or potential issues
+- Suggest alternative solutions when the success criteria could be met differently
+- Ask clarifying questions about user needs and edge cases before implementing
+- Follow established patterns and user direction when technically sound
+- Question assumptions when they might lead to technical debt or poor UX
+
+**When to Challenge vs When to Follow**:
+- **Challenge**: Technical debt risks, architectural inconsistencies, overlooked edge cases, better UX alternatives
+- **Follow**: Domain-specific decisions, intentional tradeoffs, technically sound approaches, explicit user preferences
+- **Collaborate**: Explore questions in TODO.md, suggest approaches from "Alternative Approaches" sections
 
 ## Development Roadmap
 

@@ -20,7 +20,9 @@
 - **Services registered**: 2 services (Trakt priority 1, AniList priority 2)
 
 ## Ready for Next Work
-The codebase is in a clean, stable state ready for Phase 3 UI/UX multi-service integration work.
+The codebase is in a clean, stable state ready for Phase 3 UI/UX multi-service integration work. 
+
+**TODO System**: Now uses problem-solving format to encourage creative solutions rather than task execution. See TODO.md for current problems to solve with success criteria and alternative approaches.
 
 ## Context Recovery Commands
 ```bash
