@@ -18,6 +18,14 @@
 
 **Previous**: `60322c5` - Unified service authentication system
 
+## Known Issues
+- **Scrobble Race Condition**: Extra start request after stop completion can cause error loops during rapid seeking
+  - Impact: Edge case only, normal usage unaffected
+  - Files involved: useScrobbling.ts, scrobbleOperationManager.ts (experimental, not committed)
+- **AniList Status Message**: May show Trakt's "Added to history" message due to UI state sharing
+  - Impact: Minor UX confusion, not affecting functionality
+  - Root cause: Service status message sharing between services
+
 ## Development Environment
 - **Package manager**: pnpm
 - **Testing**: `npm run check-all` for full validation

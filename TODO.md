@@ -57,7 +57,15 @@
 - Auto-retry vs manual retry vs graceful degradation
 - Technical error details vs user-friendly explanations
 
+**Known Issues**:
+
+- Scrobble race condition: Extra start request after stop completion can cause loops when errors occur
+  - Root cause: Timing between setting historyIdRef and pending video events
+  - Impact: Edge case during rapid seeking/testing, not affecting normal usage
+  - Solution: Consider debouncing video events or improving state synchronization
+
 ### Completed (Phase 2)
+
 - [x] Create TrackerService interface defining common operations
 - [x] Implement TraktService with full TrackerService interface compliance
 - [x] Implement AniListService with TrackerService interface
@@ -67,6 +75,7 @@
 - [x] Create service initialization and testing infrastructure
 
 ### Future Phases
+
 See CLAUDE.md Development Roadmap for Phase 4 items.
 
 ---
