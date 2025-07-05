@@ -87,6 +87,13 @@ export class DefaultServiceRegistry implements ServiceRegistry {
     }
 
     /**
+     * Get service by type
+     */
+    getServiceByType(serviceType: ServiceType): TrackerService | null {
+        return this.services.get(serviceType) || null;
+    }
+
+    /**
      * Get services that support a specific capability
      */
     getServicesWithCapability(

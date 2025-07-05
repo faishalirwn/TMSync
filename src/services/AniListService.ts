@@ -31,11 +31,12 @@ export class AniListService implements TrackerService {
     getCapabilities(): ServiceCapabilities {
         return {
             serviceType: 'anilist' as ServiceType,
-            supportsScrobbling: false, // AniList doesn't support real-time scrobbling like Trakt
-            supportsRatings: true,
-            supportsComments: true, // AniList supports notes/comments on list entries
-            supportsHistory: true,
-            supportsSearch: true,
+            supportsRealTimeScrobbling: false, // AniList doesn't support real-time scrobbling
+            supportsProgressTracking: false, // TODO: Not yet implemented - set to true when completed
+            supportsRatings: false, // TODO: Not yet implemented - set to true when completed
+            supportsComments: false, // TODO: Not yet implemented - set to true when completed
+            supportsHistory: false, // TODO: Not yet implemented - set to true when completed
+            supportsSearch: true, // Search is implemented
             ratingScale: {
                 min: 1,
                 max: 10, // Default to 10-point, but AniList supports multiple formats

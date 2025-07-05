@@ -126,7 +126,8 @@ export interface ServiceCapabilities {
     serviceType: ServiceType;
 
     // What features this service supports
-    supportsScrobbling: boolean;
+    supportsRealTimeScrobbling: boolean; // Real-time start/pause/stop during playback (Trakt)
+    supportsProgressTracking: boolean; // Episode/movie completion tracking (AniList, MAL)
     supportsRatings: boolean;
     supportsComments: boolean;
     supportsHistory: boolean;

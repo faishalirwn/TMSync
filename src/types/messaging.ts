@@ -93,6 +93,10 @@ export interface DeleteCommentParams {
     commentId: number | string;
 }
 
+export interface UpdateServiceAuthParams {
+    serviceType: string;
+}
+
 export type MessageRequest =
     | { action: 'mediaInfo'; params: MediaInfoRequestParams }
     | { action: 'manualSearch'; params: ManualSearchParams }
@@ -112,7 +116,11 @@ export type MessageRequest =
     | { action: 'getComments'; params: GetCommentsParams }
     | { action: 'postComment'; params: PostCommentParams }
     | { action: 'updateComment'; params: UpdateCommentParams }
-    | { action: 'deleteComment'; params: DeleteCommentParams };
+    | { action: 'deleteComment'; params: DeleteCommentParams }
+    | {
+          action: 'updateServiceAuthentication';
+          params: UpdateServiceAuthParams;
+      };
 
 // --- Responses ---
 export interface MessageResponse<T> {

@@ -5,6 +5,102 @@ import {
     ScrobbleNotificationMediaType
 } from '../../../types/scrobbling';
 import { CommentableType, MediaRatings } from '../../../types/media';
+import { useServiceStatus } from '../../../hooks/useServiceStatus';
+import {
+    ServiceStatus,
+    ServiceActivityState
+} from '../../../types/serviceStatus';
+
+const ServiceStatusBadge: React.FC<{
+    status: ServiceStatus;
+    isEffectivelyScrobbled: boolean;
+}> = ({ status, isEffectivelyScrobbled }) => {
+    const getStatusIcon = (state: ServiceActivityState): string => {
+        switch (state) {
+            case 'scrobbling':
+            case 'starting_scrobble':
+            case 'pausing_scrobble':
+            case 'stopping_scrobble':
+                return '🔵';
+            case 'tracking_progress':
+                return '🟣';
+            case 'updating_progress':
+                return '🟣';
+            case 'error':
+                return '🔴';
+            case 'idle':
+                return status.isAuthenticated ? '🟢' : '⚪';
+            case 'disabled':
+                return '⚫';
+            default:
+                return '⚪';
+        }
+    };
+
+    const getStatusText = (state: ServiceActivityState): string => {
+        // Always check authentication first
+        if (!status.isAuthenticated) {
+            if (isEffectivelyScrobbled) {
+                return 'Not logged in';
+            }
+            return 'Not logged in';
+        }
+
+        if (isEffectivelyScrobbled) {
+            return 'Added to history';
+        }
+
+        switch (state) {
+            case 'starting_scrobble':
+                return 'Starting...';
+            case 'scrobbling':
+                return 'Scrobbling';
+            case 'pausing_scrobble':
+                return 'Pausing...';
+            case 'stopping_scrobble':
+                return 'Stopping...';
+            case 'tracking_progress':
+                return 'Tracking progress';
+            case 'updating_progress':
+                return 'Updating...';
+            case 'error':
+                return 'Error';
+            case 'idle':
+                return 'Ready';
+            case 'disabled':
+                return 'Disabled';
+            default:
+                return 'Unknown';
+        }
+    };
+
+    const getServiceName = (serviceType: string): string => {
+        switch (serviceType) {
+            case 'trakt':
+                return 'Trakt';
+            case 'anilist':
+                return 'AniList';
+            case 'myanimelist':
+                return 'MAL';
+            default:
+                return (
+                    serviceType.charAt(0).toUpperCase() + serviceType.slice(1)
+                );
+        }
+    };
+
+    const icon = getStatusIcon(status.activityState);
+    const statusText = getStatusText(status.activityState);
+    const serviceName = getServiceName(status.serviceType);
+
+    return (
+        <div className="flex items-center gap-1 text-xs">
+            <span>{icon}</span>
+            <span className="font-medium">{serviceName}:</span>
+            <span className="text-(--color-text-secondary)">{statusText}</span>
+        </div>
+    );
+};
 
 const Star: React.FC<{
     filled: boolean;
@@ -103,6 +199,8 @@ export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
 }) => {
     const [isExpanded, setIsExpanded] = useState<boolean>(false);
     const initialExpandDoneRef = useRef(false);
+    const { serviceStatuses, isLoading: isLoadingServiceStatus } =
+        useServiceStatus();
 
     useEffect(() => {
         if (isEffectivelyScrobbled && !initialExpandDoneRef.current) {
@@ -147,20 +245,6 @@ export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
     const containerClasses = `fixed bottom-0 left-1/2 -translate-x-1/2 z-[999999999] transition-all duration-250 ease-in-out pointer-events-none`;
     const contentWrapperClasses = `bg-(--color-surface-1) w-72 text-base text-center overflow-hidden shadow-lg rounded-t-md transition-[max-height] duration-250 ease-in-out ${isExpanded ? 'max-h-[500px]' : 'max-h-2 hover:max-h-[500px]'} pointer-events-auto`;
 
-    let statusText = '';
-    let statusColor = 'text-(--color-text-primary)';
-
-    if (isEffectivelyScrobbled) {
-        statusText = 'Added to Trakt History';
-        statusColor = 'text-(--color-success-text)';
-    } else if (liveScrobbleStatus === 'started') {
-        statusText = 'Scrobbling to Trakt...';
-        statusColor = 'text-(--color-accent-primary)';
-    } else if (liveScrobbleStatus === 'paused') {
-        statusText = 'Scrobbling Paused';
-        statusColor = 'text-(--color-warning-text)';
-    }
-
     return (
         <div className={containerClasses}>
             <div
@@ -169,12 +253,19 @@ export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
                 onMouseLeave={() => setIsExpanded(false)}
             >
                 <div className="py-2 px-3">
-                    {statusText && (
-                        <p
-                            className={`font-semibold m-0 p-0 text-sm ${statusColor}`}
-                        >
-                            {statusText}
-                        </p>
+                    {/* Service Status Indicators */}
+                    {!isLoadingServiceStatus && serviceStatuses.length > 0 && (
+                        <div className="flex flex-col gap-1 mb-2">
+                            {serviceStatuses.map((serviceStatus) => (
+                                <ServiceStatusBadge
+                                    key={serviceStatus.serviceType}
+                                    status={serviceStatus}
+                                    isEffectivelyScrobbled={
+                                        isEffectivelyScrobbled
+                                    }
+                                />
+                            ))}
+                        </div>
                     )}
                     <p className="text-(--color-text-primary) text-sm m-0 p-0 truncate">
                         {title} {year && `(${year})`}

@@ -53,9 +53,15 @@ export function initializeServices(): void {
             .map((s) => s.getCapabilities().serviceType)
     );
     console.log(
-        '- Services with scrobbling:',
+        '- Services with real-time scrobbling:',
         serviceRegistry
-            .getServicesWithCapability('supportsScrobbling')
+            .getServicesWithCapability('supportsRealTimeScrobbling')
+            .map((s) => s.getCapabilities().serviceType)
+    );
+    console.log(
+        '- Services with progress tracking:',
+        serviceRegistry
+            .getServicesWithCapability('supportsProgressTracking')
             .map((s) => s.getCapabilities().serviceType)
     );
     console.log(

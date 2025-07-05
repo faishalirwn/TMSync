@@ -87,6 +87,16 @@ export function useServiceAuth(
                     isLoading: false
                 });
             }
+
+            // Notify service status manager of authentication change
+            chrome.runtime
+                .sendMessage({
+                    action: 'updateServiceAuthentication',
+                    params: { serviceType }
+                })
+                .catch(() => {
+                    // Ignore errors if background script isn't ready
+                });
         } catch (error) {
             console.error(`${serviceType}: Auth status check failed:`, error);
             updateState({

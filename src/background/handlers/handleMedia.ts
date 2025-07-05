@@ -14,15 +14,41 @@ async function fetchStatusDetails(mediaInfo: MediaInfoResponse, url: string) {
     if (!siteConfig)
         throw new Error('Could not get site config for status details.');
 
+    // Check if authenticated before trying to fetch status
+    const isAuthenticated = await traktService
+        .isAuthenticated()
+        .catch(() => false);
+    if (!isAuthenticated) {
+        // Return empty status when not authenticated
+        return {
+            watchStatus: { isInHistory: false },
+            progressInfo: null,
+            ratingInfo: {}
+        };
+    }
+
     const episodeInfo = siteConfig.getSeasonEpisodeObj(url);
 
-    if (episodeInfo) {
-        return await traktService.getMediaStatusWithEpisode(
-            mediaInfo,
-            episodeInfo
+    try {
+        if (episodeInfo) {
+            return await traktService.getMediaStatusWithEpisode(
+                mediaInfo,
+                episodeInfo
+            );
+        } else {
+            return await traktService.getMediaStatus(mediaInfo);
+        }
+    } catch (error) {
+        console.warn(
+            'Failed to fetch status details, returning empty status:',
+            error
         );
-    } else {
-        return await traktService.getMediaStatus(mediaInfo);
+        // Return empty status on error
+        return {
+            watchStatus: { isInHistory: false },
+            progressInfo: null,
+            ratingInfo: {}
+        };
     }
 }
 

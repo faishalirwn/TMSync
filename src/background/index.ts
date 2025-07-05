@@ -25,10 +25,13 @@ import {
     handleDeleteComment
 } from './handlers/handleComments';
 import { handleAuthTokenExchange } from './handlers/handleAuth';
+import { serviceStatusManager } from './serviceStatusManager';
+import { initializeServices } from '../services';
 import { scrobbleState, resetActiveScrobbleState } from './state';
 import { callApi } from '../utils/api';
 import { isMovieMediaInfo, isShowMediaInfo } from '../utils/typeGuards';
 import { MessageRequest } from '../types/messaging';
+import { scrobbleOperationManager } from './scrobbleOperationManager';
 
 type MessageHandler = (
     params: any,
@@ -58,7 +61,35 @@ const messageHandlers: Record<string, MessageHandler> = {
     updateComment: handleUpdateComment,
     deleteComment: handleDeleteComment,
     // Authentication
-    authTokenExchange: handleAuthTokenExchange
+    authTokenExchange: handleAuthTokenExchange,
+    // Service Status
+    registerStatusListener: async (
+        params: any,
+        sender: chrome.runtime.MessageSender
+    ) => {
+        if (sender.tab?.id) {
+            serviceStatusManager.addStatusListener(sender.tab.id);
+        }
+        return { success: true };
+    },
+    unregisterStatusListener: async (
+        params: any,
+        sender: chrome.runtime.MessageSender
+    ) => {
+        if (sender.tab?.id) {
+            serviceStatusManager.removeStatusListener(sender.tab.id);
+        }
+        return { success: true };
+    },
+    getServiceStatuses: async () => {
+        return serviceStatusManager.getAllServiceStatuses();
+    },
+    updateServiceAuthentication: async (params: { serviceType: string }) => {
+        await serviceStatusManager.updateServiceAuthentication(
+            params.serviceType as any
+        );
+        return { success: true };
+    }
 };
 
 chrome.runtime.onMessage.addListener(
@@ -119,27 +150,49 @@ async function handleTabCloseOrNavigate(tabId: number) {
             return;
         }
 
+        const { mediaInfo, episodeInfo } = scrobbleState.current;
+
         if (
             (scrobbleState.current.status === 'started' ||
                 scrobbleState.current.status === 'paused') &&
             scrobbleState.current.currentProgress >=
                 TRAKT_SCROBBLE_COMPLETION_THRESHOLD
         ) {
-            await callApi(
-                `https://api.trakt.tv/scrobble/stop`,
-                'POST',
-                payload
-            ).catch((e) =>
-                console.error('Error on tab-close scrobble stop:', e)
-            );
+            // Use operation manager to prevent conflicts with manual stops
+            await scrobbleOperationManager
+                .executeOperation(
+                    'stop',
+                    mediaInfo,
+                    episodeInfo || null,
+                    async () => {
+                        await callApi(
+                            `https://api.trakt.tv/scrobble/stop`,
+                            'POST',
+                            payload
+                        );
+                    }
+                )
+                .catch((e) =>
+                    console.error('Error on tab-close scrobble stop:', e)
+                );
         } else if (scrobbleState.current.status === 'started') {
-            await callApi(
-                `https://api.trakt.tv/scrobble/pause`,
-                'POST',
-                payload
-            ).catch((e) =>
-                console.error('Error on tab-close scrobble pause:', e)
-            );
+            // Use operation manager to prevent conflicts with manual pauses
+            await scrobbleOperationManager
+                .executeOperation(
+                    'pause',
+                    mediaInfo,
+                    episodeInfo || null,
+                    async () => {
+                        await callApi(
+                            `https://api.trakt.tv/scrobble/pause`,
+                            'POST',
+                            payload
+                        );
+                    }
+                )
+                .catch((e) =>
+                    console.error('Error on tab-close scrobble pause:', e)
+                );
         }
         resetActiveScrobbleState();
     }
@@ -157,3 +210,18 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
         }
     }
 });
+
+// Initialize services when background script starts
+console.log('🚀 Background script starting, initializing services...');
+initializeServices();
+console.log('✅ Services initialized in background script');
+
+// Initialize service status manager after services are ready
+serviceStatusManager
+    .initializeServiceStatuses()
+    .then(() => {
+        console.log('✅ Service status manager initialized');
+    })
+    .catch((error) => {
+        console.error('❌ Failed to initialize service status manager:', error);
+    });
