@@ -96,6 +96,12 @@
 
 **Known Issues**:
 
+- ✅ **AniList Unrate Feature Fixed**: Click-to-unrate now works correctly for both Trakt and AniList
+  - Root cause: AniList API expects `score: 0` to remove ratings, not `null` or omitted score
+  - Solution: Modified `setAnimeRating` to send `score: 0` when unrating
+  - Status: Both Trakt and AniList unrating work perfectly
+  - Commit: e2ab516 - fix: resolve AniList unrate functionality by sending score 0
+
 - Scrobble race condition: Extra start request after stop completion can cause loops when errors occur
   - Root cause: Timing between setting historyIdRef and pending video events
   - Impact: Edge case during rapid seeking/testing, not affecting normal usage
