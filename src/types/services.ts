@@ -170,6 +170,34 @@ export interface TrackerService {
     ): Promise<void>;
 
     /**
+     * Unrating Methods
+     */
+
+    /**
+     * Remove rating from a movie
+     */
+    unrateMovie(movieIds: ServiceMediaIds): Promise<void>;
+
+    /**
+     * Remove rating from a show
+     */
+    unrateShow(showIds: ServiceMediaIds): Promise<void>;
+
+    /**
+     * Remove rating from a season
+     */
+    unrateSeason(showIds: ServiceMediaIds, seasonNumber: number): Promise<void>;
+
+    /**
+     * Remove rating from an episode
+     */
+    unrateEpisode(
+        showIds: ServiceMediaIds,
+        seasonNumber: number,
+        episodeNumber: number
+    ): Promise<void>;
+
+    /**
      * Comment Methods
      */
 

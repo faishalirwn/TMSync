@@ -73,6 +73,20 @@ export interface RateEpisodeParams {
     episodeInfo: SeasonEpisodeObj;
     rating: number;
 }
+export interface UnrateMovieParams {
+    mediaInfo: MovieMediaInfo;
+}
+export interface UnrateShowParams {
+    mediaInfo: ShowMediaInfo;
+}
+export interface UnrateSeasonParams {
+    mediaInfo: ShowMediaInfo;
+    episodeInfo: SeasonEpisodeObj;
+}
+export interface UnrateEpisodeParams {
+    mediaInfo: ShowMediaInfo;
+    episodeInfo: SeasonEpisodeObj;
+}
 export interface GetCommentsParams {
     type: CommentableType;
     mediaInfo: MediaInfoResponse;
@@ -114,6 +128,10 @@ export type MessageRequest =
     | { action: 'rateShow'; params: RateShowParams }
     | { action: 'rateSeason'; params: RateSeasonParams }
     | { action: 'rateEpisode'; params: RateEpisodeParams }
+    | { action: 'unrateMovie'; params: UnrateMovieParams }
+    | { action: 'unrateShow'; params: UnrateShowParams }
+    | { action: 'unrateSeason'; params: UnrateSeasonParams }
+    | { action: 'unrateEpisode'; params: UnrateEpisodeParams }
     | { action: 'getComments'; params: GetCommentsParams }
     | { action: 'postComment'; params: PostCommentParams }
     | { action: 'updateComment'; params: UpdateCommentParams }

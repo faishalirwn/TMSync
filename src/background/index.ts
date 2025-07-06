@@ -16,7 +16,11 @@ import {
     handleRateEpisode,
     handleRateMovie,
     handleRateSeason,
-    handleRateShow
+    handleRateShow,
+    handleUnrateEpisode,
+    handleUnrateMovie,
+    handleUnrateSeason,
+    handleUnrateShow
 } from './handlers/handleRatings';
 import {
     handleGetComments,
@@ -55,6 +59,11 @@ const messageHandlers: Record<string, MessageHandler> = {
     rateShow: handleRateShow,
     rateSeason: handleRateSeason,
     rateEpisode: handleRateEpisode,
+    // Unratings
+    unrateMovie: handleUnrateMovie,
+    unrateShow: handleUnrateShow,
+    unrateSeason: handleUnrateSeason,
+    unrateEpisode: handleUnrateEpisode,
     // Comments
     getComments: handleGetComments,
     postComment: handlePostComment,

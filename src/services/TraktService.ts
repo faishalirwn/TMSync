@@ -660,6 +660,95 @@ export class TraktService implements TrackerService {
     }
 
     /**
+     * Unrating Methods
+     */
+
+    /**
+     * Remove rating from a movie
+     */
+    async unrateMovie(movieIds: ServiceMediaIds): Promise<void> {
+        const body = {
+            movies: [{ ids: movieIds }]
+        };
+        await this.callApi(
+            'https://api.trakt.tv/sync/ratings/remove',
+            'POST',
+            body
+        );
+    }
+
+    /**
+     * Remove rating from a show
+     */
+    async unrateShow(showIds: ServiceMediaIds): Promise<void> {
+        const body = {
+            shows: [{ ids: showIds }]
+        };
+        await this.callApi(
+            'https://api.trakt.tv/sync/ratings/remove',
+            'POST',
+            body
+        );
+    }
+
+    /**
+     * Remove rating from a season
+     */
+    async unrateSeason(
+        showIds: ServiceMediaIds,
+        seasonNumber: number
+    ): Promise<void> {
+        // Get season details first
+        const seasons = await this.callApi(
+            `https://api.trakt.tv/shows/${showIds.trakt}/seasons`
+        );
+        const season = seasons.find((s: any) => s.number === seasonNumber);
+
+        if (!season?.ids?.trakt) {
+            throw new Error(`Season ${seasonNumber} not found for show`);
+        }
+
+        const body = {
+            seasons: [{ ids: { trakt: season.ids.trakt } }]
+        };
+        await this.callApi(
+            'https://api.trakt.tv/sync/ratings/remove',
+            'POST',
+            body
+        );
+    }
+
+    /**
+     * Remove rating from an episode
+     */
+    async unrateEpisode(
+        showIds: ServiceMediaIds,
+        seasonNumber: number,
+        episodeNumber: number
+    ): Promise<void> {
+        // Get episode details first
+        const episodes = await this.callApi(
+            `https://api.trakt.tv/shows/${showIds.trakt}/seasons/${seasonNumber}/episodes`
+        );
+        const episode = episodes.find((e: any) => e.number === episodeNumber);
+
+        if (!episode?.ids?.trakt) {
+            throw new Error(
+                `Episode ${seasonNumber}x${episodeNumber} not found`
+            );
+        }
+
+        const body = {
+            episodes: [{ ids: { trakt: episode.ids.trakt } }]
+        };
+        await this.callApi(
+            'https://api.trakt.tv/sync/ratings/remove',
+            'POST',
+            body
+        );
+    }
+
+    /**
      * Comment Methods
      */
 

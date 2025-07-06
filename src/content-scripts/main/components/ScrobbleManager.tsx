@@ -31,6 +31,7 @@ export const ScrobbleManager = () => {
         confirmRewatch,
         cancelManualSearch,
         handleRate,
+        handleUnrate,
         refetch,
         isCommentModalOpen,
         isLoadingComments,
@@ -121,6 +122,7 @@ export const ScrobbleManager = () => {
                     isProcessingAction={isProcessing}
                     ratings={ratings}
                     onRate={handleRate}
+                    onUnrate={handleUnrate}
                     onOpenCommentModal={openCommentModal}
                 />
             )}

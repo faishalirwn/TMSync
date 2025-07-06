@@ -318,6 +318,32 @@ export function useMediaLifecycle() {
         [mediaInfo, episodeInfo, sendMessage]
     );
 
+    const handleUnrate = useCallback(
+        async (type: CommentableType) => {
+            if (!mediaInfo) return;
+            const action =
+                type === 'movie'
+                    ? 'unrateMovie'
+                    : type === 'show'
+                      ? 'unrateShow'
+                      : type === 'season'
+                        ? 'unrateSeason'
+                        : 'unrateEpisode';
+            const params: any = { mediaInfo };
+            if (['season', 'episode'].includes(type) && episodeInfo) {
+                params.episodeInfo = episodeInfo;
+            }
+            const response = await sendMessage({ action, params });
+            if (response.success) {
+                setRatings((prev) => ({
+                    ...prev,
+                    [type === 'movie' ? 'show' : type]: undefined
+                }));
+            }
+        },
+        [mediaInfo, episodeInfo, sendMessage]
+    );
+
     const openCommentModal = useCallback(
         async (type: CommentableType) => {
             if (!mediaInfo) return;
@@ -413,6 +439,7 @@ export function useMediaLifecycle() {
         confirmRewatch,
         cancelManualSearch,
         handleRate,
+        handleUnrate,
         refetch: fetchAndProcessMedia,
         isCommentModalOpen,
         isLoadingComments,

@@ -263,6 +263,7 @@ interface ScrobbleNotificationProps {
     isProcessingAction: boolean;
     ratings: MediaRatings | null;
     onRate: (type: CommentableType, rating: number) => void;
+    onUnrate: (type: CommentableType) => void;
     onOpenCommentModal: (type: CommentableType) => void;
 }
 
@@ -276,6 +277,7 @@ export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
     isProcessingAction,
     ratings,
     onRate,
+    onUnrate,
     onOpenCommentModal
 }) => {
     const [isExpanded, setIsExpanded] = useState<boolean>(false);
@@ -300,7 +302,26 @@ export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
         ratingValue: number
     ) => {
         if (isProcessingAction) return;
-        await onRate(type, ratingValue);
+
+        // Check if user is clicking the same rating they already have
+        let currentUserRating: number | null = null;
+
+        if (type === 'movie' && isMovieMediaInfo(mediaInfo)) {
+            currentUserRating = ratings?.show?.userRating ?? null;
+        } else if (type === 'show') {
+            currentUserRating = ratings?.show?.userRating ?? null;
+        } else if (type === 'season') {
+            currentUserRating = ratings?.season?.userRating ?? null;
+        } else if (type === 'episode') {
+            currentUserRating = ratings?.episode?.userRating ?? null;
+        }
+
+        // If user clicks the same rating, unrate instead
+        if (currentUserRating !== null && currentUserRating === ratingValue) {
+            await onUnrate(type);
+        } else {
+            await onRate(type, ratingValue);
+        }
     };
 
     const getMediaTitle = (): string => {
