@@ -34,7 +34,7 @@ export class AniListService implements TrackerService {
             supportsRealTimeScrobbling: false, // AniList doesn't support real-time scrobbling
             supportsProgressTracking: true, // Episode progress tracking implemented
             supportsRatings: true, // Rating functionality implemented
-            supportsComments: false, // TODO: Not yet implemented - AniList API limitations
+            supportsComments: true, // AniList notes functionality implemented
             supportsHistory: true, // History add/remove implemented
             supportsSearch: true, // Search is implemented
             ratingScale: {
@@ -885,49 +885,285 @@ export class AniListService implements TrackerService {
     }
 
     /**
-     * Comment Methods (not supported by AniList API)
+     * Comment Methods (AniList Notes)
+     * Note: AniList only supports show-level notes, no episode/season level
      */
 
     /**
-     * Get comments for media
+     * Get notes for media (show-level only)
      */
     async getComments(
         type: 'movie' | 'show' | 'season' | 'episode',
         mediaInfo: MediaInfoResponse,
-        episodeInfo?: SeasonEpisodeObj
+        _episodeInfo?: SeasonEpisodeObj
     ): Promise<ServiceComment[]> {
-        throw new Error('AniList does not support comments via API');
+        // AniList only supports show-level notes, map all types to show
+        const mediaType = type === 'movie' || type === 'show' ? type : 'show';
+
+        // Use the same search approach as rating methods
+        const recentMediaData = await chrome.storage.local.get([
+            'tmsync_recent_media'
+        ]);
+        const recentMedia = recentMediaData.tmsync_recent_media;
+
+        if (!recentMedia || recentMedia.type !== mediaType) {
+            console.log('No recent media context found for AniList notes');
+            return [];
+        }
+
+        try {
+            const title =
+                mediaType === 'movie'
+                    ? recentMedia.movie?.title
+                    : recentMedia.show?.title;
+            if (!title) {
+                console.log('No title found in recent media context');
+                return [];
+            }
+
+            // Search for the anime first
+            const searchResults = await this.searchAnimeByTitle(title);
+            if (searchResults.length === 0) {
+                console.log('No AniList media found for notes');
+                return [];
+            }
+
+            const anilistMedia = searchResults[0];
+            const userId = await this.getUserId();
+
+            const query = `
+                query GetMediaListEntry($mediaId: Int, $userId: Int) {
+                    MediaList(mediaId: $mediaId, userId: $userId) {
+                        id
+                        notes
+                        updatedAt
+                        user {
+                            id
+                            name
+                        }
+                    }
+                }
+            `;
+
+            const variables = {
+                mediaId: anilistMedia.id,
+                userId: userId
+            };
+
+            const response = await this.makeGraphQLRequest(query, variables);
+            const mediaListEntry = response.data.MediaList;
+
+            if (!mediaListEntry || !mediaListEntry.notes) {
+                return [];
+            }
+
+            // Convert to ServiceComment format
+            const serviceComment: ServiceComment = {
+                id: mediaListEntry.id,
+                comment: mediaListEntry.notes,
+                spoiler: false, // AniList doesn't support spoiler flags
+                createdAt: new Date(
+                    mediaListEntry.updatedAt * 1000
+                ).toISOString(),
+                updatedAt: new Date(
+                    mediaListEntry.updatedAt * 1000
+                ).toISOString(),
+                user: {
+                    username: mediaListEntry.user.name,
+                    name: mediaListEntry.user.name
+                },
+                serviceData: {
+                    anilistId: mediaListEntry.id,
+                    mediaId: anilistMedia.id
+                },
+                serviceType: 'anilist' as ServiceType
+            };
+
+            return [serviceComment];
+        } catch (error) {
+            console.error('Error fetching AniList notes:', error);
+            return [];
+        }
     }
 
     /**
-     * Post a new comment
+     * Post/update notes for media (show-level only)
      */
     async postComment(
         type: 'movie' | 'show' | 'season' | 'episode',
         mediaInfo: MediaInfoResponse,
         comment: string,
-        spoiler: boolean,
-        episodeInfo?: SeasonEpisodeObj
+        _spoiler: boolean, // Ignored for AniList
+        _episodeInfo?: SeasonEpisodeObj
     ): Promise<ServiceComment> {
-        throw new Error('AniList does not support posting comments via API');
+        // AniList only supports show-level notes, map all types to show
+        const mediaType = type === 'movie' || type === 'show' ? type : 'show';
+
+        // Use the same search approach as rating methods
+        const recentMediaData = await chrome.storage.local.get([
+            'tmsync_recent_media'
+        ]);
+        const recentMedia = recentMediaData.tmsync_recent_media;
+
+        if (!recentMedia || recentMedia.type !== mediaType) {
+            throw new Error('No recent media context found for AniList notes');
+        }
+
+        const title =
+            mediaType === 'movie'
+                ? recentMedia.movie?.title
+                : recentMedia.show?.title;
+        if (!title) {
+            throw new Error('No title found in recent media context');
+        }
+
+        // Search for the anime first
+        const searchResults = await this.searchAnimeByTitle(title);
+        if (searchResults.length === 0) {
+            throw new Error('No AniList media found for notes');
+        }
+
+        const anilistMedia = searchResults[0];
+
+        try {
+            const mutation = `
+                mutation SaveMediaListEntry($mediaId: Int, $notes: String) {
+                    SaveMediaListEntry(mediaId: $mediaId, notes: $notes) {
+                        id
+                        notes
+                        updatedAt
+                        user {
+                            id
+                            name
+                        }
+                    }
+                }
+            `;
+
+            const variables = {
+                mediaId: anilistMedia.id,
+                notes: comment
+            };
+
+            const response = await this.makeGraphQLRequest(mutation, variables);
+            const mediaListEntry = response.data.SaveMediaListEntry;
+
+            // Convert to ServiceComment format
+            const serviceComment: ServiceComment = {
+                id: mediaListEntry.id,
+                comment: mediaListEntry.notes,
+                spoiler: false, // AniList doesn't support spoiler flags
+                createdAt: new Date(
+                    mediaListEntry.updatedAt * 1000
+                ).toISOString(),
+                updatedAt: new Date(
+                    mediaListEntry.updatedAt * 1000
+                ).toISOString(),
+                user: {
+                    username: mediaListEntry.user.name,
+                    name: mediaListEntry.user.name
+                },
+                serviceData: {
+                    anilistId: mediaListEntry.id,
+                    mediaId: anilistMedia.id
+                },
+                serviceType: 'anilist' as ServiceType
+            };
+
+            return serviceComment;
+        } catch (error) {
+            console.error('Error saving AniList notes:', error);
+            throw error;
+        }
     }
 
     /**
-     * Update existing comment
+     * Update existing notes
      */
     async updateComment(
         commentId: number | string,
         comment: string,
-        spoiler: boolean
+        _spoiler: boolean // Ignored for AniList
     ): Promise<ServiceComment> {
-        throw new Error('AniList does not support updating comments via API');
+        // For AniList, updating is the same as posting since it's MediaList entry based
+        // We need to get the media ID from the comment ID (which is the MediaList entry ID)
+        try {
+            const mutation = `
+                mutation SaveMediaListEntry($id: Int, $notes: String) {
+                    SaveMediaListEntry(id: $id, notes: $notes) {
+                        id
+                        notes
+                        updatedAt
+                        user {
+                            id
+                            name
+                        }
+                    }
+                }
+            `;
+
+            const variables = {
+                id: commentId,
+                notes: comment
+            };
+
+            const response = await this.makeGraphQLRequest(mutation, variables);
+            const mediaListEntry = response.data.SaveMediaListEntry;
+
+            // Convert to ServiceComment format
+            const serviceComment: ServiceComment = {
+                id: mediaListEntry.id,
+                comment: mediaListEntry.notes,
+                spoiler: false, // AniList doesn't support spoiler flags
+                createdAt: new Date(
+                    mediaListEntry.updatedAt * 1000
+                ).toISOString(),
+                updatedAt: new Date(
+                    mediaListEntry.updatedAt * 1000
+                ).toISOString(),
+                user: {
+                    username: mediaListEntry.user.name,
+                    name: mediaListEntry.user.name
+                },
+                serviceData: {
+                    anilistId: mediaListEntry.id,
+                    mediaId: null // We don't have this from the update response
+                },
+                serviceType: 'anilist' as ServiceType
+            };
+
+            return serviceComment;
+        } catch (error) {
+            console.error('Error updating AniList notes:', error);
+            throw error;
+        }
     }
 
     /**
-     * Delete a comment
+     * Delete notes (submit blank notes)
      */
     async deleteComment(commentId: number | string): Promise<void> {
-        throw new Error('AniList does not support deleting comments via API');
+        // For AniList, delete means setting notes to empty string
+        try {
+            const mutation = `
+                mutation SaveMediaListEntry($id: Int, $notes: String) {
+                    SaveMediaListEntry(id: $id, notes: $notes) {
+                        id
+                        notes
+                    }
+                }
+            `;
+
+            const variables = {
+                id: commentId,
+                notes: ''
+            };
+
+            await this.makeGraphQLRequest(mutation, variables);
+        } catch (error) {
+            console.error('Error deleting AniList notes:', error);
+            throw error;
+        }
     }
 
     /**
@@ -1007,6 +1243,45 @@ export class AniListService implements TrackerService {
                 }
             }
         };
+    }
+
+    /**
+     * Get AniList media ID from MediaInfoResponse
+     */
+    private getAniListMediaId(mediaInfo: MediaInfoResponse): number | null {
+        // Try to find AniList ID from the media info
+        // This could be from various sources like recent media context or search results
+
+        // For now, we'll need to use the search/context approach similar to findAnimeForRating
+        // This is a simplified version - in practice, you'd want to cache this
+        return null; // Will be handled by search in the calling methods
+    }
+
+    /**
+     * Get current user ID from AniList
+     */
+    private async getUserId(): Promise<number> {
+        try {
+            const query = `
+                query {
+                    Viewer {
+                        id
+                    }
+                }
+            `;
+
+            const response = await this.makeGraphQLRequest(query);
+            const userId = response.data?.Viewer?.id;
+
+            if (!userId) {
+                throw new Error('Could not get user ID from AniList');
+            }
+
+            return userId;
+        } catch (error) {
+            console.error('Error getting AniList user ID:', error);
+            throw error;
+        }
     }
 }
 

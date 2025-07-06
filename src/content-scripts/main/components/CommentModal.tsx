@@ -1,12 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { isShowMediaInfo, isMovieMediaInfo } from '../../../utils/typeGuards';
 import { ServiceComment } from '../../../types/serviceTypes';
-import {
-    CommentableType,
-    MediaInfoResponse,
-    MediaRatings
-} from '../../../types/media';
+import { CommentableType, MediaInfoResponse } from '../../../types/media';
 import { ServiceMediaRatings } from '../../../types/serviceTypes';
+import { ServiceStatus } from '../../../types/serviceStatus';
+import { ServiceType } from '../../../types/serviceTypes';
 
 const ModalHalfStar: React.FC<{
     rating: number;
@@ -143,6 +141,51 @@ const ModalStarRating: React.FC<{
     );
 };
 
+const CommentServiceBadge: React.FC<{
+    serviceType: ServiceType;
+    isAuthenticated: boolean;
+    isEnabled: boolean;
+}> = ({ serviceType, isAuthenticated, isEnabled }) => {
+    const getServiceName = (type: ServiceType): string => {
+        switch (type) {
+            case 'trakt':
+                return 'Trakt';
+            case 'anilist':
+                return 'AniList';
+            case 'myanimelist':
+                return 'MAL';
+            default:
+                return (
+                    String(type).charAt(0).toUpperCase() + String(type).slice(1)
+                );
+        }
+    };
+
+    const getStatusIcon = (): string => {
+        if (!isEnabled) return '⚫'; // Disabled
+        if (!isAuthenticated) return '⚪'; // Not authenticated
+        return '🟢'; // Ready for comments
+    };
+
+    const getStatusText = (): string => {
+        if (!isEnabled) return 'Disabled';
+        if (!isAuthenticated) return 'Not logged in';
+        return 'Ready';
+    };
+
+    const serviceName = getServiceName(serviceType);
+    const icon = getStatusIcon();
+    const statusText = getStatusText();
+
+    return (
+        <div className="flex items-center gap-1 text-xs">
+            <span>{icon}</span>
+            <span className="font-medium">{serviceName}:</span>
+            <span className="text-(--color-text-secondary)">{statusText}</span>
+        </div>
+    );
+};
+
 interface CommentModalProps {
     isOpen: boolean;
     onClose: () => void;
@@ -151,6 +194,7 @@ interface CommentModalProps {
     mediaInfo: MediaInfoResponse | null;
     ratings: ServiceMediaRatings | null;
     commentType: CommentableType | null;
+    serviceStatuses?: ServiceStatus[]; // Services that support comments
     onPostComment: (comment: string, spoiler: boolean) => Promise<any>;
     onUpdateComment: (
         commentId: number | string,
@@ -169,6 +213,7 @@ export const CommentModal: React.FC<CommentModalProps> = ({
     mediaInfo,
     ratings,
     commentType,
+    serviceStatuses,
     onPostComment,
     onUpdateComment,
     onDeleteComment,
@@ -183,6 +228,19 @@ export const CommentModal: React.FC<CommentModalProps> = ({
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const [validationError, setValidationError] = useState<string | null>(null);
 
+    // Helper functions
+    const hasAniListService =
+        serviceStatuses?.some(
+            (s) =>
+                s.serviceType === 'anilist' && s.isAuthenticated && s.isEnabled
+        ) ?? false;
+    const hasTraktService =
+        serviceStatuses?.some(
+            (s) => s.serviceType === 'trakt' && s.isAuthenticated && s.isEnabled
+        ) ?? false;
+    const anilistNote = comments.find((c) => c.serviceType === 'anilist');
+    const hasAniListNote = !!anilistNote;
+
     useEffect(() => {
         if (editorText) {
             setValidationError(null);
@@ -192,21 +250,24 @@ export const CommentModal: React.FC<CommentModalProps> = ({
     useEffect(() => {
         if (isOpen) {
             if (comments.length > 0) {
-                const mostRecent = comments.sort(
-                    (a, b) =>
-                        new Date(b.createdAt).getTime() -
-                        new Date(a.createdAt).getTime()
-                )[0];
-                setSelectedCommentId(mostRecent.id);
-                setEditorText(mostRecent.comment);
-                setIsSpoiler(mostRecent.spoiler);
+                // If AniList note exists, prioritize it (since there's only one)
+                const commentToSelect =
+                    anilistNote ||
+                    comments.sort(
+                        (a, b) =>
+                            new Date(b.createdAt).getTime() -
+                            new Date(a.createdAt).getTime()
+                    )[0];
+                setSelectedCommentId(commentToSelect.id);
+                setEditorText(commentToSelect.comment);
+                setIsSpoiler(commentToSelect.spoiler);
             } else {
                 setSelectedCommentId('new');
                 setEditorText('');
                 setIsSpoiler(false);
             }
         }
-    }, [isOpen, comments]);
+    }, [isOpen, comments, anilistNote]);
 
     const handleSelectComment = (comment: ServiceComment) => {
         setSelectedCommentId(comment.id);
@@ -225,9 +286,17 @@ export const CommentModal: React.FC<CommentModalProps> = ({
     const handleSave = async () => {
         setValidationError(null);
 
+        // Check if text is empty
+        if (!editorText.trim()) {
+            setValidationError('Please enter some text.');
+            return;
+        }
+
+        // Only require 5 words if Trakt is included (Trakt requirement)
         const wordCount = editorText.trim().split(/\s+/).length;
-        if (wordCount < 5) {
-            setValidationError('Comment must be at least 5 words.');
+
+        if (hasTraktService && wordCount < 5) {
+            setValidationError('Trakt requires at least 5 words for comments.');
             return;
         }
 
@@ -290,7 +359,33 @@ export const CommentModal: React.FC<CommentModalProps> = ({
                             <span className="capitalize font-semibold">
                                 {commentType}
                             </span>
+                            {comments.some(
+                                (c) => c.serviceType === 'anilist'
+                            ) && (
+                                <span className="text-xs text-(--color-text-tertiary) ml-2">
+                                    (AniList: show-level only)
+                                </span>
+                            )}
                         </p>
+                        {serviceStatuses && serviceStatuses.length > 0 && (
+                            <div className="mt-2">
+                                <p className="text-xs text-(--color-text-secondary) mb-1">
+                                    Posting to:
+                                </p>
+                                <div className="flex gap-3">
+                                    {serviceStatuses.map((status) => (
+                                        <CommentServiceBadge
+                                            key={status.serviceType}
+                                            serviceType={status.serviceType}
+                                            isAuthenticated={
+                                                status.isAuthenticated
+                                            }
+                                            isEnabled={status.isEnabled}
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                     </div>
                     <button
                         onClick={onClose}
@@ -307,7 +402,21 @@ export const CommentModal: React.FC<CommentModalProps> = ({
                                 onClick={handleNewComment}
                                 className="w-full bg-(--color-accent-primary) hover:bg-(--color-accent-primary-hover) text-(--color-text-primary) font-bold py-2 px-4 rounded text-sm cursor-pointer"
                             >
-                                + New Comment
+                                +{' '}
+                                {
+                                    serviceStatuses &&
+                                    serviceStatuses.length > 0
+                                        ? hasAniListService
+                                            ? hasTraktService
+                                                ? hasAniListNote
+                                                    ? 'Edit Note & Comment'
+                                                    : 'Write Review/Note' // Both services
+                                                : hasAniListNote
+                                                  ? 'Edit Note'
+                                                  : 'Write Note' // AniList only
+                                            : 'New Comment' // Trakt only
+                                        : 'New Comment' // Fallback
+                                }
                             </button>
                         </div>
                         <div className="flex-grow overflow-y-auto">
@@ -331,24 +440,47 @@ export const CommentModal: React.FC<CommentModalProps> = ({
                                                     handleSelectComment(comment)
                                                 }
                                             >
-                                                <p className="text-sm line-clamp-2">
-                                                    {comment.comment}
-                                                </p>
-                                                <p className="text-xs text-(--color-text-secondary) mt-1">
+                                                <div className="flex items-start gap-2">
+                                                    <span className="text-xs font-medium text-(--color-text-tertiary) mt-0.5">
+                                                        {comment.serviceType ===
+                                                        'trakt'
+                                                            ? '🔗'
+                                                            : comment.serviceType ===
+                                                                'anilist'
+                                                              ? '📝'
+                                                              : '💬'}
+                                                    </span>
+                                                    <p className="text-sm line-clamp-2 flex-1">
+                                                        {comment.comment}
+                                                    </p>
+                                                </div>
+                                                <p className="text-xs text-(--color-text-secondary) mt-1 ml-6">
                                                     {new Date(
                                                         comment.createdAt
                                                     ).toLocaleString()}
+                                                    <span className="ml-2 capitalize">
+                                                        {comment.serviceType ===
+                                                        'trakt'
+                                                            ? 'Trakt'
+                                                            : comment.serviceType ===
+                                                                'anilist'
+                                                              ? 'AniList'
+                                                              : comment.serviceType}
+                                                    </span>
                                                 </p>
                                             </div>
-                                            <button
-                                                onClick={() =>
-                                                    handleDelete(comment.id)
-                                                }
-                                                disabled={isSubmitting}
-                                                className="text-(--color-text-secondary) hover:text-(--color-danger) disabled:opacity-50 text-xl ml-2"
-                                            >
-                                                ×
-                                            </button>
+                                            {comment.serviceType !==
+                                                'anilist' && (
+                                                <button
+                                                    onClick={() =>
+                                                        handleDelete(comment.id)
+                                                    }
+                                                    disabled={isSubmitting}
+                                                    className="text-(--color-text-secondary) hover:text-(--color-danger) disabled:opacity-50 text-xl ml-2"
+                                                >
+                                                    ×
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
                                 ))
@@ -361,7 +493,13 @@ export const CommentModal: React.FC<CommentModalProps> = ({
                             ref={textareaRef}
                             value={editorText}
                             onChange={(e) => setEditorText(e.target.value)}
-                            placeholder="Write your review or shout here... (at least 5 words)"
+                            placeholder={
+                                hasTraktService
+                                    ? hasAniListService
+                                        ? 'Write your review or note here... (Trakt: min 5 words, AniList: any length)'
+                                        : 'Write your review or shout here... (at least 5 words)'
+                                    : 'Write your note here...'
+                            }
                             className={`w-full flex-grow bg-(--color-background) border rounded-md p-3 text-base resize-none focus:outline-none focus:ring-2 ${validationError ? 'border-(--color-danger) focus:ring-(--color-danger)' : 'border-(--color-border) focus:ring-(--color-accent-primary)'}`}
                         />
                         {validationError && (
@@ -370,19 +508,52 @@ export const CommentModal: React.FC<CommentModalProps> = ({
                             </p>
                         )}
                         <div className="mt-4">
-                            <label className="flex items-center space-x-2 cursor-pointer">
-                                <input
-                                    type="checkbox"
-                                    checked={isSpoiler}
-                                    onChange={(e) =>
-                                        setIsSpoiler(e.target.checked)
-                                    }
-                                    className="form-checkbox h-5 w-5 bg-(--color-surface-2) border-(--color-border) text-(--color-accent-primary) focus:ring-(--color-accent-primary)"
-                                />
-                                <span className="text-sm">
-                                    This comment contains spoilers
-                                </span>
-                            </label>
+                            {/* Explanation text for multi-service posting */}
+                            {serviceStatuses && serviceStatuses.length > 1 && (
+                                <div className="mb-3 p-2 bg-(--color-surface-2) rounded text-xs text-(--color-text-secondary)">
+                                    <p>
+                                        💡 <strong>Unified posting:</strong>{' '}
+                                        This will create{' '}
+                                        {serviceStatuses.some(
+                                            (s) => s.serviceType === 'trakt'
+                                        ) && 'a Trakt comment'}
+                                        {serviceStatuses.some(
+                                            (s) => s.serviceType === 'trakt'
+                                        ) &&
+                                            serviceStatuses.some(
+                                                (s) =>
+                                                    s.serviceType === 'anilist'
+                                            ) &&
+                                            ' and '}
+                                        {serviceStatuses.some(
+                                            (s) => s.serviceType === 'anilist'
+                                        ) && 'update your AniList note'}{' '}
+                                        with the same content.
+                                    </p>
+                                </div>
+                            )}
+
+                            {/* Show spoiler option only when Trakt is available */}
+                            {hasTraktService && (
+                                <label className="flex items-center space-x-2 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={isSpoiler}
+                                        onChange={(e) =>
+                                            setIsSpoiler(e.target.checked)
+                                        }
+                                        className="form-checkbox h-5 w-5 bg-(--color-surface-2) border-(--color-border) text-(--color-accent-primary) focus:ring-(--color-accent-primary)"
+                                    />
+                                    <span className="text-sm">
+                                        This comment contains spoilers{' '}
+                                        {hasAniListService && (
+                                            <span className="text-xs text-(--color-text-tertiary)">
+                                                (Trakt only)
+                                            </span>
+                                        )}
+                                    </span>
+                                </label>
+                            )}
 
                             {commentType && ratings && (
                                 <ModalStarRating

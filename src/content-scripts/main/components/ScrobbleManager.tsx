@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo } from 'react';
 import { useMediaLifecycle } from '../../../hooks/useMediaLifecycle';
 import { useScrobbling } from '../../../hooks/useScrobbling';
+import { useServiceStatus } from '../../../hooks/useServiceStatus';
 import { ScrobbleNotification } from './ScrobbleNotification';
 import { ManualSearchPrompt } from './ManualSearchPrompt';
 import { LoadingIndicator } from './LoadingIndicator';
@@ -43,6 +44,19 @@ export const ScrobbleManager = () => {
         updateComment,
         deleteComment
     } = useMediaLifecycle();
+
+    const { serviceStatuses } = useServiceStatus();
+
+    // Filter service statuses to only include those that support comments
+    const commentServiceStatuses = useMemo(
+        () =>
+            serviceStatuses.filter(
+                (status) =>
+                    status.serviceType === 'trakt' ||
+                    status.serviceType === 'anilist'
+            ),
+        [serviceStatuses]
+    );
 
     const { status, isProcessing, historyId, manualScrobble, undoScrobble } =
         useScrobbling(
@@ -135,6 +149,7 @@ export const ScrobbleManager = () => {
                 mediaInfo={mediaInfo}
                 ratings={ratings}
                 commentType={commentModalType}
+                serviceStatuses={commentServiceStatuses}
                 onPostComment={postComment}
                 onUpdateComment={updateComment}
                 onDeleteComment={deleteComment}

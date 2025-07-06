@@ -49,25 +49,51 @@ export async function handlePostComment(
     const commentServices =
         await filterEnabledAuthenticatedServices(allCommentServices);
 
-    // Use primary service for comment posting (return the first successful result)
+    console.log(
+        `🔄 Posting comment to ${commentServices.length} services:`,
+        commentServices.map((s) => s.getCapabilities().serviceType)
+    );
+
+    // Post to all enabled services (multi-service approach)
+    const results: ServiceComment[] = [];
+    const errors: string[] = [];
+
     for (const service of commentServices) {
         try {
-            return await service.postComment(
+            console.log(
+                `📝 Posting to ${service.getCapabilities().serviceType}...`
+            );
+            const result = await service.postComment(
                 type,
                 mediaInfo,
                 comment,
                 spoiler,
                 episodeInfo
             );
-        } catch (error) {
-            console.error(
-                `Failed to post comment on ${service.getCapabilities().serviceType}:`,
-                error
+            results.push(result);
+            console.log(
+                `✅ Successfully posted to ${service.getCapabilities().serviceType}`
             );
+        } catch (error) {
+            const serviceName = service.getCapabilities().serviceType;
+            const errorMsg = `Failed to post comment on ${serviceName}: ${error}`;
+            console.error(errorMsg);
+            errors.push(errorMsg);
         }
     }
 
-    throw new Error('No available services to post comment');
+    if (results.length === 0) {
+        throw new Error(
+            `Failed to post comment to any service. Errors: ${errors.join(', ')}`
+        );
+    }
+
+    console.log(
+        `✅ Posted comment to ${results.length}/${commentServices.length} services`
+    );
+
+    // Return the first successful result (UI expects single ServiceComment)
+    return results[0];
 }
 
 export async function handleUpdateComment(
