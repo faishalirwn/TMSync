@@ -106,12 +106,31 @@ TMSync is a Chrome extension that integrates streaming sites with multiple track
 ## Development Notes
 
 **Commit Strategy**:
-- Commit changes in logical, meaningful chunks
-- Each commit should represent a complete, understandable feature or fix
+
+**For Complete Features**:
+- Commit only when a feature is complete and working as intended
+- Each commit should represent a complete, production-ready feature or fix
 - Use descriptive commit messages explaining the "why" not just "what"
-- This creates checkpoints for easy reverting and better code review
+- This creates clean history for easy reverting and better code review
 - Major architectural changes (like completing a full phase) should be single comprehensive commits
 - Always run `npm run check-all` before committing to ensure code quality
+
+**For Iterative Development**:
+- When developing complex features that require multiple iterations and user feedback:
+  - Work in a feature branch with intermediate commits for safety/checkpoints
+  - Use `git commit --amend` or interactive rebase to refine commits during development
+  - Squash incremental commits into single cohesive feature commit when complete
+  - Only merge/push final polished commits to main branch history
+- If you need to commit incomplete work for context preservation:
+  - Use clear WIP (Work In Progress) prefixes: `wip: partial implementation of X`
+  - Always squash/rebase these into proper commits before considering the work complete
+- Example workflow: `git rebase -i HEAD~3` to squash last 3 commits into one coherent feature
+
+**Commit Message Quality**:
+- Focus on the user-facing impact and technical reasoning
+- Bad: "fix stars" Good: "fix: resolve half-star hover precision and prevent text flickering"
+- Include context about why the change was needed
+- Reference any architectural decisions or tradeoffs made
 
 **Event Handling Conflicts**:
 The extension uses a global keydown event guard to prevent conflicts with other extensions. This relies on timing - the extension's event listener must attach before conflicting extensions. A more robust solution would use iframe sandboxing.
