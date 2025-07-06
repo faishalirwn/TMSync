@@ -801,9 +801,87 @@ export class AniListService implements TrackerService {
             throw new Error(`AniList API error: ${response.errors[0].message}`);
         }
 
-        console.log(
-            `✅ Successfully rated anime ${anilistId} with score ${score}`
-        );
+        const action =
+            score === 0 ? 'removed rating from' : `rated with score ${score}`;
+        console.log(`✅ Successfully ${action} anime ${anilistId}`);
+    }
+
+    /**
+     * Unrating Methods
+     */
+
+    /**
+     * Remove rating from a movie (anime movie)
+     */
+    async unrateMovie(movieIds: ServiceMediaIds): Promise<void> {
+        await this.unrateAnimeByMediaInfo('movie', movieIds);
+    }
+
+    /**
+     * Remove rating from a show (anime series)
+     */
+    async unrateShow(showIds: ServiceMediaIds): Promise<void> {
+        await this.unrateAnimeByMediaInfo('show', showIds);
+    }
+
+    /**
+     * Remove rating from a season (not applicable for AniList)
+     */
+    async unrateSeason(
+        showIds: ServiceMediaIds,
+        seasonNumber: number
+    ): Promise<void> {
+        throw new Error('AniList does not support season-specific ratings');
+    }
+
+    /**
+     * Remove rating from an episode (not applicable for AniList)
+     */
+    async unrateEpisode(
+        showIds: ServiceMediaIds,
+        seasonNumber: number,
+        episodeNumber: number
+    ): Promise<void> {
+        throw new Error('AniList does not support episode-specific ratings');
+    }
+
+    /**
+     * Unrate anime by media info (helper method for both movies and shows)
+     */
+    private async unrateAnimeByMediaInfo(
+        type: 'movie' | 'show',
+        mediaIds: ServiceMediaIds
+    ): Promise<void> {
+        console.log(`🚫 AniList: Starting unrate process for ${type}`, {
+            mediaIds
+        });
+
+        // Check authentication
+        const tokenData = await chrome.storage.local.get([
+            'anilistAccessToken'
+        ]);
+        if (!tokenData.anilistAccessToken) {
+            console.log('❌ AniList: Not authenticated');
+            throw new Error('Not authenticated with AniList');
+        }
+        console.log('✅ AniList: Authenticated');
+
+        // Try to find the anime using cached media context or search
+        const anilistMedia = await this.findAnimeForRating(type, mediaIds);
+
+        if (!anilistMedia) {
+            console.log('❌ AniList: Could not find anime for unrating');
+            throw new Error(
+                `Could not find ${type} on AniList for unrating. Please ensure the anime exists on AniList.`
+            );
+        }
+
+        // Unrate the anime using SaveMediaListEntry mutation with 0 score
+        console.log('🚫 AniList: Removing rating...', {
+            anilistId: anilistMedia.id
+        });
+        await this.setAnimeRating(anilistMedia.id, 0);
+        console.log('✅ AniList: Rating removed successfully');
     }
 
     /**
