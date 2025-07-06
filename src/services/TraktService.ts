@@ -589,7 +589,7 @@ export class TraktService implements TrackerService {
      */
     async rateMovie(movieIds: ServiceMediaIds, rating: number): Promise<void> {
         const body = {
-            movies: [{ ids: movieIds, rating }]
+            movies: [{ ids: movieIds, rating: Math.round(rating) }]
         };
         await this.callApi('https://api.trakt.tv/sync/ratings', 'POST', body);
     }
@@ -599,7 +599,7 @@ export class TraktService implements TrackerService {
      */
     async rateShow(showIds: ServiceMediaIds, rating: number): Promise<void> {
         const body = {
-            shows: [{ ids: showIds, rating }]
+            shows: [{ ids: showIds, rating: Math.round(rating) }]
         };
         await this.callApi('https://api.trakt.tv/sync/ratings', 'POST', body);
     }
@@ -624,7 +624,7 @@ export class TraktService implements TrackerService {
         }
 
         const body = {
-            seasons: [{ ids: { trakt: seasonId }, rating }]
+            seasons: [{ ids: { trakt: seasonId }, rating: Math.round(rating) }]
         };
         await this.callApi('https://api.trakt.tv/sync/ratings', 'POST', body);
     }
@@ -652,7 +652,9 @@ export class TraktService implements TrackerService {
         }
 
         const body = {
-            episodes: [{ ids: { trakt: episodeId }, rating }]
+            episodes: [
+                { ids: { trakt: episodeId }, rating: Math.round(rating) }
+            ]
         };
         await this.callApi('https://api.trakt.tv/sync/ratings', 'POST', body);
     }

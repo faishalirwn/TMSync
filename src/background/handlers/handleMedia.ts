@@ -63,8 +63,22 @@ export async function handleMediaInfo(
         throw new Error(`No site config found for ${new URL(url).hostname}`);
 
     const tabUrlIdentifier = siteConfig.getUrlIdentifier(url);
-    const cachedData = await chrome.storage.local.get(tabUrlIdentifier);
+    const cachedData = await chrome.storage.local.get([
+        tabUrlIdentifier,
+        'tmsync_recent_media'
+    ]);
     if (cachedData[tabUrlIdentifier]?.confidence === 'high') {
+        // Ensure recent media context is also available
+        if (!cachedData.tmsync_recent_media) {
+            await chrome.storage.local.set({
+                tmsync_recent_media: {
+                    ...cachedData[tabUrlIdentifier].mediaInfo,
+                    fromCache: Date.now()
+                }
+            });
+            console.log('💾 Updated recent media context from cache');
+        }
+
         const details = await fetchStatusDetails(
             cachedData[tabUrlIdentifier].mediaInfo,
             url
@@ -132,8 +146,17 @@ export async function handleMediaInfo(
             [tabUrlIdentifier]: {
                 mediaInfo: mediaInfoResult,
                 confidence: 'high'
+            },
+            // Store recent media context for services like AniList that need title for rating
+            tmsync_recent_media: {
+                ...mediaInfoResult,
+                autoDetectedAt: Date.now()
             }
         });
+        console.log(
+            '💾 Auto-detected media stored with context:',
+            mediaInfoResult
+        );
         const details = await fetchStatusDetails(mediaInfoResult, url);
         return {
             ...details,
@@ -160,15 +183,26 @@ export async function handleConfirmMedia(
     params: MediaInfoResponse,
     sender: chrome.runtime.MessageSender
 ): Promise<void> {
+    console.log('📝 handleConfirmMedia called with:', params);
     if (!sender.tab?.url) throw new Error('Sender tab URL is missing.');
     const siteConfig = getCurrentSiteConfig(new URL(sender.tab.url).hostname);
     if (!siteConfig) return;
     const tabUrlIdentifier = siteConfig.getUrlIdentifier(sender.tab.url);
-    await chrome.storage.local.set({
+
+    const storageData = {
         [tabUrlIdentifier]: {
             mediaInfo: params,
             confidence: 'high',
             confirmedAt: Date.now()
+        },
+        // Store recent media context for services like AniList that need title for rating
+        tmsync_recent_media: {
+            ...params,
+            confirmedAt: Date.now()
         }
-    });
+    };
+
+    console.log('💾 Storing media context:', storageData);
+    await chrome.storage.local.set(storageData);
+    console.log('✅ Media context stored successfully');
 }

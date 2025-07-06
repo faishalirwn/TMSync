@@ -33,13 +33,13 @@ export class AniListService implements TrackerService {
             serviceType: 'anilist' as ServiceType,
             supportsRealTimeScrobbling: false, // AniList doesn't support real-time scrobbling
             supportsProgressTracking: true, // Episode progress tracking implemented
-            supportsRatings: false, // TODO: Not yet implemented - set to true when completed
-            supportsComments: false, // TODO: Not yet implemented - set to true when completed
+            supportsRatings: true, // Rating functionality implemented
+            supportsComments: false, // TODO: Not yet implemented - AniList API limitations
             supportsHistory: true, // History add/remove implemented
             supportsSearch: true, // Search is implemented
             ratingScale: {
                 min: 1,
-                max: 10, // Default to 10-point, but AniList supports multiple formats
+                max: 10, // Our interface uses 1-10, converted to user's AniList format
                 step: 1,
                 serviceType: 'anilist'
             },
@@ -509,18 +509,18 @@ export class AniListService implements TrackerService {
      */
 
     /**
-     * Rate a movie (not applicable for AniList)
+     * Rate a movie (anime movie)
      */
     async rateMovie(movieIds: ServiceMediaIds, rating: number): Promise<void> {
-        throw new Error('AniList does not support movie ratings');
+        // AniList treats movies as anime, so we can rate them
+        await this.rateAnimeByMediaInfo('movie', movieIds, rating);
     }
 
     /**
-     * Rate a show (anime)
+     * Rate a show (anime series)
      */
     async rateShow(showIds: ServiceMediaIds, rating: number): Promise<void> {
-        // Implementation would use SaveMediaListEntry mutation with score
-        throw new Error('rateShow not yet implemented for AniList');
+        await this.rateAnimeByMediaInfo('show', showIds, rating);
     }
 
     /**
@@ -544,6 +544,266 @@ export class AniListService implements TrackerService {
         rating: number
     ): Promise<void> {
         throw new Error('AniList does not support episode-specific ratings');
+    }
+
+    /**
+     * Rate anime by media info (helper method for both movies and shows)
+     */
+    private async rateAnimeByMediaInfo(
+        type: 'movie' | 'show',
+        mediaIds: ServiceMediaIds,
+        rating: number
+    ): Promise<void> {
+        console.log(`⭐ AniList: Starting rating process for ${type}`, {
+            mediaIds,
+            rating
+        });
+
+        // Check authentication
+        const tokenData = await chrome.storage.local.get([
+            'anilistAccessToken'
+        ]);
+        if (!tokenData.anilistAccessToken) {
+            console.log('❌ AniList: Not authenticated');
+            throw new Error('Not authenticated with AniList');
+        }
+        console.log('✅ AniList: Authenticated');
+
+        // Validate rating (1-10 scale)
+        if (rating < 1 || rating > 10) {
+            console.log('❌ AniList: Invalid rating:', rating);
+            throw new Error('Rating must be between 1 and 10');
+        }
+        console.log('✅ AniList: Rating validation passed:', rating);
+
+        // Get user's score format preference
+        console.log('🔍 AniList: Getting user score format...');
+        const userScoreFormat = await this.getUserScoreFormat();
+        console.log('📊 AniList: User score format:', userScoreFormat);
+
+        // Convert our 1-10 rating to user's preferred format
+        const convertedScore = this.convertRatingToAniListFormat(
+            rating,
+            userScoreFormat
+        );
+        console.log('🔄 AniList: Converted score:', {
+            original: rating,
+            converted: convertedScore,
+            format: userScoreFormat
+        });
+
+        // Try to find the anime using cached media context or search
+        const anilistMedia = await this.findAnimeForRating(type, mediaIds);
+
+        if (!anilistMedia) {
+            console.log('❌ AniList: Could not find anime for rating');
+            throw new Error(
+                `Could not find ${type} on AniList for rating. Please ensure the anime exists on AniList and try rating from the media page.`
+            );
+        }
+
+        // Rate the anime using SaveMediaListEntry mutation
+        console.log('⭐ AniList: Setting rating...', {
+            anilistId: anilistMedia.id,
+            score: convertedScore
+        });
+        await this.setAnimeRating(anilistMedia.id, convertedScore);
+        console.log('✅ AniList: Rating completed successfully');
+    }
+
+    /**
+     * Find anime on AniList for rating using available identifiers
+     */
+    private async findAnimeForRating(
+        type: 'movie' | 'show',
+        mediaIds: ServiceMediaIds
+    ): Promise<any | null> {
+        console.log('🔍 AniList: Finding anime for rating...', {
+            type,
+            mediaIds
+        });
+
+        // Try to get recently viewed media context from storage
+        const recentMediaData = await chrome.storage.local.get([
+            'tmsync_recent_media'
+        ]);
+        const recentMedia = recentMediaData.tmsync_recent_media;
+
+        console.log('📦 Recent media context:', recentMedia);
+
+        if (recentMedia && recentMedia.type === type) {
+            // Use the title from recent media context
+            const title =
+                type === 'movie'
+                    ? recentMedia.movie?.title
+                    : recentMedia.show?.title;
+            if (title) {
+                console.log(`🔍 Searching AniList for ${type}: "${title}"`);
+                const searchResults = await this.searchAnimeByTitle(title);
+                console.log('📋 AniList search results:', searchResults);
+
+                if (searchResults.length > 0) {
+                    console.log('✅ Found anime on AniList:', searchResults[0]);
+                    return searchResults[0]; // Return best match
+                } else {
+                    console.log(
+                        '❌ No anime found on AniList for title:',
+                        title
+                    );
+                }
+            } else {
+                console.log('❌ No title found in recent media context');
+            }
+        } else {
+            console.log('❌ No recent media context or type mismatch');
+        }
+
+        // Fallback: If no recent context, show helpful error
+        return null;
+    }
+
+    /**
+     * Get user's preferred score format from AniList
+     */
+    private async getUserScoreFormat(): Promise<string> {
+        const query = `
+            query {
+                Viewer {
+                    mediaListOptions {
+                        scoreFormat
+                    }
+                }
+            }
+        `;
+
+        const response = await this.makeGraphQLRequest(query);
+        return (
+            response.data?.Viewer?.mediaListOptions?.scoreFormat || 'POINT_10'
+        );
+    }
+
+    /**
+     * Convert our 1-10 rating to AniList's score format
+     */
+    private convertRatingToAniListFormat(
+        rating: number,
+        scoreFormat: string
+    ): number {
+        switch (scoreFormat) {
+            case 'POINT_100':
+                return Math.round(rating * 10); // 1-10 -> 10-100
+            case 'POINT_10_DECIMAL':
+                return rating; // 1-10 -> 1.0-10.0 (will be sent as float)
+            case 'POINT_10':
+                return Math.round(rating); // 1-10 -> 1-10
+            case 'POINT_5':
+                return Math.round(rating / 2); // 1-10 -> 1-5 (stars)
+            case 'POINT_3':
+                // 1-3 = 1 (sad), 4-6 = 2 (neutral), 7-10 = 3 (happy)
+                if (rating <= 3) return 1;
+                if (rating <= 6) return 2;
+                return 3;
+            default:
+                return rating; // Fallback to 1-10
+        }
+    }
+
+    /**
+     * Search for anime by title on AniList
+     */
+    private async searchAnimeByTitle(title: string): Promise<any[]> {
+        console.log(`🔍 AniList: Searching for anime with title: "${title}"`);
+
+        const searchQuery = `
+            query ($search: String) {
+                Page(page: 1, perPage: 10) {
+                    media(search: $search, type: ANIME) {
+                        id
+                        title {
+                            romaji
+                            english
+                            native
+                        }
+                        format
+                        seasonYear
+                    }
+                }
+            }
+        `;
+
+        try {
+            const response = await this.makeGraphQLRequest(
+                searchQuery,
+                { search: title },
+                false
+            );
+            const results = response.data?.Page?.media || [];
+            console.log(
+                `📊 AniList: Found ${results.length} search results:`,
+                results
+            );
+
+            // Try to find exact or close matches
+            const exactMatches = results.filter((anime: any) => {
+                const titles = [
+                    anime.title.romaji,
+                    anime.title.english,
+                    anime.title.native
+                ].filter(Boolean);
+
+                return titles.some(
+                    (animeTitle: string) =>
+                        animeTitle.toLowerCase() === title.toLowerCase() ||
+                        animeTitle
+                            .toLowerCase()
+                            .includes(title.toLowerCase()) ||
+                        title.toLowerCase().includes(animeTitle.toLowerCase())
+                );
+            });
+
+            console.log(
+                `🎯 AniList: Found ${exactMatches.length} close matches:`,
+                exactMatches
+            );
+
+            return exactMatches.length > 0 ? exactMatches : results;
+        } catch (error) {
+            console.error('❌ AniList: Search failed:', error);
+            return [];
+        }
+    }
+
+    /**
+     * Set rating for anime using SaveMediaListEntry mutation
+     */
+    private async setAnimeRating(
+        anilistId: number,
+        score: number
+    ): Promise<void> {
+        const mutation = `
+            mutation($mediaId: Int!, $score: Float) {
+                SaveMediaListEntry(mediaId: $mediaId, score: $score) {
+                    id
+                    score
+                    status
+                }
+            }
+        `;
+
+        const variables = {
+            mediaId: anilistId,
+            score: score
+        };
+
+        const response = await this.makeGraphQLRequest(mutation, variables);
+
+        if (response.errors) {
+            throw new Error(`AniList API error: ${response.errors[0].message}`);
+        }
+
+        console.log(
+            `✅ Successfully rated anime ${anilistId} with score ${score}`
+        );
     }
 
     /**
