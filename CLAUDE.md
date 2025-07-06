@@ -165,7 +165,20 @@ When starting a new session or after context compaction:
 3. Read `DESIGN_DECISIONS.md` for product design rationale and user preferences
 4. Run `git log --oneline -5` to see recent commits
 5. Check current git status with `git status`
-6. Verify system health with `npm run type-check`
+6. Verify system health with `pnpm type-check`
+
+**Automated Workflow Commands**:
+Use these custom slash commands for consistent workflow:
+- `/project:context-recovery` - Execute full context recovery protocol
+- `/project:smart-commit` - Commit with proper message format and quality checks
+- `/project:next-task` - Identify and start next priority task
+- `/project:workflow-health` - Comprehensive project health check
+
+**Session Triggers**:
+- **New Session**: Always run `/project:context-recovery` first
+- **After Significant Work**: Run `/project:smart-commit` to maintain clean history
+- **When Uncertain**: Run `/project:workflow-health` to identify issues
+- **Between Tasks**: Run `/project:next-task` to maintain momentum
 
 **File-Based State Management**:
 - `TODO.md` - Current problems to solve and phase status (problem-solving focused, not task-execution)
