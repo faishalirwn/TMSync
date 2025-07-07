@@ -5,51 +5,59 @@
 **Package Manager**: `pnpm` for everything
 
 **Development**:
-- `pnpm dev` - Development build with watch
-- `pnpm build` - Production build
-- `pnpm clean` - Clean dist directory
+
+-   `pnpm dev` - Development build with watch
+-   `pnpm build` - Production build
+-   `pnpm clean` - Clean dist directory
 
 **Quality Checks** (Run before committing):
-- `pnpm check-all` - Run all checks
-- `pnpm fix-all` - Auto-fix everything possible
-- `pnpm type-check` - TypeScript validation
-- `pnpm lint` - ESLint with auto-fix
-- `pnpm format` - Prettier formatting
+
+-   `pnpm check-all` - Run all checks
+-   `pnpm fix-all` - Auto-fix everything possible
+-   `pnpm type-check` - TypeScript validation
+-   `pnpm lint` - ESLint with auto-fix
+-   `pnpm format` - Prettier formatting
 
 ## Multi-Service Architecture
 
 **Core Philosophy**: Per-service independence with unified input options
 
 **Key Principles**:
-- Respect service differences, don't force unification
-- Show actual service states transparently
-- Provide unified input when convenient
-- Let users understand what each service will do
+
+-   Respect service differences, don't force unification
+-   Show actual service states transparently
+-   Provide unified input when convenient
+-   Let users understand what each service will do
 
 **Service Authority for Scrobbling**:
+
 1. Trust the most advanced state (highest episode progress)
 2. "Completed + partial episodes" = treat as "watching"
 3. Each service follows its own rewatch logic
 
 **Implementation Guidelines**:
-- Use service-agnostic types for handlers
-- Convert native service types to service-agnostic types
-- Handle service failures independently
-- Test with `npx tsx src/test-services.ts`
 
-## Working with the Roadmap
+-   Use service-agnostic types for handlers
+-   Convert native service types to service-agnostic types
+-   Handle service failures independently
+-   Test with `npx tsx src/test-services.ts`
 
-**Workflow**:
-1. Check `docs/ROADMAP.md` for available todos
-2. Say "let's do [specific todo]"
-3. Reference `docs/DESIGN_DECISIONS.md` for technical context
-4. Update QA docs during any planning sessions
+## Working with Lifecycle MCP
 
-**Todo Format**: Each roadmap item includes:
-- Specific requirements
-- Edge cases to handle
-- Success criteria
-- Dependencies if needed
+**Current Workflow**: TMSync uses lifecycle MCP for formal project management
+
+**Project Status**: `what's the project status?` - Shows requirements, tasks, completion
+**Task Management**: Pick tasks with `let's work on [task]` or `let's do [requirement]`
+**Documentation**: Live project state maintained in lifecycle.db automatically
+
+**Implementation Process**:
+1. Select task from project status
+2. Implement with multiple approaches when choices exist
+3. Test before moving to next task
+4. Automatically update ADRs for architectural decisions
+5. Update lifecycle system as work progresses
+
+**Documentation Exports**: `docs/final-documentation/` contains static exports for external sharing only - NOT part of workflow, just a nice addition for stakeholders
 
 ## Service-Specific Rules
 
@@ -58,9 +66,10 @@
 **MAL**: Same as AniList but no REWATCHING status
 
 **Rating Conversion** (from 10-point input):
-- Trakt: Round to nearest 0.5
-- AniList: Multiply by 10 (7.5 → 75)
-- MAL: Round to nearest integer
+
+-   Trakt: Round to nearest 0.5
+-   AniList: Multiply by 10 (7.5 → 75)
+-   MAL: Round to nearest integer
 
 ## Common Patterns
 
