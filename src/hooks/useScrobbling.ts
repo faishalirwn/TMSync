@@ -24,7 +24,8 @@ export function useScrobbling(
     mediaInfo: MediaInfoResponse | null,
     episodeInfo: SeasonEpisodeObj | null,
     userConfirmedAction: boolean,
-    isRewatchSession: boolean
+    isRewatchSession: boolean,
+    globalScrobblingEnabled: boolean = true
 ) {
     const [status, setStatus] = useState<ActiveScrobbleStatus>('idle');
     const [progress, setProgress] = useState(0);
@@ -33,6 +34,7 @@ export function useScrobbling(
     const serviceHistoryIdsRef = useRef<{
         [serviceType: string]: number | string;
     }>({});
+    const autoScrobblingDisabledRef = useRef(false);
 
     const videoRef = useRef<HTMLVideoElement | null>(null);
     const lastPingTimeRef = useRef(0);
@@ -129,6 +131,7 @@ export function useScrobbling(
                     response.data.traktHistoryId
                 );
                 historyIdRef.current = response.data.traktHistoryId;
+                autoScrobblingDisabledRef.current = false;
 
                 // Store service-specific history IDs for proper undo functionality
                 if (response.data.serviceHistoryIds) {
@@ -187,7 +190,9 @@ export function useScrobbling(
 
                 if (
                     latestProgress >= TRAKT_SCROBBLE_COMPLETION_THRESHOLD &&
-                    !historyIdRef.current
+                    !historyIdRef.current &&
+                    globalScrobblingEnabled &&
+                    !autoScrobblingDisabledRef.current
                 ) {
                     console.log(
                         '🛑 Triggering stop - progress:',
@@ -202,6 +207,7 @@ export function useScrobbling(
         [
             mediaInfo,
             userConfirmedAction,
+            globalScrobblingEnabled,
             status,
             sendScrobbleStart,
             sendScrobbleStop
@@ -263,7 +269,8 @@ export function useScrobbling(
     }, [processThrottledTimeUpdate]);
 
     const handlePlay = useCallback(() => {
-        if (!mediaInfo || !userConfirmedAction) return;
+        if (!mediaInfo || !userConfirmedAction || !globalScrobblingEnabled)
+            return;
         if (historyIdRef.current) {
             console.log(
                 '🚫 Skipping start on play - already completed (historyId:',
@@ -272,24 +279,62 @@ export function useScrobbling(
             );
             return;
         }
+        if (autoScrobblingDisabledRef.current) {
+            console.log(
+                '🚫 Skipping start on play - auto-scrobbling disabled after undo'
+            );
+            return;
+        }
         if (status === 'idle' || status === 'paused') {
             console.log('🚀 Starting on play event - status:', status);
             sendScrobbleStart();
         }
-    }, [mediaInfo, userConfirmedAction, status, sendScrobbleStart]);
+    }, [
+        mediaInfo,
+        userConfirmedAction,
+        globalScrobblingEnabled,
+        status,
+        sendScrobbleStart
+    ]);
 
     const handlePause = useCallback(() => {
-        if (!mediaInfo || !userConfirmedAction) return;
+        if (!mediaInfo || !userConfirmedAction || !globalScrobblingEnabled)
+            return;
+        if (autoScrobblingDisabledRef.current) {
+            console.log(
+                '🚫 Skipping pause - auto-scrobbling disabled after undo'
+            );
+            return;
+        }
         if (status === 'started') sendScrobblePause();
-    }, [mediaInfo, userConfirmedAction, status, sendScrobblePause]);
+    }, [
+        mediaInfo,
+        userConfirmedAction,
+        globalScrobblingEnabled,
+        status,
+        sendScrobblePause
+    ]);
 
     const handleEnded = useCallback(async () => {
-        if (!mediaInfo || !userConfirmedAction) return;
+        if (!mediaInfo || !userConfirmedAction || !globalScrobblingEnabled)
+            return;
+        if (autoScrobblingDisabledRef.current) {
+            console.log(
+                '🚫 Skipping ended - auto-scrobbling disabled after undo'
+            );
+            return;
+        }
         if (status === 'started' || status === 'paused') {
             setProgress(100);
             await sendScrobbleStop();
         }
-    }, [mediaInfo, userConfirmedAction, status, sendScrobbleStop]);
+    }, [
+        mediaInfo,
+        userConfirmedAction,
+        globalScrobblingEnabled,
+        status,
+        sendScrobbleStop
+    ]);
 
     useEffect(() => {
         if (!userConfirmedAction) return;
@@ -360,6 +405,8 @@ export function useScrobbling(
         });
         if (response.success && response.data?.traktHistoryId) {
             historyIdRef.current = response.data.traktHistoryId;
+            autoScrobblingDisabledRef.current = false;
+            console.log('✅ Re-enabled auto-scrobbling after manual scrobble');
         }
         setIsProcessing(false);
     }, [mediaInfo, episodeInfo, status, sendMessage, sendScrobblePause]);
@@ -389,7 +436,9 @@ export function useScrobbling(
         if (response.success) {
             historyIdRef.current = null;
             serviceHistoryIdsRef.current = {};
+            autoScrobblingDisabledRef.current = true;
             console.log('✅ Cleared all history IDs after successful undo');
+            console.log('🚫 Disabled auto-scrobbling after undo');
         }
         setIsProcessing(false);
         return response.success;
@@ -400,6 +449,8 @@ export function useScrobbling(
         isProcessing,
         historyId: historyIdRef.current,
         manualScrobble,
-        undoScrobble
+        undoScrobble,
+        pauseScrobbling: sendScrobblePause,
+        stopScrobbling: sendScrobbleStop
     };
 }
