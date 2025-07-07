@@ -1,12 +1,10 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { useMediaLifecycle } from '../../../hooks/useMediaLifecycle';
 import { useScrobbling } from '../../../hooks/useScrobbling';
 import { useServiceStatus } from '../../../hooks/useServiceStatus';
 import { ScrobbleNotification } from './ScrobbleNotification';
 import { ManualSearchPrompt } from './ManualSearchPrompt';
 import { LoadingIndicator } from './LoadingIndicator';
-import { StartWatchPrompt } from './StartWatchPrompt';
-import { RewatchPrompt } from './RewatchPrompt';
 import { CommentModal } from './CommentModal';
 import { isShowMediaInfo } from '../../../utils/typeGuards';
 import {
@@ -28,8 +26,6 @@ export const ScrobbleManager = () => {
         highlightTarget,
         watchedHistoryEpisodes,
         confirmManualSelection,
-        confirmStart,
-        confirmRewatch,
         cancelManualSearch,
         handleRate,
         handleUnrate,
@@ -47,6 +43,10 @@ export const ScrobbleManager = () => {
 
     const { serviceStatuses } = useServiceStatus();
 
+    // Global scrobbling toggle state (session-only)
+    const [globalScrobblingEnabled, setGlobalScrobblingEnabled] =
+        useState<boolean>(true);
+
     // Filter service statuses to only include those that support comments
     const commentServiceStatuses = useMemo(
         () =>
@@ -58,13 +58,34 @@ export const ScrobbleManager = () => {
         [serviceStatuses]
     );
 
-    const { status, isProcessing, historyId, manualScrobble, undoScrobble } =
-        useScrobbling(
-            mediaInfo,
-            episodeInfo,
-            userConfirmedAction,
-            isRewatchSession
-        );
+    const {
+        status,
+        isProcessing,
+        historyId,
+        manualScrobble,
+        undoScrobble,
+        pauseScrobbling,
+        stopScrobbling
+    } = useScrobbling(
+        mediaInfo,
+        episodeInfo,
+        userConfirmedAction,
+        isRewatchSession,
+        globalScrobblingEnabled
+    );
+
+    // Handle global scrobbling toggle changes
+    const handleGlobalScrobblingToggle = useCallback(
+        async (enabled: boolean) => {
+            setGlobalScrobblingEnabled(enabled);
+
+            // If disabling and currently scrobbling, pause the active scrobble
+            if (!enabled && status === 'started') {
+                await pauseScrobbling();
+            }
+        },
+        [status, pauseScrobbling]
+    );
 
     useEffect(() => {
         if (!siteConfig || !siteConfig.highlighting) {
@@ -118,13 +139,6 @@ export const ScrobbleManager = () => {
 
     return (
         <>
-            {uiState === 'prompt_start' && (
-                <StartWatchPrompt onConfirm={confirmStart} />
-            )}
-            {uiState === 'prompt_rewatch' && (
-                <RewatchPrompt onConfirm={confirmRewatch} />
-            )}
-
             {showScrobbleUI && notificationMediaInfo && (
                 <ScrobbleNotification
                     mediaInfo={notificationMediaInfo}
@@ -138,6 +152,8 @@ export const ScrobbleManager = () => {
                     onRate={handleRate}
                     onUnrate={handleUnrate}
                     onOpenCommentModal={openCommentModal}
+                    globalScrobblingEnabled={globalScrobblingEnabled}
+                    onGlobalScrobblingToggle={handleGlobalScrobblingToggle}
                 />
             )}
 

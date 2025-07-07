@@ -26,8 +26,6 @@ export type UIState =
     | 'loading'
     | 'idle'
     | 'needs_manual_confirmation'
-    | 'prompt_start'
-    | 'prompt_rewatch'
     | 'scrobbling_ready';
 
 async function getMediaInfoAndConfidence(
@@ -155,9 +153,14 @@ export function useMediaLifecycle() {
                     ? traktProgress.completed >= traktProgress.aired
                     : false;
 
-                // Scenario 1: Show is fully watched, so this is definitely a rewatch.
+                // Always ready for scrobbling - no prompts needed
+                setUiState('scrobbling_ready');
+                setUserConfirmedAction(true);
+
+                // Set appropriate highlighting based on watch status
                 if (isShowCompleted) {
-                    setUiState('prompt_rewatch');
+                    // Show is fully watched - this is a rewatch
+                    setIsRewatchSession(true);
                     const localInfo = await getLocalRewatchInfo(
                         data.mediaInfo.show.ids.trakt
                     );
@@ -168,9 +171,8 @@ export function useMediaLifecycle() {
                             type: 'rewatch_last'
                         };
                     }
-                }
-                // Scenario 2: Show is in progress.
-                else if (data.watchStatus?.isInHistory && traktProgress) {
+                } else if (data.watchStatus?.isInHistory && traktProgress) {
+                    // Show is in progress
                     const isCurrentEpisodeWatched = watchedEps.some(
                         (ep) =>
                             ep.season === currentEpisodeInfo?.season &&
@@ -178,12 +180,8 @@ export function useMediaLifecycle() {
                     );
 
                     if (isCurrentEpisodeWatched) {
-                        // Viewing an already-watched episode within an unfinished show.
-                        setUiState('prompt_rewatch');
-                    } else {
-                        // Viewing the next unwatched episode. No prompt needed.
-                        setUiState('scrobbling_ready');
-                        setUserConfirmedAction(true);
+                        // Viewing an already-watched episode - this is a rewatch
+                        setIsRewatchSession(true);
                     }
 
                     if (traktProgress.lastEpisode) {
@@ -194,15 +192,14 @@ export function useMediaLifecycle() {
                         };
                     }
                 }
-                // Scenario 3: Brand new show (no history, 0 completed).
-                else {
-                    setUiState('prompt_start');
-                }
             } else if (isMovieMediaInfo(data.mediaInfo)) {
+                // Always ready for scrobbling - no prompts needed
+                setUiState('scrobbling_ready');
+                setUserConfirmedAction(true);
+
                 if (data.watchStatus?.isInHistory) {
-                    setUiState('prompt_rewatch');
-                } else {
-                    setUiState('prompt_start');
+                    // Movie already watched - this is a rewatch
+                    setIsRewatchSession(true);
                 }
             }
 
@@ -272,17 +269,6 @@ export function useMediaLifecycle() {
         },
         [sendMessage, fetchAndProcessMedia]
     );
-
-    const confirmStart = useCallback(() => {
-        setUserConfirmedAction(true);
-        setUiState('scrobbling_ready');
-    }, []);
-
-    const confirmRewatch = useCallback(() => {
-        setUserConfirmedAction(true);
-        setIsRewatchSession(true);
-        setUiState('scrobbling_ready');
-    }, []);
 
     const cancelManualSearch = useCallback(() => {
         setUiState('idle');
@@ -435,8 +421,6 @@ export function useMediaLifecycle() {
         isRewatchSession,
         siteConfig,
         confirmManualSelection,
-        confirmStart,
-        confirmRewatch,
         cancelManualSearch,
         handleRate,
         handleUnrate,
