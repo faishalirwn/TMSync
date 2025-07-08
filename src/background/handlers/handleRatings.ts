@@ -17,16 +17,20 @@ export async function handleRateMovie(params: RateMovieParams): Promise<void> {
     const ratingServices =
         await filterEnabledAuthenticatedServices(allRatingServices);
 
-    for (const service of ratingServices) {
+    // Rate movie on ALL services in parallel
+    const ratingPromises = ratingServices.map(async (service) => {
+        const serviceType = service.getCapabilities().serviceType;
         try {
             await service.rateMovie(params.mediaInfo.movie.ids, params.rating);
+            console.log(`✅ Successfully rated movie on ${serviceType}`);
+            return { serviceType, success: true };
         } catch (error) {
-            console.error(
-                `Failed to rate movie on ${service.getCapabilities().serviceType}:`,
-                error
-            );
+            console.error(`❌ Failed to rate movie on ${serviceType}:`, error);
+            return { serviceType, success: false, error };
         }
-    }
+    });
+
+    await Promise.allSettled(ratingPromises);
 }
 
 export async function handleRateShow(params: RateShowParams): Promise<void> {
@@ -35,16 +39,20 @@ export async function handleRateShow(params: RateShowParams): Promise<void> {
     const ratingServices =
         await filterEnabledAuthenticatedServices(allRatingServices);
 
-    for (const service of ratingServices) {
+    // Rate show on ALL services in parallel
+    const ratingPromises = ratingServices.map(async (service) => {
+        const serviceType = service.getCapabilities().serviceType;
         try {
             await service.rateShow(params.mediaInfo.show.ids, params.rating);
+            console.log(`✅ Successfully rated show on ${serviceType}`);
+            return { serviceType, success: true };
         } catch (error) {
-            console.error(
-                `Failed to rate show on ${service.getCapabilities().serviceType}:`,
-                error
-            );
+            console.error(`❌ Failed to rate show on ${serviceType}:`, error);
+            return { serviceType, success: false, error };
         }
-    }
+    });
+
+    await Promise.allSettled(ratingPromises);
 }
 
 export async function handleRateSeason(
@@ -55,20 +63,24 @@ export async function handleRateSeason(
     const ratingServices =
         await filterEnabledAuthenticatedServices(allRatingServices);
 
-    for (const service of ratingServices) {
+    // Rate season on ALL services in parallel
+    const ratingPromises = ratingServices.map(async (service) => {
+        const serviceType = service.getCapabilities().serviceType;
         try {
             await service.rateSeason(
                 params.mediaInfo.show.ids,
                 params.episodeInfo.season,
                 params.rating
             );
+            console.log(`✅ Successfully rated season on ${serviceType}`);
+            return { serviceType, success: true };
         } catch (error) {
-            console.error(
-                `Failed to rate season on ${service.getCapabilities().serviceType}:`,
-                error
-            );
+            console.error(`❌ Failed to rate season on ${serviceType}:`, error);
+            return { serviceType, success: false, error };
         }
-    }
+    });
+
+    await Promise.allSettled(ratingPromises);
 }
 
 export async function handleRateEpisode(
@@ -79,7 +91,9 @@ export async function handleRateEpisode(
     const ratingServices =
         await filterEnabledAuthenticatedServices(allRatingServices);
 
-    for (const service of ratingServices) {
+    // Rate episode on ALL services in parallel
+    const ratingPromises = ratingServices.map(async (service) => {
+        const serviceType = service.getCapabilities().serviceType;
         try {
             await service.rateEpisode(
                 params.mediaInfo.show.ids,
@@ -87,13 +101,18 @@ export async function handleRateEpisode(
                 params.episodeInfo.number,
                 params.rating
             );
+            console.log(`✅ Successfully rated episode on ${serviceType}`);
+            return { serviceType, success: true };
         } catch (error) {
             console.error(
-                `Failed to rate episode on ${service.getCapabilities().serviceType}:`,
+                `❌ Failed to rate episode on ${serviceType}:`,
                 error
             );
+            return { serviceType, success: false, error };
         }
-    }
+    });
+
+    await Promise.allSettled(ratingPromises);
 }
 
 export async function handleUnrateMovie(
@@ -104,16 +123,23 @@ export async function handleUnrateMovie(
     const ratingServices =
         await filterEnabledAuthenticatedServices(allRatingServices);
 
-    for (const service of ratingServices) {
+    // Unrate movie on ALL services in parallel
+    const unratingPromises = ratingServices.map(async (service) => {
+        const serviceType = service.getCapabilities().serviceType;
         try {
             await service.unrateMovie(params.mediaInfo.movie.ids);
+            console.log(`✅ Successfully unrated movie on ${serviceType}`);
+            return { serviceType, success: true };
         } catch (error) {
             console.error(
-                `Failed to unrate movie on ${service.getCapabilities().serviceType}:`,
+                `❌ Failed to unrate movie on ${serviceType}:`,
                 error
             );
+            return { serviceType, success: false, error };
         }
-    }
+    });
+
+    await Promise.allSettled(unratingPromises);
 }
 
 export async function handleUnrateShow(
@@ -124,16 +150,20 @@ export async function handleUnrateShow(
     const ratingServices =
         await filterEnabledAuthenticatedServices(allRatingServices);
 
-    for (const service of ratingServices) {
+    // Unrate show on ALL services in parallel
+    const unratingPromises = ratingServices.map(async (service) => {
+        const serviceType = service.getCapabilities().serviceType;
         try {
             await service.unrateShow(params.mediaInfo.show.ids);
+            console.log(`✅ Successfully unrated show on ${serviceType}`);
+            return { serviceType, success: true };
         } catch (error) {
-            console.error(
-                `Failed to unrate show on ${service.getCapabilities().serviceType}:`,
-                error
-            );
+            console.error(`❌ Failed to unrate show on ${serviceType}:`, error);
+            return { serviceType, success: false, error };
         }
-    }
+    });
+
+    await Promise.allSettled(unratingPromises);
 }
 
 export async function handleUnrateSeason(
@@ -144,19 +174,26 @@ export async function handleUnrateSeason(
     const ratingServices =
         await filterEnabledAuthenticatedServices(allRatingServices);
 
-    for (const service of ratingServices) {
+    // Unrate season on ALL services in parallel
+    const unratingPromises = ratingServices.map(async (service) => {
+        const serviceType = service.getCapabilities().serviceType;
         try {
             await service.unrateSeason(
                 params.mediaInfo.show.ids,
                 params.episodeInfo.season
             );
+            console.log(`✅ Successfully unrated season on ${serviceType}`);
+            return { serviceType, success: true };
         } catch (error) {
             console.error(
-                `Failed to unrate season on ${service.getCapabilities().serviceType}:`,
+                `❌ Failed to unrate season on ${serviceType}:`,
                 error
             );
+            return { serviceType, success: false, error };
         }
-    }
+    });
+
+    await Promise.allSettled(unratingPromises);
 }
 
 export async function handleUnrateEpisode(
@@ -167,18 +204,25 @@ export async function handleUnrateEpisode(
     const ratingServices =
         await filterEnabledAuthenticatedServices(allRatingServices);
 
-    for (const service of ratingServices) {
+    // Unrate episode on ALL services in parallel
+    const unratingPromises = ratingServices.map(async (service) => {
+        const serviceType = service.getCapabilities().serviceType;
         try {
             await service.unrateEpisode(
                 params.mediaInfo.show.ids,
                 params.episodeInfo.season,
                 params.episodeInfo.number
             );
+            console.log(`✅ Successfully unrated episode on ${serviceType}`);
+            return { serviceType, success: true };
         } catch (error) {
             console.error(
-                `Failed to unrate episode on ${service.getCapabilities().serviceType}:`,
+                `❌ Failed to unrated episode on ${serviceType}:`,
                 error
             );
+            return { serviceType, success: false, error };
         }
-    }
+    });
+
+    await Promise.allSettled(unratingPromises);
 }
