@@ -1,4 +1,5 @@
 import { MediaInfoResponse, SeasonEpisodeObj } from '../types/media';
+import { TraktCooldownError } from '../types/serviceTypes';
 
 /**
  * Manages scrobble operations to prevent conflicts and race conditions
@@ -10,7 +11,7 @@ class ScrobbleOperationManager {
      * Generate a unique key for a scrobble operation
      */
     private generateOperationKey(
-        operation: 'stop' | 'pause',
+        operation: 'start' | 'stop' | 'pause',
         mediaInfo: MediaInfoResponse,
         episodeInfo?: SeasonEpisodeObj | null
     ): string {
@@ -26,7 +27,7 @@ class ScrobbleOperationManager {
      * Execute a scrobble operation with deduplication and retry logic
      */
     async executeOperation<T>(
-        operation: 'stop' | 'pause',
+        operation: 'start' | 'stop' | 'pause',
         mediaInfo: MediaInfoResponse,
         episodeInfo: SeasonEpisodeObj | null,
         executor: () => Promise<T>
@@ -77,6 +78,16 @@ class ScrobbleOperationManager {
         try {
             return await executor();
         } catch (error: any) {
+            // Handle 409 Conflict (duplicate scrobble) as success
+            if (error instanceof TraktCooldownError) {
+                console.log(
+                    `⚠️ Duplicate scrobble detected for ${operation} (${operationKey}): ${error.getCooldownMessage()}`
+                );
+                // Treat as success since content is already scrobbled
+                // Return a minimal success response for scrobble operations
+                return { success: true, alreadyScrobbled: true } as any;
+            }
+
             // Retry on rate limit (429) or network errors, up to 3 attempts
             if (
                 attempt < 3 &&

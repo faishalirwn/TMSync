@@ -35,6 +35,7 @@ export function useScrobbling(
         [serviceType: string]: number | string;
     }>({});
     const autoScrobblingDisabledRef = useRef(false);
+    const completedRef = useRef(false);
 
     const videoRef = useRef<HTMLVideoElement | null>(null);
     const lastPingTimeRef = useRef(0);
@@ -121,7 +122,7 @@ export function useScrobbling(
         });
 
         if (response.success && response.data) {
-            setStatus('idle');
+            // Set historyId BEFORE changing status to prevent race condition
             if (
                 response.data.action === 'watched' &&
                 response.data.traktHistoryId
@@ -132,6 +133,7 @@ export function useScrobbling(
                 );
                 historyIdRef.current = response.data.traktHistoryId;
                 autoScrobblingDisabledRef.current = false;
+                completedRef.current = true;
 
                 // Store service-specific history IDs for proper undo functionality
                 if (response.data.serviceHistoryIds) {
@@ -155,6 +157,9 @@ export function useScrobbling(
                     );
                 }
             }
+
+            // Set status to idle AFTER historyId is set to prevent race condition
+            setStatus('idle');
             return response.data;
         }
         return null;
@@ -172,6 +177,12 @@ export function useScrobbling(
             timeUpdateProcessingScheduledRef.current = false;
             if (!mediaInfo || !userConfirmedAction || pageUnloadRef.current)
                 return;
+
+            // Stop all operations if episode/movie is completed
+            if (completedRef.current) {
+                console.log('🚫 Skipping time update - episode completed');
+                return;
+            }
 
             setProgress(latestProgress);
 
@@ -271,6 +282,10 @@ export function useScrobbling(
     const handlePlay = useCallback(() => {
         if (!mediaInfo || !userConfirmedAction || !globalScrobblingEnabled)
             return;
+        if (completedRef.current) {
+            console.log('🚫 Skipping start on play - episode completed');
+            return;
+        }
         if (historyIdRef.current) {
             console.log(
                 '🚫 Skipping start on play - already completed (historyId:',
@@ -450,8 +465,10 @@ export function useScrobbling(
             historyIdRef.current = null;
             serviceHistoryIdsRef.current = {};
             autoScrobblingDisabledRef.current = true;
+            completedRef.current = false;
             console.log('✅ Cleared all history IDs after successful undo');
             console.log('🚫 Disabled auto-scrobbling after undo');
+            console.log('🔄 Reset completion state for re-scrobbling');
         }
         setIsProcessing(false);
         return response.success;

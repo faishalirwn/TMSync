@@ -18,6 +18,7 @@ import {
     ServiceMediaIds,
     ServiceMediaRatings,
     ServiceScrobbleResponse,
+    TraktCooldownError,
     ServiceCapabilities
 } from '../types/serviceTypes';
 import { scrobbleOperationManager } from '../background/scrobbleOperationManager';
@@ -424,15 +425,22 @@ export class TraktService implements TrackerService {
         episodeInfo: SeasonEpisodeObj | null,
         progress: number
     ): Promise<void> {
-        const payload = this.buildScrobblePayload(
+        return scrobbleOperationManager.executeOperation(
+            'start',
             mediaInfo,
             episodeInfo,
-            progress
-        );
-        await this.callApi(
-            'https://api.trakt.tv/scrobble/start',
-            'POST',
-            payload
+            async () => {
+                const payload = this.buildScrobblePayload(
+                    mediaInfo,
+                    episodeInfo,
+                    progress
+                );
+                await this.callApi(
+                    'https://api.trakt.tv/scrobble/start',
+                    'POST',
+                    payload
+                );
+            }
         );
     }
 
@@ -1151,9 +1159,31 @@ export class TraktService implements TrackerService {
         });
 
         if (!response.ok) {
-            throw new Error(
+            // Handle 409 Conflict responses specifically (duplicate scrobble)
+            if (response.status === 409) {
+                try {
+                    const errorData = await response.json();
+                    if (errorData.watched_at && errorData.expires_at) {
+                        throw new TraktCooldownError(
+                            'Already scrobbled recently',
+                            errorData.watched_at,
+                            errorData.expires_at
+                        );
+                    }
+                } catch (parseError) {
+                    if (parseError instanceof TraktCooldownError) {
+                        throw parseError;
+                    }
+                    // If we can't parse the 409 response, fall through to generic error
+                }
+            }
+
+            // Preserve HTTP status for other error handling
+            const error = new Error(
                 `Trakt API error: ${response.status} ${response.statusText}`
             );
+            (error as any).status = response.status;
+            throw error;
         }
 
         const contentType = response.headers.get('content-type');

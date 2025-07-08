@@ -148,3 +148,39 @@ export interface ServiceCapabilities {
         requestsPerHour: number;
     };
 }
+
+/**
+ * Custom error for Trakt 409 Conflict responses (duplicate scrobble)
+ */
+export class TraktCooldownError extends Error {
+    public readonly status: number = 409;
+    public readonly watchedAt: Date;
+    public readonly expiresAt: Date;
+
+    constructor(message: string, watchedAt: string, expiresAt: string) {
+        super(message);
+        this.name = 'TraktCooldownError';
+        this.watchedAt = new Date(watchedAt);
+        this.expiresAt = new Date(expiresAt);
+    }
+
+    /**
+     * Get remaining cooldown time in milliseconds
+     */
+    getRemainingCooldown(): number {
+        return Math.max(0, this.expiresAt.getTime() - Date.now());
+    }
+
+    /**
+     * Get user-friendly cooldown message
+     */
+    getCooldownMessage(): string {
+        const remainingMs = this.getRemainingCooldown();
+        if (remainingMs <= 0) {
+            return 'You can scrobble again now';
+        }
+
+        const minutes = Math.ceil(remainingMs / (1000 * 60));
+        return `Already scrobbled recently. Wait ${minutes} minute${minutes !== 1 ? 's' : ''} before scrobbling again.`;
+    }
+}
