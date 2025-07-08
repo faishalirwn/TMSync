@@ -430,24 +430,11 @@ export class TraktService implements TrackerService {
             progress
         );
 
-        try {
-            await this.callApi(
-                'https://api.trakt.tv/scrobble/start',
-                'POST',
-                payload
-            );
-        } catch (error: any) {
-            // Handle 409 Conflict (duplicate scrobble) as success
-            if (error instanceof TraktCooldownError) {
-                console.log(
-                    `⚠️ Duplicate scrobble detected for start: ${error.getCooldownMessage()}`
-                );
-                // Treat as success since content is already being scrobbled
-                return;
-            }
-            // Re-throw other errors
-            throw error;
-        }
+        await this.callApi(
+            'https://api.trakt.tv/scrobble/start',
+            'POST',
+            payload
+        );
     }
 
     /**
@@ -464,24 +451,11 @@ export class TraktService implements TrackerService {
             progress
         );
 
-        try {
-            await this.callApi(
-                'https://api.trakt.tv/scrobble/pause',
-                'POST',
-                payload
-            );
-        } catch (error: any) {
-            // Handle 409 Conflict (duplicate scrobble) as success
-            if (error instanceof TraktCooldownError) {
-                console.log(
-                    `⚠️ Duplicate scrobble detected for pause: ${error.getCooldownMessage()}`
-                );
-                // Treat as success since content is already being scrobbled
-                return;
-            }
-            // Re-throw other errors
-            throw error;
-        }
+        await this.callApi(
+            'https://api.trakt.tv/scrobble/pause',
+            'POST',
+            payload
+        );
     }
 
     /**
@@ -498,51 +472,33 @@ export class TraktService implements TrackerService {
             progress
         );
 
-        try {
-            const response = await this.callApi(
-                'https://api.trakt.tv/scrobble/stop',
-                'POST',
-                payload
-            );
+        const response = await this.callApi(
+            'https://api.trakt.tv/scrobble/stop',
+            'POST',
+            payload
+        );
 
-            console.log('🛑 Trakt scrobble stop response:', {
-                progress,
-                responseAction: response?.action,
-                responseId: response?.id
-            });
+        console.log('🛑 Trakt scrobble stop response:', {
+            progress,
+            responseAction: response?.action,
+            responseId: response?.id
+        });
 
-            // Use Trakt's response to determine the action, not our own threshold
-            // Trakt decides based on its own logic whether this should be "scrobble" (watched) or "pause"
-            if (response?.action === 'scrobble') {
-                return {
-                    action: 'watched',
-                    historyId: response?.id,
-                    serviceType: 'trakt'
-                };
-            } else {
-                // Trakt returned "pause" - meaning it doesn't consider this completed
-                return {
-                    action: 'paused_incomplete',
-                    historyId: response?.id, // Still include ID in case it's useful
-                    serviceType: 'trakt'
-                };
-            }
-        } catch (error: any) {
-            // Handle 409 Conflict (duplicate scrobble) as success
-            if (error instanceof TraktCooldownError) {
-                console.log(
-                    `⚠️ Duplicate scrobble detected for stop: ${error.getCooldownMessage()}`
-                );
-                // Treat as success since content is already scrobbled
-                // Use a special historyId to indicate 409 conflict but still mark as watched
-                return {
-                    action: 'watched',
-                    historyId: -1, // Special ID for 409 conflicts
-                    serviceType: 'trakt'
-                };
-            }
-            // Re-throw other errors
-            throw error;
+        // Use Trakt's response to determine the action, not our own threshold
+        // Trakt decides based on its own logic whether this should be "scrobble" (watched) or "pause"
+        if (response?.action === 'scrobble') {
+            return {
+                action: 'watched',
+                historyId: response?.id,
+                serviceType: 'trakt'
+            };
+        } else {
+            // Trakt returned "pause" - meaning it doesn't consider this completed
+            return {
+                action: 'paused_incomplete',
+                historyId: response?.id, // Still include ID in case it's useful
+                serviceType: 'trakt'
+            };
         }
     }
 

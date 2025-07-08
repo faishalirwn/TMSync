@@ -36,6 +36,7 @@ export function useScrobbling(
     }>({});
     const autoScrobblingDisabledRef = useRef(false);
     const completedRef = useRef(false);
+    const conflictCompletedRef = useRef(false); // Track completion from conflicts
 
     const videoRef = useRef<HTMLVideoElement | null>(null);
     const lastPingTimeRef = useRef(0);
@@ -132,38 +133,83 @@ export function useScrobbling(
 
             if (response.success && response.data) {
                 // Set historyId BEFORE changing status to prevent race condition
-                if (
-                    response.data.action === 'watched' &&
-                    response.data.traktHistoryId
-                ) {
-                    console.log(
-                        '✅ Setting historyId to prevent future starts:',
-                        response.data.traktHistoryId
-                    );
-                    historyIdRef.current = response.data.traktHistoryId;
-                    autoScrobblingDisabledRef.current = false;
-                    completedRef.current = true;
+                if (response.data.action === 'watched') {
+                    // Check if ANY service succeeded (not just Trakt)
+                    const hasAnyServiceSuccess =
+                        response.data.traktHistoryId ||
+                        (response.data.serviceHistoryIds &&
+                            Object.keys(response.data.serviceHistoryIds)
+                                .length > 0);
 
-                    // Store service-specific history IDs for proper undo functionality
-                    if (response.data.serviceHistoryIds) {
-                        serviceHistoryIdsRef.current =
-                            response.data.serviceHistoryIds;
-                        console.log(
-                            '💾 Stored service-specific history IDs:',
-                            response.data.serviceHistoryIds
-                        );
-                    }
+                    if (hasAnyServiceSuccess) {
+                        // Check if this is a conflict (special ID -1) or real completion
+                        const isConflict =
+                            response.data.traktHistoryId === -1 ||
+                            (response.data.serviceHistoryIds &&
+                                Object.values(
+                                    response.data.serviceHistoryIds
+                                ).includes(-1));
 
-                    if (
-                        isRewatchSession &&
-                        isShowMediaInfo(mediaInfo) &&
-                        episodeInfo
-                    ) {
-                        await saveLocalRewatchInfo(
-                            mediaInfo.show.ids.trakt,
-                            episodeInfo.season,
-                            episodeInfo.number
-                        );
+                        if (isConflict) {
+                            console.log(
+                                '⚠️ Marking as completed due to conflict - no undo available'
+                            );
+                            conflictCompletedRef.current = true;
+                            autoScrobblingDisabledRef.current = false;
+                            completedRef.current = true;
+                            // Don't set historyId for conflicts - no undo possible
+                        } else {
+                            console.log(
+                                '✅ Marking as completed with real history IDs'
+                            );
+                            autoScrobblingDisabledRef.current = false;
+                            completedRef.current = true;
+
+                            // Set Trakt history ID if available (for legacy compatibility)
+                            if (response.data.traktHistoryId) {
+                                historyIdRef.current =
+                                    response.data.traktHistoryId;
+                                console.log(
+                                    '💾 Stored Trakt history ID:',
+                                    response.data.traktHistoryId
+                                );
+                            }
+
+                            // Store service-specific history IDs for proper undo functionality
+                            if (response.data.serviceHistoryIds) {
+                                // Filter out conflict IDs (-1) from service history IDs
+                                const realServiceHistoryIds =
+                                    Object.fromEntries(
+                                        Object.entries(
+                                            response.data.serviceHistoryIds
+                                        ).filter(([, id]) => id !== -1)
+                                    );
+
+                                if (
+                                    Object.keys(realServiceHistoryIds).length >
+                                    0
+                                ) {
+                                    serviceHistoryIdsRef.current =
+                                        realServiceHistoryIds;
+                                    console.log(
+                                        '💾 Stored service-specific history IDs:',
+                                        realServiceHistoryIds
+                                    );
+                                }
+                            }
+                        }
+
+                        if (
+                            isRewatchSession &&
+                            isShowMediaInfo(mediaInfo) &&
+                            episodeInfo
+                        ) {
+                            await saveLocalRewatchInfo(
+                                mediaInfo.show.ids.trakt,
+                                episodeInfo.season,
+                                episodeInfo.number
+                            );
+                        }
                     }
                 }
 
@@ -211,6 +257,7 @@ export function useScrobbling(
                 if (
                     latestProgress >= TRAKT_SCROBBLE_COMPLETION_THRESHOLD &&
                     !historyIdRef.current &&
+                    !conflictCompletedRef.current &&
                     globalScrobblingEnabled &&
                     !autoScrobblingDisabledRef.current
                 ) {
@@ -413,6 +460,17 @@ export function useScrobbling(
         return () => window.removeEventListener('beforeunload', handler);
     }, []);
 
+    // Reset state when media changes
+    useEffect(() => {
+        historyIdRef.current = null;
+        serviceHistoryIdsRef.current = {};
+        autoScrobblingDisabledRef.current = false;
+        completedRef.current = false;
+        conflictCompletedRef.current = false;
+        setStatus('idle');
+        setProgress(0);
+    }, [mediaInfo, episodeInfo]);
+
     const manualScrobble = useCallback(async () => {
         if (!mediaInfo) return;
         setIsProcessing(true);
@@ -447,10 +505,14 @@ export function useScrobbling(
     }, [mediaInfo, episodeInfo, status, sendMessage, sendScrobblePause]);
 
     const undoScrobble = useCallback(async () => {
+        // Only allow undo if we have real history IDs (not just conflict completion)
         if (
             !historyIdRef.current &&
             Object.keys(serviceHistoryIdsRef.current).length === 0
         ) {
+            console.log(
+                '⚠️ No real history IDs available - cannot undo conflict completions'
+            );
             return false;
         }
         setIsProcessing(true);
@@ -471,6 +533,7 @@ export function useScrobbling(
         if (response.success) {
             historyIdRef.current = null;
             serviceHistoryIdsRef.current = {};
+            conflictCompletedRef.current = false;
             autoScrobblingDisabledRef.current = true;
             completedRef.current = false;
             console.log('✅ Cleared all history IDs after successful undo');

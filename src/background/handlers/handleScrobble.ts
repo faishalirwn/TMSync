@@ -11,13 +11,58 @@ import { scrobbleState, resetActiveScrobbleState } from '../state';
 import { filterEnabledAuthenticatedServices } from '../../utils/serviceFiltering';
 import { isServiceEnabled } from '../../utils/servicePreferences';
 import { scrobbleOperationManager } from '../scrobbleOperationManager';
+import { TraktCooldownError } from '../../types/serviceTypes';
+
+/**
+ * Detects if an error from a service should be treated as a "successful failure"
+ * (like conflicts/duplicates that indicate the operation already succeeded)
+ */
+function isServiceConflictError(error: any, serviceType: string): boolean {
+    // Trakt 409 conflicts
+    if (error instanceof TraktCooldownError) {
+        return true;
+    }
+
+    // AniList conflicts (example patterns)
+    if (serviceType === 'anilist') {
+        // Check for AniList-specific conflict patterns
+        if (
+            error?.message?.includes('already exists') ||
+            error?.message?.includes('duplicate') ||
+            error?.status === 409
+        ) {
+            return true;
+        }
+    }
+
+    // MAL conflicts (example patterns)
+    if (serviceType === 'mal') {
+        // Check for MAL-specific conflict patterns
+        if (
+            error?.message?.includes('already in list') ||
+            error?.status === 409
+        ) {
+            return true;
+        }
+    }
+
+    // Generic conflict detection
+    if (
+        error?.status === 409 ||
+        error?.message?.toLowerCase().includes('conflict') ||
+        error?.message?.toLowerCase().includes('duplicate')
+    ) {
+        return true;
+    }
+
+    return false;
+}
 
 export async function handleScrobbleStart(
     params: RequestScrobbleStartParams,
     sender: chrome.runtime.MessageSender
 ): Promise<void> {
     if (!sender.tab?.id) throw new Error('Tab ID missing for scrobble start');
-    const tabId = sender.tab.id;
 
     console.log(
         '🎬 Starting scrobble for:',
@@ -185,7 +230,7 @@ export async function handleScrobblePause(
 
 async function executeScrobblePause(
     params: RequestScrobblePauseParams,
-    sender: chrome.runtime.MessageSender
+    _sender: chrome.runtime.MessageSender
 ): Promise<void> {
     // Get services that support real-time scrobbling (filtered by user preferences + auth)
     const allRealTimeServices = serviceRegistry.getServicesWithCapability(
@@ -334,6 +379,35 @@ async function executeScrobbleStop(
                 serviceStatusManager.updateServiceActivity(serviceType, 'idle');
                 return { serviceType, success: true, result, type: 'stop' };
             } catch (error) {
+                // Check if this is a "successful failure" (conflict/duplicate)
+                const isConflictError = isServiceConflictError(
+                    error,
+                    serviceType
+                );
+
+                if (isConflictError) {
+                    console.log(
+                        `⚠️ Conflict detected for ${serviceType} stop - treating as success`
+                    );
+                    // Create a successful response with special conflict ID
+                    const conflictResult = {
+                        action: 'watched' as const,
+                        historyId: -1, // Special ID for conflicts
+                        serviceType: serviceType as any
+                    };
+
+                    serviceStatusManager.updateServiceActivity(
+                        serviceType,
+                        'idle'
+                    );
+                    return {
+                        serviceType,
+                        success: true,
+                        result: conflictResult,
+                        type: 'stop'
+                    };
+                }
+
                 console.error(
                     `❌ Failed to stop scrobble on ${serviceType}:`,
                     error
@@ -373,6 +447,33 @@ async function executeScrobbleStop(
                 serviceStatusManager.updateServiceActivity(serviceType, 'idle');
                 return { serviceType, success: true, result, type: 'history' };
             } catch (error) {
+                // Check if this is a "successful failure" (conflict/duplicate)
+                const isConflictError = isServiceConflictError(
+                    error,
+                    serviceType
+                );
+
+                if (isConflictError) {
+                    console.log(
+                        `⚠️ Conflict detected for ${serviceType} addToHistory - treating as success`
+                    );
+                    // Create a successful response with special conflict ID
+                    const conflictResult = {
+                        historyId: -1 // Special ID for conflicts
+                    };
+
+                    serviceStatusManager.updateServiceActivity(
+                        serviceType,
+                        'idle'
+                    );
+                    return {
+                        serviceType,
+                        success: true,
+                        result: conflictResult,
+                        type: 'history'
+                    };
+                }
+
                 console.error(
                     `❌ Failed to add to history on ${serviceType}:`,
                     error
