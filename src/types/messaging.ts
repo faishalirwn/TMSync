@@ -149,7 +149,8 @@ export interface MessageResponse<T> {
 }
 
 export interface ScrobbleResponse {
-    traktHistoryId: number;
+    traktHistoryId?: number;
+    serviceHistoryIds?: { [serviceType: string]: number | string };
 }
 
 export type MediaInfoMessageResponse = MessageResponse<MediaStatusPayload>;

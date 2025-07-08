@@ -13,27 +13,50 @@ export async function handleManualAddToHistory(
     const historyServices =
         await filterEnabledAuthenticatedServices(allHistoryServices);
 
-    // Use primary service for history response (return the first successful result)
+    const serviceHistoryIds: { [serviceType: string]: number | string } = {};
+    let traktHistoryId: number | undefined;
+    let hasAnySuccess = false;
+
+    // Add to ALL enabled services, not just first successful
     for (const service of historyServices) {
+        const serviceType = service.getCapabilities().serviceType;
         try {
+            console.log(`📝 Adding to history on ${serviceType}...`);
             const result = await service.addToHistory(
                 params.mediaInfo,
                 params.episodeInfo || null
             );
-            const historyId =
-                typeof result.historyId === 'string'
-                    ? parseInt(result.historyId, 10)
-                    : result.historyId!;
-            return { traktHistoryId: historyId };
+
+            if (result.historyId) {
+                serviceHistoryIds[serviceType] = result.historyId;
+                hasAnySuccess = true;
+
+                // Keep legacy traktHistoryId for backward compatibility
+                if (serviceType === 'trakt') {
+                    traktHistoryId =
+                        typeof result.historyId === 'string'
+                            ? parseInt(result.historyId, 10)
+                            : result.historyId;
+                }
+
+                console.log(`✅ Successfully added to ${serviceType} history`);
+            }
         } catch (error) {
             console.error(
-                `Failed to add to history on ${service.getCapabilities().serviceType}:`,
+                `❌ Failed to add to history on ${serviceType}:`,
                 error
             );
         }
     }
 
-    throw new Error('No available services to add to history');
+    if (!hasAnySuccess) {
+        throw new Error('Failed to add to history on all available services');
+    }
+
+    return {
+        traktHistoryId,
+        serviceHistoryIds
+    };
 }
 
 export async function handleUndoScrobble(params: {

@@ -399,12 +399,25 @@ export function useScrobbling(
             mediaInfo,
             episodeInfo: episodeInfo || undefined
         };
-        const response = await sendMessage<{ traktHistoryId?: number }>({
+        const response = await sendMessage<{
+            traktHistoryId?: number;
+            serviceHistoryIds?: { [serviceType: string]: number | string };
+        }>({
             action: 'requestManualAddToHistory',
             params
         });
-        if (response.success && response.data?.traktHistoryId) {
-            historyIdRef.current = response.data.traktHistoryId;
+        if (response.success && response.data) {
+            // Store both legacy and service-specific IDs
+            if (response.data.traktHistoryId) {
+                historyIdRef.current = response.data.traktHistoryId;
+            }
+            if (response.data.serviceHistoryIds) {
+                serviceHistoryIdsRef.current = response.data.serviceHistoryIds;
+                console.log(
+                    '💾 Stored service-specific history IDs from manual add:',
+                    response.data.serviceHistoryIds
+                );
+            }
             autoScrobblingDisabledRef.current = false;
             console.log('✅ Re-enabled auto-scrobbling after manual scrobble');
         }
