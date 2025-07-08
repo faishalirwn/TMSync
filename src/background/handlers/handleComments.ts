@@ -18,23 +18,34 @@ export async function handleGetComments(
     const commentServices =
         await filterEnabledAuthenticatedServices(allCommentServices);
 
-    const allComments: ServiceComment[] = [];
-
-    for (const service of commentServices) {
+    // Get comments from ALL services in parallel
+    const commentPromises = commentServices.map(async (service) => {
+        const serviceType = service.getCapabilities().serviceType;
         try {
             const comments = await service.getComments(
                 type,
                 mediaInfo,
                 episodeInfo
             );
-            allComments.push(...comments);
+            console.log(`✅ Successfully fetched comments from ${serviceType}`);
+            return comments;
         } catch (error) {
             console.error(
-                `Failed to get comments from ${service.getCapabilities().serviceType}:`,
+                `❌ Failed to get comments from ${serviceType}:`,
                 error
             );
+            return [];
         }
-    }
+    });
+
+    const results = await Promise.allSettled(commentPromises);
+    const allComments: ServiceComment[] = [];
+
+    results.forEach((result) => {
+        if (result.status === 'fulfilled') {
+            allComments.push(...result.value);
+        }
+    });
 
     return allComments;
 }
@@ -54,15 +65,11 @@ export async function handlePostComment(
         commentServices.map((s) => s.getCapabilities().serviceType)
     );
 
-    // Post to all enabled services (multi-service approach)
-    const results: ServiceComment[] = [];
-    const errors: string[] = [];
-
-    for (const service of commentServices) {
+    // Post to ALL enabled services in parallel
+    const postPromises = commentServices.map(async (service) => {
+        const serviceType = service.getCapabilities().serviceType;
         try {
-            console.log(
-                `📝 Posting to ${service.getCapabilities().serviceType}...`
-            );
+            console.log(`📝 Posting to ${serviceType}...`);
             const result = await service.postComment(
                 type,
                 mediaInfo,
@@ -70,17 +77,28 @@ export async function handlePostComment(
                 spoiler,
                 episodeInfo
             );
-            results.push(result);
-            console.log(
-                `✅ Successfully posted to ${service.getCapabilities().serviceType}`
-            );
+            console.log(`✅ Successfully posted to ${serviceType}`);
+            return { success: true, result, serviceType };
         } catch (error) {
-            const serviceName = service.getCapabilities().serviceType;
-            const errorMsg = `Failed to post comment on ${serviceName}: ${error}`;
-            console.error(errorMsg);
-            errors.push(errorMsg);
+            const errorMsg = `Failed to post comment on ${serviceType}: ${error}`;
+            console.error(`❌ ${errorMsg}`);
+            return { success: false, error: errorMsg, serviceType };
         }
-    }
+    });
+
+    const postResults = await Promise.allSettled(postPromises);
+    const results: ServiceComment[] = [];
+    const errors: string[] = [];
+
+    postResults.forEach((result) => {
+        if (result.status === 'fulfilled' && result.value) {
+            if (result.value.success && result.value.result) {
+                results.push(result.value.result);
+            } else if (!result.value.success && result.value.error) {
+                errors.push(result.value.error);
+            }
+        }
+    });
 
     if (results.length === 0) {
         throw new Error(
@@ -129,14 +147,21 @@ export async function handleDeleteComment(
     const commentServices =
         await filterEnabledAuthenticatedServices(allCommentServices);
 
-    for (const service of commentServices) {
+    // Delete comment from ALL services in parallel
+    const deletePromises = commentServices.map(async (service) => {
+        const serviceType = service.getCapabilities().serviceType;
         try {
             await service.deleteComment(params.commentId);
+            console.log(`✅ Successfully deleted comment from ${serviceType}`);
+            return { serviceType, success: true };
         } catch (error) {
             console.error(
-                `Failed to delete comment on ${service.getCapabilities().serviceType}:`,
+                `❌ Failed to delete comment on ${serviceType}:`,
                 error
             );
+            return { serviceType, success: false, error };
         }
-    }
+    });
+
+    await Promise.allSettled(deletePromises);
 }
