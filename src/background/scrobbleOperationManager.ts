@@ -1,5 +1,4 @@
 import { MediaInfoResponse, SeasonEpisodeObj } from '../types/media';
-import { TraktCooldownError } from '../types/serviceTypes';
 
 /**
  * Manages scrobble operations to prevent conflicts and race conditions
@@ -78,17 +77,8 @@ class ScrobbleOperationManager {
         try {
             return await executor();
         } catch (error: any) {
-            // Handle 409 Conflict (duplicate scrobble) as success
-            if (error instanceof TraktCooldownError) {
-                console.log(
-                    `⚠️ Duplicate scrobble detected for ${operation} (${operationKey}): ${error.getCooldownMessage()}`
-                );
-                // Treat as success since content is already scrobbled
-                // Return a minimal success response for scrobble operations
-                return { success: true, alreadyScrobbled: true } as any;
-            }
-
             // Retry on rate limit (429) or network errors, up to 3 attempts
+            // Note: 409 conflicts are now handled at the service level
             if (
                 attempt < 3 &&
                 (error?.status === 429 ||

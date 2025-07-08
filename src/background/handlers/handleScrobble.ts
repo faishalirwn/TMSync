@@ -10,6 +10,7 @@ import { serviceStatusManager } from '../serviceStatusManager';
 import { scrobbleState, resetActiveScrobbleState } from '../state';
 import { filterEnabledAuthenticatedServices } from '../../utils/serviceFiltering';
 import { isServiceEnabled } from '../../utils/servicePreferences';
+import { scrobbleOperationManager } from '../scrobbleOperationManager';
 
 export async function handleScrobbleStart(
     params: RequestScrobbleStartParams,
@@ -23,6 +24,27 @@ export async function handleScrobbleStart(
         params.mediaInfo.type,
         params.mediaInfo
     );
+
+    // Use operation manager to deduplicate concurrent start requests
+    console.log(
+        '🔒 handleScrobbleStart called - checking for duplicate operations'
+    );
+    return scrobbleOperationManager.executeOperation(
+        'start',
+        params.mediaInfo,
+        params.episodeInfo || null,
+        async () => {
+            console.log('🚀 executeScrobbleStart - executing unique operation');
+            return await executeScrobbleStart(params, sender);
+        }
+    );
+}
+
+async function executeScrobbleStart(
+    params: RequestScrobbleStartParams,
+    sender: chrome.runtime.MessageSender
+): Promise<void> {
+    const tabId = sender.tab!.id;
 
     // Get services that support real-time scrobbling (filtered by user preferences + auth)
     const allRealTimeServices = serviceRegistry.getServicesWithCapability(
@@ -123,14 +145,14 @@ export async function handleScrobbleStart(
 
     // Update the global scrobble state (keeping legacy structure for now)
     scrobbleState.current = {
-        tabId: tabId,
+        tabId: tabId || null,
         mediaInfo: params.mediaInfo,
         episodeInfo: params.episodeInfo,
         currentProgress: params.progress,
         status: 'started',
         traktMediaType: params.mediaInfo.type === 'movie' ? 'movie' : 'episode',
         lastUpdateTime: Date.now(),
-        previousScrobbledUrl: sender.tab.url
+        previousScrobbledUrl: sender.tab?.url || ''
     };
 }
 
@@ -146,6 +168,25 @@ export async function handleScrobblePause(
         throw new Error('Scrobble not active on this tab or not started.');
     }
 
+    // Use operation manager to deduplicate concurrent pause requests
+    console.log(
+        '🔒 handleScrobblePause called - checking for duplicate operations'
+    );
+    return scrobbleOperationManager.executeOperation(
+        'pause',
+        params.mediaInfo,
+        params.episodeInfo || null,
+        async () => {
+            console.log('🚀 executeScrobblePause - executing unique operation');
+            return await executeScrobblePause(params, sender);
+        }
+    );
+}
+
+async function executeScrobblePause(
+    params: RequestScrobblePauseParams,
+    sender: chrome.runtime.MessageSender
+): Promise<void> {
     // Get services that support real-time scrobbling (filtered by user preferences + auth)
     const allRealTimeServices = serviceRegistry.getServicesWithCapability(
         'supportsRealTimeScrobbling'
@@ -211,6 +252,25 @@ export async function handleScrobbleStop(
         throw new Error('Scrobble not active on this tab for stop.');
     }
 
+    // Use operation manager to deduplicate concurrent stop requests
+    console.log(
+        '🔒 handleScrobbleStop called - checking for duplicate operations'
+    );
+    return scrobbleOperationManager.executeOperation(
+        'stop',
+        params.mediaInfo,
+        params.episodeInfo || null,
+        async () => {
+            console.log('🚀 executeScrobbleStop - executing unique operation');
+            return await executeScrobbleStop(params, sender);
+        }
+    );
+}
+
+async function executeScrobbleStop(
+    params: RequestScrobbleStopParams,
+    _sender: chrome.runtime.MessageSender
+): Promise<ScrobbleStopResponseData> {
     // Get services that support real-time scrobbling (filtered by user preferences + auth)
     const allRealTimeServices = serviceRegistry.getServicesWithCapability(
         'supportsRealTimeScrobbling'

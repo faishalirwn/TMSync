@@ -54,30 +54,36 @@ export function useScrobbling(
     );
 
     const sendScrobbleStart = useCallback(async () => {
-        if (!mediaInfo) return;
+        if (!mediaInfo || isProcessing) return;
         const now = Date.now();
         if (
             now - lastSentActionTimestampRef.current <
             MIN_TIME_BETWEEN_ACTIONS_MS * 2
         )
             return;
+
+        setIsProcessing(true);
         lastSentActionTimestampRef.current = now;
 
-        const params: RequestScrobbleStartParams = {
-            mediaInfo,
-            episodeInfo: episodeInfo || undefined,
-            progress
-        };
-        const response = await sendMessage({
-            action: 'requestScrobbleStart',
-            params
-        });
-        if (response.success) {
-            setStatus('started');
-            lastPingTimeRef.current = now;
-            lastReportedProgressRef.current = progress;
+        try {
+            const params: RequestScrobbleStartParams = {
+                mediaInfo,
+                episodeInfo: episodeInfo || undefined,
+                progress
+            };
+            const response = await sendMessage({
+                action: 'requestScrobbleStart',
+                params
+            });
+            if (response.success) {
+                setStatus('started');
+                lastPingTimeRef.current = now;
+                lastReportedProgressRef.current = progress;
+            }
+        } finally {
+            setIsProcessing(false);
         }
-    }, [mediaInfo, episodeInfo, progress, sendMessage]);
+    }, [mediaInfo, episodeInfo, progress, sendMessage, isProcessing]);
 
     const sendScrobblePause = useCallback(async () => {
         if (!mediaInfo || status !== 'started') return;
@@ -102,85 +108,94 @@ export function useScrobbling(
     }, [mediaInfo, episodeInfo, progress, status, sendMessage]);
 
     const sendScrobbleStop = useCallback(async () => {
-        if (!mediaInfo || status === 'idle') return null;
+        if (!mediaInfo || status === 'idle' || isProcessing) return null;
         const now = Date.now();
         if (
             now - lastSentActionTimestampRef.current <
             MIN_TIME_BETWEEN_ACTIONS_MS
         )
             return null;
+
+        setIsProcessing(true);
         lastSentActionTimestampRef.current = now;
 
-        const params: RequestScrobbleStopParams = {
-            mediaInfo: mediaInfo!,
-            episodeInfo: episodeInfo || undefined,
-            progress
-        };
-        const response = await sendMessage<ScrobbleStopResponseData>({
-            action: 'requestScrobbleStop',
-            params
-        });
+        try {
+            const params: RequestScrobbleStopParams = {
+                mediaInfo: mediaInfo!,
+                episodeInfo: episodeInfo || undefined,
+                progress
+            };
+            const response = await sendMessage<ScrobbleStopResponseData>({
+                action: 'requestScrobbleStop',
+                params
+            });
 
-        if (response.success && response.data) {
-            // Set historyId BEFORE changing status to prevent race condition
-            if (
-                response.data.action === 'watched' &&
-                response.data.traktHistoryId
-            ) {
-                console.log(
-                    '✅ Setting historyId to prevent future starts:',
-                    response.data.traktHistoryId
-                );
-                historyIdRef.current = response.data.traktHistoryId;
-                autoScrobblingDisabledRef.current = false;
-                completedRef.current = true;
-
-                // Store service-specific history IDs for proper undo functionality
-                if (response.data.serviceHistoryIds) {
-                    serviceHistoryIdsRef.current =
-                        response.data.serviceHistoryIds;
-                    console.log(
-                        '💾 Stored service-specific history IDs:',
-                        response.data.serviceHistoryIds
-                    );
-                }
-
+            if (response.success && response.data) {
+                // Set historyId BEFORE changing status to prevent race condition
                 if (
-                    isRewatchSession &&
-                    isShowMediaInfo(mediaInfo) &&
-                    episodeInfo
+                    response.data.action === 'watched' &&
+                    response.data.traktHistoryId
                 ) {
-                    await saveLocalRewatchInfo(
-                        mediaInfo.show.ids.trakt,
-                        episodeInfo.season,
-                        episodeInfo.number
+                    console.log(
+                        '✅ Setting historyId to prevent future starts:',
+                        response.data.traktHistoryId
                     );
-                }
-            }
+                    historyIdRef.current = response.data.traktHistoryId;
+                    autoScrobblingDisabledRef.current = false;
+                    completedRef.current = true;
 
-            // Set status to idle AFTER historyId is set to prevent race condition
-            setStatus('idle');
-            return response.data;
+                    // Store service-specific history IDs for proper undo functionality
+                    if (response.data.serviceHistoryIds) {
+                        serviceHistoryIdsRef.current =
+                            response.data.serviceHistoryIds;
+                        console.log(
+                            '💾 Stored service-specific history IDs:',
+                            response.data.serviceHistoryIds
+                        );
+                    }
+
+                    if (
+                        isRewatchSession &&
+                        isShowMediaInfo(mediaInfo) &&
+                        episodeInfo
+                    ) {
+                        await saveLocalRewatchInfo(
+                            mediaInfo.show.ids.trakt,
+                            episodeInfo.season,
+                            episodeInfo.number
+                        );
+                    }
+                }
+
+                // Set status to idle AFTER historyId is set to prevent race condition
+                setStatus('idle');
+                return response.data;
+            }
+            return null;
+        } finally {
+            setIsProcessing(false);
         }
-        return null;
     }, [
         mediaInfo,
         episodeInfo,
         progress,
         status,
         isRewatchSession,
-        sendMessage
+        sendMessage,
+        isProcessing
     ]);
 
     const processThrottledTimeUpdate = useCallback(
         async (latestProgress: number) => {
-            timeUpdateProcessingScheduledRef.current = false;
-            if (!mediaInfo || !userConfirmedAction || pageUnloadRef.current)
+            if (!mediaInfo || !userConfirmedAction || pageUnloadRef.current) {
+                timeUpdateProcessingScheduledRef.current = false;
                 return;
+            }
 
             // Stop all operations if episode/movie is completed
             if (completedRef.current) {
                 console.log('🚫 Skipping time update - episode completed');
+                timeUpdateProcessingScheduledRef.current = false;
                 return;
             }
 
@@ -192,13 +207,7 @@ export function useScrobbling(
                     latestProgress - lastReportedProgressRef.current
                 );
 
-                if (
-                    now - lastPingTimeRef.current > WATCHING_PING_INTERVAL_MS ||
-                    progressDelta >= 5
-                ) {
-                    await sendScrobbleStart();
-                }
-
+                // Priority: Stop takes precedence over start to avoid conflicting operations
                 if (
                     latestProgress >= TRAKT_SCROBBLE_COMPLETION_THRESHOLD &&
                     !historyIdRef.current &&
@@ -212,8 +221,16 @@ export function useScrobbling(
                         historyIdRef.current
                     );
                     await sendScrobbleStop();
+                } else if (
+                    now - lastPingTimeRef.current > WATCHING_PING_INTERVAL_MS ||
+                    progressDelta >= 5
+                ) {
+                    await sendScrobbleStart();
                 }
             }
+
+            // Reset flag at the end to prevent race conditions
+            timeUpdateProcessingScheduledRef.current = false;
         },
         [
             mediaInfo,
@@ -258,16 +275,6 @@ export function useScrobbling(
         if (seekDetectedRef.current) {
             console.log('⏭️ Skipping progress update due to recent seek');
             return;
-        }
-
-        // Debug logging for progress calculation
-        if (currentProgress > 80 || currentProgress < 5) {
-            console.log('📊 Video progress calculation:', {
-                currentTime,
-                duration,
-                calculatedProgress: currentProgress,
-                ratio: currentTime / duration
-            });
         }
 
         if (!timeUpdateProcessingScheduledRef.current) {
