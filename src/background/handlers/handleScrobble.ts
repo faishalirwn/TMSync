@@ -87,9 +87,9 @@ export async function handleScrobbleStart(
         );
     }
 
-    // Start real-time scrobble on services that support it
-    console.log('🚀 Starting real-time scrobbles...');
-    for (const service of realTimeScrobblingServices) {
+    // Start real-time scrobble on ALL services in parallel
+    console.log('🚀 Starting real-time scrobbles in parallel...');
+    const startPromises = realTimeScrobblingServices.map(async (service) => {
         const serviceType = service.getCapabilities().serviceType;
         console.log(`📡 Starting scrobble on ${serviceType}...`);
         try {
@@ -103,6 +103,7 @@ export async function handleScrobbleStart(
                 serviceType,
                 'scrobbling'
             );
+            return { serviceType, success: true };
         } catch (error) {
             console.error(
                 `❌ Failed to start scrobble on ${serviceType}:`,
@@ -113,8 +114,12 @@ export async function handleScrobbleStart(
                 'error',
                 error instanceof Error ? error.message : 'Scrobble start failed'
             );
+            return { serviceType, success: false, error };
         }
-    }
+    });
+
+    // Wait for all start operations to complete
+    await Promise.allSettled(startPromises);
 
     // Update the global scrobble state (keeping legacy structure for now)
     scrobbleState.current = {
@@ -166,8 +171,8 @@ export async function handleScrobblePause(
         }
     }
 
-    // Pause real-time scrobble on services that support it
-    for (const service of realTimeScrobblingServices) {
+    // Pause real-time scrobble on ALL services in parallel
+    const pausePromises = realTimeScrobblingServices.map(async (service) => {
         const serviceType = service.getCapabilities().serviceType;
         try {
             await service.pauseScrobble(
@@ -176,6 +181,7 @@ export async function handleScrobblePause(
                 params.progress
             );
             serviceStatusManager.updateServiceActivity(serviceType, 'paused');
+            return { serviceType, success: true };
         } catch (error) {
             console.error(`Failed to pause scrobble on ${serviceType}:`, error);
             serviceStatusManager.updateServiceActivity(
@@ -183,8 +189,12 @@ export async function handleScrobblePause(
                 'error',
                 error instanceof Error ? error.message : 'Scrobble pause failed'
             );
+            return { serviceType, success: false, error };
         }
-    }
+    });
+
+    // Wait for all pause operations to complete
+    await Promise.allSettled(pausePromises);
 
     // Update the global scrobble state
     scrobbleState.current.currentProgress = params.progress;
@@ -225,83 +235,120 @@ export async function handleScrobbleStop(
         progressTrackingServices.length
     );
 
-    // Use primary service for stop response (fallback to traktService for legacy compatibility)
-    const primaryService = realTimeScrobblingServices[0] || traktService;
-    const serviceResponse = await primaryService.stopScrobble(
-        params.mediaInfo,
-        params.episodeInfo || null,
-        params.progress
-    );
+    // Process ALL services in parallel (both real-time and progress tracking)
+    console.log('🚀 Processing all services in parallel...');
 
     // Collect service-specific history IDs
     const serviceHistoryIds: { [serviceType: string]: number | string } = {};
+    let primaryServiceResponse: any = null;
 
-    // Add Trakt history ID if available
-    if (serviceResponse.historyId) {
-        const primaryServiceType = primaryService.getCapabilities().serviceType;
-        serviceHistoryIds[primaryServiceType] = serviceResponse.historyId;
-        console.log(
-            `💾 Stored ${primaryServiceType} history ID: ${serviceResponse.historyId}`
-        );
-    }
+    // Create promises for all enabled services
+    const allServicePromises = [
+        // Real-time scrobbling services (stopScrobble)
+        ...realTimeScrobblingServices.map(async (service) => {
+            const serviceType = service.getCapabilities().serviceType;
+            try {
+                console.log(`🛑 Stopping scrobble on ${serviceType}...`);
+                const result = await service.stopScrobble(
+                    params.mediaInfo,
+                    params.episodeInfo || null,
+                    params.progress
+                );
+                console.log(
+                    `✅ Successfully stopped scrobble on ${serviceType}`
+                );
 
-    // Process progress tracking services in parallel (for completion threshold)
-    if (progressTrackingServices.length > 0) {
-        console.log('📊 Processing progress tracking services...');
-
-        // Process all progress tracking services concurrently
-        const progressTrackingPromises = progressTrackingServices.map(
-            async (service) => {
-                const serviceType = service.getCapabilities().serviceType;
-                try {
-                    console.log(`📈 Adding to history on ${serviceType}...`);
-                    const result = await service.addToHistory(
-                        params.mediaInfo,
-                        params.episodeInfo || null
-                    );
+                // Store service-specific history ID
+                if (result.historyId) {
+                    serviceHistoryIds[serviceType] = result.historyId;
                     console.log(
-                        `✅ Successfully added to history on ${serviceType}:`,
-                        result
+                        `💾 Stored ${serviceType} history ID: ${result.historyId}`
                     );
-
-                    // Store service-specific history ID
-                    if (result.historyId) {
-                        serviceHistoryIds[serviceType] = result.historyId;
-                        console.log(
-                            `💾 Stored ${serviceType} history ID: ${result.historyId}`
-                        );
-                    }
-
-                    // Update service status to indicate successful tracking
-                    serviceStatusManager.updateServiceActivity(
-                        serviceType,
-                        'idle'
-                    );
-
-                    return { serviceType, success: true, result };
-                } catch (error) {
-                    console.error(
-                        `❌ Failed to add to history on ${serviceType}:`,
-                        error
-                    );
-                    serviceStatusManager.updateServiceActivity(
-                        serviceType,
-                        'error',
-                        error instanceof Error
-                            ? error.message
-                            : 'Progress tracking failed'
-                    );
-                    return { serviceType, success: false, error };
                 }
-            }
-        );
 
-        // Wait for all progress tracking operations to complete
-        await Promise.allSettled(progressTrackingPromises);
-    }
+                // Use first successful real-time service response as primary
+                if (!primaryServiceResponse) {
+                    primaryServiceResponse = result;
+                }
+
+                serviceStatusManager.updateServiceActivity(serviceType, 'idle');
+                return { serviceType, success: true, result, type: 'stop' };
+            } catch (error) {
+                console.error(
+                    `❌ Failed to stop scrobble on ${serviceType}:`,
+                    error
+                );
+                serviceStatusManager.updateServiceActivity(
+                    serviceType,
+                    'error',
+                    error instanceof Error
+                        ? error.message
+                        : 'Stop scrobble failed'
+                );
+                return { serviceType, success: false, error, type: 'stop' };
+            }
+        }),
+
+        // Progress tracking services (addToHistory)
+        ...progressTrackingServices.map(async (service) => {
+            const serviceType = service.getCapabilities().serviceType;
+            try {
+                console.log(`📈 Adding to history on ${serviceType}...`);
+                const result = await service.addToHistory(
+                    params.mediaInfo,
+                    params.episodeInfo || null
+                );
+                console.log(
+                    `✅ Successfully added to history on ${serviceType}`
+                );
+
+                // Store service-specific history ID
+                if (result.historyId) {
+                    serviceHistoryIds[serviceType] = result.historyId;
+                    console.log(
+                        `💾 Stored ${serviceType} history ID: ${result.historyId}`
+                    );
+                }
+
+                serviceStatusManager.updateServiceActivity(serviceType, 'idle');
+                return { serviceType, success: true, result, type: 'history' };
+            } catch (error) {
+                console.error(
+                    `❌ Failed to add to history on ${serviceType}:`,
+                    error
+                );
+                serviceStatusManager.updateServiceActivity(
+                    serviceType,
+                    'error',
+                    error instanceof Error
+                        ? error.message
+                        : 'Progress tracking failed'
+                );
+                return { serviceType, success: false, error, type: 'history' };
+            }
+        })
+    ];
+
+    // Wait for ALL service operations to complete in parallel
+    const results = await Promise.allSettled(allServicePromises);
+
+    // Log results for debugging
+    results.forEach((result, index) => {
+        if (result.status === 'fulfilled') {
+            console.log(`✅ Service ${index} completed:`, result.value);
+        } else {
+            console.log(`❌ Service ${index} failed:`, result.reason);
+        }
+    });
 
     // Reset the global scrobble state
     resetActiveScrobbleState();
+
+    // Use primary service response or create fallback
+    const serviceResponse = primaryServiceResponse || {
+        action: 'watched',
+        historyId: null
+    };
 
     // Map ServiceScrobbleResponse to ScrobbleStopResponseData
     const responseData: ScrobbleStopResponseData = {
