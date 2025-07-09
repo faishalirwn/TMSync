@@ -257,6 +257,7 @@ interface ScrobbleNotificationProps {
     mediaInfo: ScrobbleNotificationMediaType;
     isEffectivelyScrobbled: boolean;
     traktHistoryId: number | null;
+    serviceHistoryIds: Record<string, any>;
     liveScrobbleStatus: ActiveScrobbleStatus;
     onManualScrobble: () => Promise<void>;
     onUndoScrobble: () => Promise<void>;
@@ -273,6 +274,7 @@ export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
     mediaInfo,
     isEffectivelyScrobbled,
     traktHistoryId,
+    serviceHistoryIds,
     liveScrobbleStatus,
     onManualScrobble,
     onUndoScrobble,
@@ -491,7 +493,9 @@ export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
                                         onClick={onUndoScrobble}
                                         disabled={
                                             isProcessingAction ||
-                                            !traktHistoryId
+                                            (!traktHistoryId &&
+                                                Object.keys(serviceHistoryIds)
+                                                    .length === 0)
                                         }
                                     >
                                         Undo History Add?

@@ -253,9 +253,6 @@ export function useScrobbling(
                     latestProgress - lastReportedProgressRef.current
                 );
 
-                // Primary guard - don't do anything if already completed
-                if (completedRef.current) return;
-
                 // Check for 80% threshold for ending scrobble
                 if (
                     !historyIdRef.current &&
@@ -554,6 +551,7 @@ export function useScrobbling(
         status,
         isProcessing,
         historyId: historyIdRef.current,
+        serviceHistoryIds: serviceHistoryIdsRef.current,
         manualScrobble,
         undoScrobble,
         pauseScrobbling: sendScrobblePause,

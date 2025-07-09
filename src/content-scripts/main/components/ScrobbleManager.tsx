@@ -62,6 +62,7 @@ export const ScrobbleManager = () => {
         status,
         isProcessing,
         historyId,
+        serviceHistoryIds,
         manualScrobble,
         undoScrobble,
         pauseScrobbling,
@@ -113,7 +114,8 @@ export const ScrobbleManager = () => {
             };
         }, [mediaInfo, episodeInfo]);
 
-    const isEffectivelyScrobbled = !!historyId;
+    const isEffectivelyScrobbled =
+        !!historyId || Object.keys(serviceHistoryIds).length > 0;
 
     const handleUndo = async () => {
         const success = await undoScrobble();
@@ -144,6 +146,7 @@ export const ScrobbleManager = () => {
                     mediaInfo={notificationMediaInfo}
                     isEffectivelyScrobbled={isEffectivelyScrobbled}
                     traktHistoryId={historyId}
+                    serviceHistoryIds={serviceHistoryIds}
                     liveScrobbleStatus={status}
                     onManualScrobble={manualScrobble}
                     onUndoScrobble={handleUndo}
