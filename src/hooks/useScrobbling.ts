@@ -271,10 +271,7 @@ export function useScrobbling(
                         historyIdRef.current
                     );
                     await sendScrobbleStop();
-                }
-
-                // Continue with normal scrobble pings only if not completed and not processing
-                if (
+                } else if (
                     !completedRef.current &&
                     !isProcessing &&
                     (now - lastPingTimeRef.current >
