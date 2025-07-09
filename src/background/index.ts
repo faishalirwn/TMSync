@@ -128,7 +128,7 @@ chrome.runtime.onMessage.addListener(
 );
 
 // Tab Listeners
-const TRAKT_SCROBBLE_COMPLETION_THRESHOLD = 80;
+const SCROBBLE_COMPLETION_THRESHOLD = 80;
 
 function buildPayloadForTabClose() {
     const { mediaInfo, episodeInfo, currentProgress } = scrobbleState.current;
@@ -165,7 +165,7 @@ async function handleTabCloseOrNavigate(tabId: number) {
             (scrobbleState.current.status === 'started' ||
                 scrobbleState.current.status === 'paused') &&
             scrobbleState.current.currentProgress >=
-                TRAKT_SCROBBLE_COMPLETION_THRESHOLD
+                SCROBBLE_COMPLETION_THRESHOLD
         ) {
             // Use operation manager to prevent conflicts with manual stops
             await scrobbleOperationManager

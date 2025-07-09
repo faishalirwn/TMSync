@@ -40,7 +40,6 @@
 -   Use service-agnostic types for handlers
 -   Convert native service types to service-agnostic types
 -   Handle service failures independently
--   Test with `npx tsx src/test-services.ts`
 
 ## Working with Lifecycle MCP
 
@@ -51,6 +50,7 @@
 **Documentation**: Live project state maintained in lifecycle.db automatically
 
 **Implementation Process**:
+
 1. Select task from project status
 2. Implement with multiple approaches when choices exist
 3. Test before moving to next task
@@ -93,6 +93,5 @@
 
 ## Reference
 
-**Roadmap**: `docs/ROADMAP.md` - Current todos and requirements
-**Technical Context**: `docs/DESIGN_DECISIONS.md` - Detailed Q&A and edge cases
-**Service Test**: `npx tsx src/test-services.ts` - Multi-service functionality testing
+**Lifecycle Status**: Use `what's the project status?` - Shows current requirements, tasks, and completion
+**Quality Checks**: `pnpm check-all` - Run all lints and tests before committing

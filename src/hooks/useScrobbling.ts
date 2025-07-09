@@ -17,7 +17,7 @@ import {
 
 const VIDEO_PROGRESS_UPDATE_THROTTLE_MS = 2000;
 const WATCHING_PING_INTERVAL_MS = 5 * 60 * 1000;
-const TRAKT_SCROBBLE_COMPLETION_THRESHOLD = 80;
+const SCROBBLE_COMPLETION_THRESHOLD = 80;
 const MIN_TIME_BETWEEN_ACTIONS_MS = 500;
 
 export function useScrobbling(
@@ -253,24 +253,33 @@ export function useScrobbling(
                     latestProgress - lastReportedProgressRef.current
                 );
 
-                // Priority: Stop takes precedence over start to avoid conflicting operations
+                // Primary guard - don't do anything if already completed
+                if (completedRef.current) return;
+
+                // Check for 80% threshold for ending scrobble
                 if (
-                    latestProgress >= TRAKT_SCROBBLE_COMPLETION_THRESHOLD &&
                     !historyIdRef.current &&
                     !conflictCompletedRef.current &&
                     globalScrobblingEnabled &&
-                    !autoScrobblingDisabledRef.current
+                    !autoScrobblingDisabledRef.current &&
+                    latestProgress >= SCROBBLE_COMPLETION_THRESHOLD
                 ) {
                     console.log(
-                        '🛑 Triggering stop - progress:',
+                        '🎯 Reached 80% threshold - stopping scrobble, progress:',
                         latestProgress,
                         'historyId:',
                         historyIdRef.current
                     );
                     await sendScrobbleStop();
-                } else if (
-                    now - lastPingTimeRef.current > WATCHING_PING_INTERVAL_MS ||
-                    progressDelta >= 5
+                }
+
+                // Continue with normal scrobble pings only if not completed and not processing
+                if (
+                    !completedRef.current &&
+                    !isProcessing &&
+                    (now - lastPingTimeRef.current >
+                        WATCHING_PING_INTERVAL_MS ||
+                        progressDelta >= 5)
                 ) {
                     await sendScrobbleStart();
                 }
