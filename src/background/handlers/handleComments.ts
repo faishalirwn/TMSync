@@ -5,6 +5,7 @@ import {
     UpdateCommentParams
 } from '../../types/messaging';
 import { ServiceComment } from '../../types/serviceTypes';
+import { executeCommentOperation } from '../utils/serviceOperations';
 import { serviceRegistry } from '../../services/ServiceRegistry';
 import { filterEnabledAuthenticatedServices } from '../../utils/serviceFiltering';
 
@@ -142,26 +143,9 @@ export async function handleUpdateComment(
 export async function handleDeleteComment(
     params: DeleteCommentParams
 ): Promise<void> {
-    const allCommentServices =
-        serviceRegistry.getServicesWithCapability('supportsComments');
-    const commentServices =
-        await filterEnabledAuthenticatedServices(allCommentServices);
-
-    // Delete comment from ALL services in parallel
-    const deletePromises = commentServices.map(async (service) => {
-        const serviceType = service.getCapabilities().serviceType;
-        try {
-            await service.deleteComment(params.commentId);
-            console.log(`✅ Successfully deleted comment from ${serviceType}`);
-            return { serviceType, success: true };
-        } catch (error) {
-            console.error(
-                `❌ Failed to delete comment on ${serviceType}:`,
-                error
-            );
-            return { serviceType, success: false, error };
-        }
-    });
-
-    await Promise.allSettled(deletePromises);
+    await executeCommentOperation(
+        (service, p) => service.deleteComment(p.commentId),
+        params,
+        'deleted comment'
+    );
 }
