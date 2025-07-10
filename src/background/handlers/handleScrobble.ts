@@ -11,52 +11,14 @@ import { scrobbleState, resetActiveScrobbleState } from '../state';
 import { filterEnabledAuthenticatedServices } from '../../utils/serviceFiltering';
 import { isServiceEnabled } from '../../utils/servicePreferences';
 import { scrobbleOperationManager } from '../scrobbleOperationManager';
-import { TraktCooldownError } from '../../types/serviceTypes';
-
-/**
- * Detects if an error from a service should be treated as a "successful failure"
- * (like conflicts/duplicates that indicate the operation already succeeded)
- */
-function isServiceConflictError(error: any, serviceType: string): boolean {
-    // Trakt 409 conflicts
-    if (error instanceof TraktCooldownError) {
-        return true;
-    }
-
-    // AniList conflicts (example patterns)
-    if (serviceType === 'anilist') {
-        // Check for AniList-specific conflict patterns
-        if (
-            error?.message?.includes('already exists') ||
-            error?.message?.includes('duplicate') ||
-            error?.status === 409
-        ) {
-            return true;
-        }
-    }
-
-    // MAL conflicts (example patterns)
-    if (serviceType === 'mal') {
-        // Check for MAL-specific conflict patterns
-        if (
-            error?.message?.includes('already in list') ||
-            error?.status === 409
-        ) {
-            return true;
-        }
-    }
-
-    // Generic conflict detection
-    if (
-        error?.status === 409 ||
-        error?.message?.toLowerCase().includes('conflict') ||
-        error?.message?.toLowerCase().includes('duplicate')
-    ) {
-        return true;
-    }
-
-    return false;
-}
+import {
+    isServiceConflictError,
+    createConflictResponse
+} from '../utils/conflictDetection';
+import {
+    getActiveServicesForCapability,
+    getScrobblingServices
+} from '../utils/serviceHelpers';
 
 export async function handleScrobbleStart(
     params: RequestScrobbleStartParams,
@@ -233,11 +195,12 @@ async function executeScrobblePause(
     _sender: chrome.runtime.MessageSender
 ): Promise<void> {
     // Get services that support real-time scrobbling (filtered by user preferences + auth)
+    const realTimeScrobblingServices = await getActiveServicesForCapability(
+        'supportsRealTimeScrobbling'
+    );
     const allRealTimeServices = serviceRegistry.getServicesWithCapability(
         'supportsRealTimeScrobbling'
     );
-    const realTimeScrobblingServices =
-        await filterEnabledAuthenticatedServices(allRealTimeServices);
 
     // Get services that support progress tracking (currently unused)
     // const progressTrackingServices = serviceRegistry.getServicesWithCapability('supportsProgressTracking');
@@ -316,19 +279,11 @@ async function executeScrobbleStop(
     params: RequestScrobbleStopParams,
     _sender: chrome.runtime.MessageSender
 ): Promise<ScrobbleStopResponseData> {
-    // Get services that support real-time scrobbling (filtered by user preferences + auth)
-    const allRealTimeServices = serviceRegistry.getServicesWithCapability(
-        'supportsRealTimeScrobbling'
-    );
-    const realTimeScrobblingServices =
-        await filterEnabledAuthenticatedServices(allRealTimeServices);
-
-    // Get services that support progress tracking (filtered by user preferences + auth)
-    const allProgressTrackingServices =
-        serviceRegistry.getServicesWithCapability('supportsProgressTracking');
-    const progressTrackingServices = await filterEnabledAuthenticatedServices(
-        allProgressTrackingServices
-    );
+    // Get services for scrobbling operations
+    const {
+        realTimeServices: realTimeScrobblingServices,
+        progressTrackingServices
+    } = await getScrobblingServices();
 
     console.log('🎯 Processing stop with services:');
     console.log(
@@ -390,11 +345,7 @@ async function executeScrobbleStop(
                         `⚠️ Conflict detected for ${serviceType} stop - treating as success`
                     );
                     // Create a successful response with special conflict ID
-                    const conflictResult = {
-                        action: 'watched' as const,
-                        historyId: -1, // Special ID for conflicts
-                        serviceType: serviceType as any
-                    };
+                    const conflictResult = createConflictResponse(serviceType);
 
                     serviceStatusManager.updateServiceActivity(
                         serviceType,

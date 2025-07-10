@@ -6,18 +6,15 @@ import {
 } from '../../types/messaging';
 import { ServiceComment } from '../../types/serviceTypes';
 import { executeCommentOperation } from '../utils/serviceOperations';
-import { serviceRegistry } from '../../services/ServiceRegistry';
-import { filterEnabledAuthenticatedServices } from '../../utils/serviceFiltering';
+import { getActiveServicesForCapability } from '../utils/serviceHelpers';
 
 export async function handleGetComments(
     params: GetCommentsParams
 ): Promise<ServiceComment[]> {
     const { type, mediaInfo, episodeInfo } = params;
 
-    const allCommentServices =
-        serviceRegistry.getServicesWithCapability('supportsComments');
     const commentServices =
-        await filterEnabledAuthenticatedServices(allCommentServices);
+        await getActiveServicesForCapability('supportsComments');
 
     // Get comments from ALL services in parallel
     const commentPromises = commentServices.map(async (service) => {
@@ -56,10 +53,8 @@ export async function handlePostComment(
 ): Promise<ServiceComment> {
     const { type, mediaInfo, episodeInfo, comment, spoiler } = params;
 
-    const allCommentServices =
-        serviceRegistry.getServicesWithCapability('supportsComments');
     const commentServices =
-        await filterEnabledAuthenticatedServices(allCommentServices);
+        await getActiveServicesForCapability('supportsComments');
 
     console.log(
         `🔄 Posting comment to ${commentServices.length} services:`,
@@ -120,10 +115,8 @@ export async function handleUpdateComment(
 ): Promise<ServiceComment> {
     const { commentId, comment, spoiler } = params;
 
-    const allCommentServices =
-        serviceRegistry.getServicesWithCapability('supportsComments');
     const commentServices =
-        await filterEnabledAuthenticatedServices(allCommentServices);
+        await getActiveServicesForCapability('supportsComments');
 
     // Use primary service for comment updating (return the first successful result)
     for (const service of commentServices) {
