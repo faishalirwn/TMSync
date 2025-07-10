@@ -64,10 +64,10 @@ export const ScrobbleManager = () => {
         historyId,
         serviceHistoryIds,
         isScrobbled,
+        hasEverBeenScrobbled,
         manualScrobble,
         undoScrobble,
-        pauseScrobbling,
-        stopScrobbling
+        pauseScrobbling
     } = useScrobbling(
         mediaInfo,
         episodeInfo,
@@ -147,6 +147,7 @@ export const ScrobbleManager = () => {
                     mediaInfo={notificationMediaInfo}
                     hasHistoryEntries={hasHistoryEntries}
                     isScrobbled={isScrobbled}
+                    hasEverBeenScrobbled={hasEverBeenScrobbled}
                     traktHistoryId={historyId}
                     serviceHistoryIds={serviceHistoryIds}
                     liveScrobbleStatus={status}

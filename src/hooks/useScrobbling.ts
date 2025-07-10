@@ -36,6 +36,7 @@ export function useScrobbling(
     }>({});
     const isScrobbledRef = useRef(false); // Single source of truth for scrobbled state
     const autoScrobblingDisabledRef = useRef(false);
+    const hasEverBeenScrobbledRef = useRef(false);
 
     const videoRef = useRef<HTMLVideoElement | null>(null);
     const lastPingTimeRef = useRef(0);
@@ -147,6 +148,7 @@ export function useScrobbling(
                         console.log('✅ Marking as scrobbled');
                         isScrobbledRef.current = true;
                         autoScrobblingDisabledRef.current = false;
+                        hasEverBeenScrobbledRef.current = true;
 
                         // Set Trakt history ID if available (for legacy compatibility)
                         if (
@@ -494,6 +496,7 @@ export function useScrobbling(
             }
             isScrobbledRef.current = true;
             autoScrobblingDisabledRef.current = false;
+            hasEverBeenScrobbledRef.current = true;
             console.log(
                 '✅ Marked as scrobbled and re-enabled auto-scrobbling after manual add'
             );
@@ -558,6 +561,7 @@ export function useScrobbling(
         historyId: historyIdRef.current,
         serviceHistoryIds: serviceHistoryIdsRef.current,
         isScrobbled: isScrobbledRef.current,
+        hasEverBeenScrobbled: hasEverBeenScrobbledRef.current,
         manualScrobble,
         undoScrobble,
         pauseScrobbling: sendScrobblePause,

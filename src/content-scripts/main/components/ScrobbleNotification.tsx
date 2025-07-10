@@ -254,6 +254,7 @@ interface ScrobbleNotificationProps {
     mediaInfo: ScrobbleNotificationMediaType;
     hasHistoryEntries: boolean;
     isScrobbled: boolean;
+    hasEverBeenScrobbled: boolean;
     traktHistoryId: number | null;
     serviceHistoryIds: Record<string, any>;
     liveScrobbleStatus: ActiveScrobbleStatus;
@@ -272,9 +273,9 @@ export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
     mediaInfo,
     hasHistoryEntries,
     isScrobbled,
+    hasEverBeenScrobbled,
     traktHistoryId,
     serviceHistoryIds,
-    liveScrobbleStatus,
     onManualScrobble,
     onUndoScrobble,
     isProcessingAction,
@@ -367,7 +368,7 @@ export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
                                 Auto Scrobbling
                             </span>
                             <span className="text-xs text-(--color-text-secondary)">
-                                {isScrobbled
+                                {hasEverBeenScrobbled
                                     ? Object.keys(serviceHistoryIds).some(
                                           (id) => serviceHistoryIds[id] === -1
                                       )
@@ -378,7 +379,7 @@ export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
                                       : '⏸️ Paused'}
                             </span>
                         </div>
-                        {!isScrobbled && (
+                        {!hasEverBeenScrobbled && (
                             // Functional toggle for active/paused states
                             <label className="relative inline-flex items-center cursor-pointer">
                                 <input
