@@ -509,7 +509,7 @@ export function useScrobbling(
             historyIdRef.current = null;
             serviceHistoryIdsRef.current = {};
             autoScrobblingDisabledRef.current = true;
-            isScrobbledRef.current = false;
+            isScrobbledRef.current = true;
             console.log('✅ Cleared all history IDs after successful undo');
             console.log('🚫 Disabled auto-scrobbling after undo');
             console.log('🔄 Reset scrobbled state for re-scrobbling');

@@ -379,20 +379,7 @@ export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
                                       : '⏸️ Paused'}
                             </span>
                         </div>
-                        {isEffectivelyScrobbled ? (
-                            // Status indicator only (no toggle functionality)
-                            <div
-                                className={`w-11 h-6 rounded-full transition-colors duration-200 ease-in-out ${
-                                    Object.keys(serviceHistoryIds).some(
-                                        (id) => serviceHistoryIds[id] === -1
-                                    )
-                                        ? 'bg-orange-500' // Conflict state
-                                        : 'bg-green-500' // Complete state
-                                }`}
-                            >
-                                <div className="w-5 h-5 bg-white rounded-full shadow translate-x-5 mt-0.5 ml-0.5" />
-                            </div>
-                        ) : (
+                        {!isEffectivelyScrobbled && (
                             // Functional toggle for active/paused states
                             <label className="relative inline-flex items-center cursor-pointer">
                                 <input
