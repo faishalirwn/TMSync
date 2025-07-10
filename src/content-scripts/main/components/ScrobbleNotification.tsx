@@ -361,38 +361,67 @@ export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
                 onMouseLeave={() => setIsExpanded(false)}
             >
                 <div className="py-2 px-3">
-                    {/* Global Scrobbling Toggle */}
+                    {/* Smart Scrobbling Toggle */}
                     <div className="flex items-center justify-between mb-2 pb-2 border-b border-(--color-border)">
-                        <span className="text-sm font-medium text-(--color-text-primary)">
-                            Auto Scrobbling
-                        </span>
-                        <label className="relative inline-flex items-center cursor-pointer">
-                            <input
-                                type="checkbox"
-                                checked={globalScrobblingEnabled}
-                                onChange={(e) => {
-                                    onGlobalScrobblingToggle?.(
-                                        e.target.checked
-                                    );
-                                }}
-                                className="sr-only"
-                            />
+                        <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium text-(--color-text-primary)">
+                                Auto Scrobbling
+                            </span>
+                            <span className="text-xs text-(--color-text-secondary)">
+                                {isEffectivelyScrobbled
+                                    ? Object.keys(serviceHistoryIds).some(
+                                          (id) => serviceHistoryIds[id] === -1
+                                      )
+                                        ? '⚠️ Conflict'
+                                        : '✅ Complete'
+                                    : globalScrobblingEnabled
+                                      ? '▶️ Active'
+                                      : '⏸️ Paused'}
+                            </span>
+                        </div>
+                        {isEffectivelyScrobbled ? (
+                            // Status indicator only (no toggle functionality)
                             <div
                                 className={`w-11 h-6 rounded-full transition-colors duration-200 ease-in-out ${
-                                    globalScrobblingEnabled
-                                        ? 'bg-(--color-accent-primary)'
-                                        : 'bg-(--color-border)'
+                                    Object.keys(serviceHistoryIds).some(
+                                        (id) => serviceHistoryIds[id] === -1
+                                    )
+                                        ? 'bg-orange-500' // Conflict state
+                                        : 'bg-green-500' // Complete state
                                 }`}
                             >
-                                <div
-                                    className={`w-5 h-5 bg-white rounded-full shadow transform transition-transform duration-200 ease-in-out ${
-                                        globalScrobblingEnabled
-                                            ? 'translate-x-5'
-                                            : 'translate-x-0'
-                                    } mt-0.5 ml-0.5`}
-                                />
+                                <div className="w-5 h-5 bg-white rounded-full shadow translate-x-5 mt-0.5 ml-0.5" />
                             </div>
-                        </label>
+                        ) : (
+                            // Functional toggle for active/paused states
+                            <label className="relative inline-flex items-center cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={globalScrobblingEnabled}
+                                    onChange={(e) => {
+                                        onGlobalScrobblingToggle?.(
+                                            e.target.checked
+                                        );
+                                    }}
+                                    className="sr-only"
+                                />
+                                <div
+                                    className={`w-11 h-6 rounded-full transition-colors duration-200 ease-in-out ${
+                                        globalScrobblingEnabled
+                                            ? 'bg-(--color-accent-primary)' // Active state
+                                            : 'bg-(--color-border)' // Paused state
+                                    }`}
+                                >
+                                    <div
+                                        className={`w-5 h-5 bg-white rounded-full shadow transform transition-transform duration-200 ease-in-out ${
+                                            globalScrobblingEnabled
+                                                ? 'translate-x-5'
+                                                : 'translate-x-0'
+                                        } mt-0.5 ml-0.5`}
+                                    />
+                                </div>
+                            </label>
+                        )}
                     </div>
                     {/* Service Status Indicators */}
                     {!isLoadingServiceStatus && serviceStatuses.length > 0 && (
