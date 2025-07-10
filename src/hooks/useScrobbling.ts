@@ -557,6 +557,7 @@ export function useScrobbling(
         isProcessing,
         historyId: historyIdRef.current,
         serviceHistoryIds: serviceHistoryIdsRef.current,
+        isScrobbled: isScrobbledRef.current,
         manualScrobble,
         undoScrobble,
         pauseScrobbling: sendScrobblePause,

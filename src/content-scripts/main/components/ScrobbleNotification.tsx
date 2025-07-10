@@ -13,8 +13,8 @@ import {
 
 const ServiceStatusBadge: React.FC<{
     status: ServiceStatus;
-    isEffectivelyScrobbled: boolean;
-}> = ({ status, isEffectivelyScrobbled }) => {
+    hasHistoryEntries: boolean;
+}> = ({ status, hasHistoryEntries }) => {
     const getStatusIcon = (state: ServiceActivityState): string => {
         switch (state) {
             case 'scrobbling':
@@ -40,13 +40,10 @@ const ServiceStatusBadge: React.FC<{
     const getStatusText = (state: ServiceActivityState): string => {
         // Always check authentication first
         if (!status.isAuthenticated) {
-            if (isEffectivelyScrobbled) {
-                return 'Not logged in';
-            }
             return 'Not logged in';
         }
 
-        if (isEffectivelyScrobbled) {
+        if (hasHistoryEntries) {
             return 'Added to history';
         }
 
@@ -255,7 +252,8 @@ const StarRatingInput: React.FC<{
 
 interface ScrobbleNotificationProps {
     mediaInfo: ScrobbleNotificationMediaType;
-    isEffectivelyScrobbled: boolean;
+    hasHistoryEntries: boolean;
+    isScrobbled: boolean;
     traktHistoryId: number | null;
     serviceHistoryIds: Record<string, any>;
     liveScrobbleStatus: ActiveScrobbleStatus;
@@ -272,7 +270,8 @@ interface ScrobbleNotificationProps {
 
 export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
     mediaInfo,
-    isEffectivelyScrobbled,
+    hasHistoryEntries,
+    isScrobbled,
     traktHistoryId,
     serviceHistoryIds,
     liveScrobbleStatus,
@@ -292,16 +291,16 @@ export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
         useServiceStatus();
 
     useEffect(() => {
-        if (isEffectivelyScrobbled && !initialExpandDoneRef.current) {
+        if (hasHistoryEntries && !initialExpandDoneRef.current) {
             setIsExpanded(true);
             const timer = setTimeout(() => setIsExpanded(false), 7000);
             initialExpandDoneRef.current = true;
             return () => clearTimeout(timer);
         }
-        if (!isEffectivelyScrobbled) {
+        if (!hasHistoryEntries) {
             initialExpandDoneRef.current = false;
         }
-    }, [isEffectivelyScrobbled]);
+    }, [hasHistoryEntries]);
 
     const handleRatingClick = async (
         type: CommentableType,
@@ -368,7 +367,7 @@ export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
                                 Auto Scrobbling
                             </span>
                             <span className="text-xs text-(--color-text-secondary)">
-                                {isEffectivelyScrobbled
+                                {hasHistoryEntries
                                     ? Object.keys(serviceHistoryIds).some(
                                           (id) => serviceHistoryIds[id] === -1
                                       )
@@ -379,7 +378,7 @@ export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
                                       : '⏸️ Paused'}
                             </span>
                         </div>
-                        {!isEffectivelyScrobbled && (
+                        {!hasHistoryEntries && (
                             // Functional toggle for active/paused states
                             <label className="relative inline-flex items-center cursor-pointer">
                                 <input
@@ -417,9 +416,7 @@ export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
                                 <ServiceStatusBadge
                                     key={serviceStatus.serviceType}
                                     status={serviceStatus}
-                                    isEffectivelyScrobbled={
-                                        isEffectivelyScrobbled
-                                    }
+                                    hasHistoryEntries={hasHistoryEntries}
                                 />
                             ))}
                         </div>
@@ -436,7 +433,7 @@ export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
                             </p>
                         )}
 
-                    {(isExpanded || isEffectivelyScrobbled) && (
+                    {(isExpanded || hasHistoryEntries) && (
                         <>
                             {isMovieMediaInfo(mediaInfo) && (
                                 <StarRatingInput
@@ -503,7 +500,8 @@ export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
                             )}
 
                             <div className="mt-2 border-t border-(--color-border) pt-2">
-                                {isEffectivelyScrobbled ? (
+                                {isScrobbled ? (
+                                    /* Undo button - show when scrobbled */
                                     <button
                                         className="text-(--color-danger) px-2 py-1 rounded border-none cursor-pointer text-xs hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
                                         onClick={onUndoScrobble}
@@ -517,17 +515,16 @@ export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
                                         Undo History Add?
                                     </button>
                                 ) : (
-                                    liveScrobbleStatus === 'idle' && (
-                                        <button
-                                            className="text-(--color-accent-primary) w-full px-2 py-1 rounded border-none cursor-pointer my-1 text-sm hover:bg-(--color-surface-2) disabled:opacity-70 disabled:cursor-wait flex items-center justify-center"
-                                            onClick={onManualScrobble}
-                                            disabled={isProcessingAction}
-                                        >
-                                            {isProcessingAction
-                                                ? 'Processing...'
-                                                : 'Manually Add to History'}
-                                        </button>
-                                    )
+                                    /* Manual scrobble button - show when NOT scrobbled */
+                                    <button
+                                        className="text-(--color-accent-primary) w-full px-2 py-1 rounded border-none cursor-pointer my-1 text-sm hover:bg-(--color-surface-2) disabled:opacity-70 disabled:cursor-wait flex items-center justify-center"
+                                        onClick={onManualScrobble}
+                                        disabled={isProcessingAction}
+                                    >
+                                        {isProcessingAction
+                                            ? 'Processing...'
+                                            : 'Manually Add to History'}
+                                    </button>
                                 )}
                             </div>
                         </>
