@@ -1,6 +1,6 @@
 # TMSync - Requirements Documentation
 
-Generated on: 2025-07-07 21:40:41
+Generated on: 2025-07-09 16:06:03
 
 ## FUNC Requirements
 
@@ -174,12 +174,12 @@ Generated on: 2025-07-07 21:40:41
 
 ### REQ-0007-FUNC-00: Per-Service Independent Scrobbling Logic
 
-- **Status**: Approved
+- **Status**: Validated
 - **Priority**: P0
 - **Risk Level**: Medium
 - **Author**: TMSync Team
 - **Created**: 2025-07-07 13:42:28
-- **Updated**: 2025-07-07 13:45:35
+- **Updated**: 2025-07-09 08:52:49
 
 **Current State**: Complex authority-based scrobbling with service conflicts
 
@@ -267,6 +267,37 @@ Generated on: 2025-07-07 21:40:41
 
 ---
 
+### REQ-0010-FUNC-00: AniList Manual Add to History Functionality
+
+- **Status**: Approved
+- **Priority**: P1
+- **Risk Level**: Medium
+- **Author**: Development Team
+- **Created**: 2025-07-07 16:06:24
+- **Updated**: 2025-07-08 04:53:55
+
+**Current State**: Manual add to history only works for Trakt service, AniList is not supported
+
+**Desired State**: Manual add works for both Trakt and AniList with service-appropriate behavior
+
+**Business Value**: Provides consistent manual scrobbling experience across all supported services
+
+**Functional Requirements**:
+- Manual add button works for AniList users
+- Movies: mark as completed on AniList
+- Shows: increment episode progress and update status appropriately
+- Works correctly after undo operations
+- Integrates with existing manual add UI
+
+**Acceptance Criteria**:
+- Manual add button functional for AniList
+- Movies correctly marked as completed
+- Show episodes increment with proper status updates
+- Undo → manual add → correct state restoration
+- UI shows appropriate feedback for AniList operations
+
+---
+
 ## INTF Requirements
 
 ### REQ-0001-INTF-00: Service Transparency UI
@@ -305,7 +336,7 @@ Generated on: 2025-07-07 21:40:41
 - **Risk Level**: Medium
 - **Author**: TMSync Team
 - **Created**: 2025-07-07 14:17:15
-- **Updated**: 2025-07-07 14:17:38
+- **Updated**: 2025-07-07 16:14:35
 
 **Current State**: No way to quickly disable scrobbling across all services
 
@@ -362,12 +393,12 @@ Generated on: 2025-07-07 21:40:41
 
 ### REQ-0002-NFUNC-00: Enhanced Service Independence Architecture
 
-- **Status**: Approved
+- **Status**: Ready
 - **Priority**: P0
 - **Risk Level**: Medium
 - **Author**: TMSync Team
 - **Created**: 2025-07-07 14:11:25
-- **Updated**: 2025-07-07 14:11:57
+- **Updated**: 2025-07-09 07:51:50
 
 **Current State**: Services coupled through unified state with poor error handling and timeout management
 
@@ -393,6 +424,64 @@ Generated on: 2025-07-07 21:40:41
 - Minimal status text: 'Rate limited' when needed
 - Service failures completely isolated
 - Auth status tracked per service
+
+---
+
+## TECH Requirements
+
+### REQ-0001-TECH-00: Handle Trakt 409 Duplicate Scrobble Conflicts
+
+- **Status**: Approved
+- **Priority**: P2
+- **Risk Level**: Low
+- **Author**: Development Team
+- **Created**: 2025-07-07 15:52:54
+- **Updated**: 2025-07-08 09:09:04
+
+**Current State**: Users get cryptic errors when Trakt returns 409 Conflict for duplicate scrobbles within cooldown period
+
+**Desired State**: Users see clear messages about cooldown periods and when they can scrobble again
+
+**Business Value**: Improves user experience by explaining API rate limits instead of showing confusing errors
+
+**Functional Requirements**:
+- Parse expires_at timestamp from 409 response
+- Show user-friendly cooldown message with time remaining
+- Optionally disable scrobbling UI until cooldown expires
+- Handle in API error handling layer
+
+**Acceptance Criteria**:
+- 409 responses show clear cooldown message
+- Users see time remaining until next scrobble allowed
+- No cryptic API errors displayed
+- Scrobbling UI respects cooldown period
+
+---
+
+### REQ-0002-TECH-00: Fix Video TimeUpdate Race Condition in Scrobbling
+
+- **Status**: Validated
+- **Priority**: P0
+- **Risk Level**: Medium
+- **Author**: MCP User
+- **Created**: 2025-07-09 08:55:03
+- **Updated**: 2025-07-09 08:58:19
+
+**Current State**: Video timeupdate events continue firing after scrobble completion, causing sendScrobbleStart to be called even after episode is marked complete, creating race conditions with threshold processing
+
+**Desired State**: Video timeupdate event handler respects completion state and prevents any scrobble operations after completion using completedRef guard
+
+**Business Value**: Eliminates duplicate API calls and race conditions between video events and scrobble completion logic
+
+**Functional Requirements**:
+- Add completedRef.current guard in processThrottledTimeUpdate
+- Prevent sendScrobbleStart after completion
+- Ensure video event handler respects scrobble completion state
+
+**Acceptance Criteria**:
+- Video timeupdate events stop triggering scrobble operations after completion
+- No sendScrobbleStart calls after completedRef.current is true
+- Race condition between video events and threshold processing eliminated
 
 ---
 

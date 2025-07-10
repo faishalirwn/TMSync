@@ -10,6 +10,11 @@ import {
 } from '../types/serviceTypes';
 import { MediaInfoResponse, SeasonEpisodeObj } from '../types/media';
 import { WatchStatusInfo } from '../types/scrobbling';
+import {
+    convertToFuzzyDate,
+    getCurrentFuzzyDate,
+    type FuzzyDateInput
+} from '../utils/fuzzyDate';
 
 /**
  * AniListService - Handles all AniList API interactions
@@ -391,36 +396,159 @@ export class AniListService implements TrackerService {
         const anilistMedia = mediaList[0];
         const anilistId = anilistMedia.id;
 
+        // Check if this media already exists in user's list (for rewatch detection)
+        const existingEntry = await this.getExistingMediaListEntry(anilistId);
+
+        // Get current date for tracking
+        const currentDate = getCurrentFuzzyDate();
+
         // Determine if this is completion or just progress update
         let episodeNumber = 1;
         let isCompleted = false;
+        let status: string;
+        let repeatCount = 0;
+        let startedAt: FuzzyDateInput | null = null;
+        let completedAt: FuzzyDateInput | null = null;
 
         if (mediaInfo.type === 'movie') {
             // Movies are always "completed" when watched
             episodeNumber = 1;
             isCompleted = true;
+
+            if (existingEntry) {
+                // Movie already exists - this is a rewatch
+                status = 'REPEATING';
+                repeatCount = (existingEntry.repeat || 0) + 1;
+                startedAt = existingEntry.startedAt; // Keep original start date
+                completedAt = currentDate; // Update completion date
+            } else {
+                // First time watching this movie
+                status = 'COMPLETED';
+                repeatCount = 0;
+                startedAt = currentDate;
+                completedAt = currentDate;
+            }
         } else {
             // TV shows use episode info
             episodeNumber = episodeInfo?.number || 1;
             const totalEpisodes = anilistMedia.episodes;
             isCompleted = totalEpisodes && episodeNumber >= totalEpisodes;
+
+            if (existingEntry) {
+                // Show already exists - handle episode progression and rewatch detection
+                const existingProgress = existingEntry.progress || 0;
+                const existingStatus = existingEntry.status;
+
+                // IMPORTANT: Watching episodes less than current progress should be ignored
+                // This is just checking out previous episodes, not a scrobble/update
+                if (
+                    episodeNumber < existingProgress &&
+                    existingStatus !== 'REPEATING'
+                ) {
+                    // User is just viewing a previous episode - don't update entry
+                    // Return the existing entry ID without changes
+                    return { historyId: existingEntry.id };
+                }
+
+                // Determine if this is a rewatch scenario
+                const isSeriesRewatch =
+                    // Watching episode 1 of a completed series (starting rewatch)
+                    (episodeNumber === 1 && existingStatus === 'COMPLETED') ||
+                    // Already in REPEATING status (continuing rewatch)
+                    existingStatus === 'REPEATING';
+
+                if (isSeriesRewatch) {
+                    // This is a rewatch
+                    if (existingStatus === 'COMPLETED' && episodeNumber === 1) {
+                        // Starting a new rewatch from episode 1
+                        status = 'REPEATING';
+                        repeatCount = (existingEntry.repeat || 0) + 1;
+                        startedAt = existingEntry.startedAt; // Keep original start date
+                        completedAt = null; // Clear completion date for rewatch
+                    } else if (existingStatus === 'REPEATING') {
+                        // Continue existing rewatch - only update if progressing forward
+                        if (episodeNumber >= existingProgress) {
+                            status = 'REPEATING'; // Stay in REPEATING regardless of completion
+                            repeatCount = existingEntry.repeat || 0;
+                            startedAt = existingEntry.startedAt;
+                            completedAt = isCompleted
+                                ? currentDate
+                                : existingEntry.completedAt;
+                        } else {
+                            // Watching previous episode during rewatch - don't update
+                            return { historyId: existingEntry.id };
+                        }
+                    } else {
+                        // Should not reach here, but handle gracefully
+                        status = existingStatus;
+                        repeatCount = existingEntry.repeat || 0;
+                        startedAt = existingEntry.startedAt;
+                        completedAt = existingEntry.completedAt;
+                    }
+                } else {
+                    // Normal episode progression (not a rewatch)
+                    if (episodeNumber > existingProgress) {
+                        // Progressing forward normally
+                        status = isCompleted ? 'COMPLETED' : 'CURRENT';
+                        repeatCount = existingEntry.repeat || 0;
+                        startedAt = existingEntry.startedAt || currentDate;
+
+                        // Set completion date if completing for first time
+                        if (isCompleted && existingStatus !== 'COMPLETED') {
+                            completedAt = currentDate;
+                        } else {
+                            completedAt = existingEntry.completedAt;
+                        }
+                    } else if (episodeNumber === existingProgress) {
+                        // Watching same episode again - don't update entry
+                        return { historyId: existingEntry.id };
+                    } else {
+                        // episodeNumber < existingProgress is already handled above
+                        // This should not happen, but provide fallback
+                        status = existingStatus;
+                        repeatCount = existingEntry.repeat || 0;
+                        startedAt = existingEntry.startedAt;
+                        completedAt = existingEntry.completedAt;
+                    }
+                }
+            } else {
+                // First time watching this show
+                status = isCompleted ? 'COMPLETED' : 'CURRENT';
+                repeatCount = 0;
+                startedAt = currentDate;
+                completedAt = isCompleted ? currentDate : null;
+            }
         }
 
-        // Use SaveMediaListEntry mutation
+        // Use enhanced SaveMediaListEntry mutation with date tracking
         const mutation = `
-            mutation($mediaId: Int!, $status: MediaListStatus!, $progress: Int!) {
-                SaveMediaListEntry(mediaId: $mediaId, status: $status, progress: $progress) {
+            mutation($mediaId: Int!, $status: MediaListStatus!, $progress: Int!, $startedAt: FuzzyDateInput, $completedAt: FuzzyDateInput, $repeat: Int) {
+                SaveMediaListEntry(mediaId: $mediaId, status: $status, progress: $progress, startedAt: $startedAt, completedAt: $completedAt, repeat: $repeat) {
                     id
                     progress
                     status
+                    startedAt {
+                        year
+                        month
+                        day
+                    }
+                    completedAt {
+                        year
+                        month
+                        day
+                    }
+                    repeat
                 }
             }
         `;
 
         const mutationVariables = {
             mediaId: anilistId,
-            status: isCompleted ? 'COMPLETED' : 'CURRENT',
-            progress: episodeNumber
+            status: status,
+            progress: episodeNumber,
+            startedAt: startedAt,
+            completedAt: completedAt,
+            repeat: repeatCount
         };
 
         const mutationResponse = await this.makeGraphQLRequest(
@@ -440,7 +568,7 @@ export class AniListService implements TrackerService {
     }
 
     /**
-     * Remove item from watch history
+     * Remove item from watch history with smart undo logic
      */
     async removeFromHistory(historyId: number | string): Promise<void> {
         // Check authentication by attempting to get the token from storage
@@ -451,20 +579,10 @@ export class AniListService implements TrackerService {
             throw new Error('Not authenticated with AniList');
         }
 
-        // Use DeleteMediaListEntry mutation
-        const mutation = `
-            mutation($id: Int!) {
-                DeleteMediaListEntry(id: $id) {
-                    deleted
-                }
-            }
-        `;
-
-        // Ensure ID is handled as a proper number for GraphQL Int type
+        // Validate and convert ID
         let numericId: number;
         if (typeof historyId === 'string') {
             numericId = parseInt(historyId, 10);
-            // Check if the parsed number is valid and within safe integer range
             if (isNaN(numericId) || !Number.isSafeInteger(numericId)) {
                 throw new Error(`Invalid AniList entry ID: ${historyId}`);
             }
@@ -477,12 +595,11 @@ export class AniListService implements TrackerService {
             }
         }
 
-        // AniList uses 32-bit signed integers for IDs, check if this ID is within range
+        // AniList uses 32-bit signed integers for IDs
         const MAX_32BIT_INT = 2147483647;
         const MIN_32BIT_INT = -2147483648;
 
         if (numericId > MAX_32BIT_INT || numericId < MIN_32BIT_INT) {
-            // This is likely a Trakt ID or other service ID that can't be used with AniList
             console.log(
                 `⚠️ Skipping AniList removal - ID ${numericId} appears to be from another service (exceeds 32-bit range)`
             );
@@ -491,9 +608,169 @@ export class AniListService implements TrackerService {
             );
         }
 
-        const variables = { id: numericId };
+        // Get current entry state to determine smart undo action
+        const currentEntry = await this.getEntryById(numericId);
+        if (!currentEntry) {
+            throw new Error('Entry not found or already removed');
+        }
 
-        const response = await this.makeGraphQLRequest(mutation, variables);
+        const undoAction = this.determineUndoAction(currentEntry);
+
+        if (undoAction.action === 'delete') {
+            // Delete entire entry (first watch undo)
+            await this.deleteMediaListEntry(numericId);
+        } else if (undoAction.action === 'update') {
+            // Update entry to previous state (rewatch/episode undo)
+            await this.updateMediaListEntry(numericId, undoAction.newState);
+        }
+    }
+
+    /**
+     * Get MediaList entry by ID
+     */
+    private async getEntryById(entryId: number): Promise<any | null> {
+        try {
+            const query = `
+                query GetMediaListEntryById($id: Int) {
+                    MediaList(id: $id) {
+                        id
+                        mediaId
+                        status
+                        progress
+                        repeat
+                        startedAt {
+                            year
+                            month
+                            day
+                        }
+                        completedAt {
+                            year
+                            month
+                            day
+                        }
+                        media {
+                            episodes
+                            format
+                        }
+                    }
+                }
+            `;
+
+            const response = await this.makeGraphQLRequest(query, {
+                id: entryId
+            });
+            return response.data?.MediaList || null;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    /**
+     * Determine what undo action to take based on entry state
+     */
+    private determineUndoAction(entry: any): {
+        action: 'delete' | 'update';
+        newState?: any;
+    } {
+        const isMovie = entry.media.format === 'MOVIE';
+        const progress = entry.progress || 0;
+        const repeat = entry.repeat || 0;
+        const status = entry.status;
+
+        if (isMovie) {
+            // Movie undo logic
+            if (repeat > 0) {
+                // Movie has rewatches - decrement repeat count
+                return {
+                    action: 'update',
+                    newState: {
+                        status: repeat === 1 ? 'COMPLETED' : 'REPEATING',
+                        repeat: repeat - 1,
+                        completedAt: null // We can't restore previous completion date
+                    }
+                };
+            } else {
+                // First watch - delete entire entry
+                return { action: 'delete' };
+            }
+        } else {
+            // Show undo logic
+            if (status === 'REPEATING') {
+                if (progress === 1 && repeat > 0) {
+                    // Undoing start of rewatch - revert to completed
+                    return {
+                        action: 'update',
+                        newState: {
+                            status: 'COMPLETED',
+                            progress: entry.media.episodes || progress,
+                            repeat: repeat - 1,
+                            completedAt: entry.startedAt // Approximate - can't restore exact date
+                        }
+                    };
+                } else if (progress > 1) {
+                    // Undoing episode in rewatch - decrement progress
+                    // Since rewatching is linear, we only track forward progress
+                    return {
+                        action: 'update',
+                        newState: {
+                            progress: progress - 1,
+                            completedAt: null
+                        }
+                    };
+                } else {
+                    // Edge case - delete entry
+                    return { action: 'delete' };
+                }
+            } else if (status === 'COMPLETED') {
+                if (progress > 1) {
+                    // Undoing series completion - revert to previous episode
+                    return {
+                        action: 'update',
+                        newState: {
+                            status: 'CURRENT',
+                            progress: progress - 1,
+                            completedAt: null
+                        }
+                    };
+                } else {
+                    // Undoing first episode - delete entry
+                    return { action: 'delete' };
+                }
+            } else if (status === 'CURRENT') {
+                if (progress > 1) {
+                    // Undoing episode - decrement progress
+                    return {
+                        action: 'update',
+                        newState: {
+                            progress: progress - 1
+                        }
+                    };
+                } else {
+                    // Undoing first episode - delete entry
+                    return { action: 'delete' };
+                }
+            } else {
+                // Unknown status - delete entry
+                return { action: 'delete' };
+            }
+        }
+    }
+
+    /**
+     * Delete MediaList entry completely
+     */
+    private async deleteMediaListEntry(entryId: number): Promise<void> {
+        const mutation = `
+            mutation DeleteEntry($id: Int!) {
+                DeleteMediaListEntry(id: $id) {
+                    deleted
+                }
+            }
+        `;
+
+        const response = await this.makeGraphQLRequest(mutation, {
+            id: entryId
+        });
 
         if (response.errors) {
             throw new Error(`AniList API error: ${response.errors[0].message}`);
@@ -501,6 +778,39 @@ export class AniListService implements TrackerService {
 
         if (!response.data.DeleteMediaListEntry?.deleted) {
             throw new Error('Failed to remove entry from AniList');
+        }
+    }
+
+    /**
+     * Update MediaList entry to previous state
+     */
+    private async updateMediaListEntry(
+        entryId: number,
+        newState: any
+    ): Promise<void> {
+        const mutation = `
+            mutation UpdateEntry($id: Int!, $status: MediaListStatus, $progress: Int, $repeat: Int, $completedAt: FuzzyDateInput) {
+                SaveMediaListEntry(id: $id, status: $status, progress: $progress, repeat: $repeat, completedAt: $completedAt) {
+                    id
+                    status
+                    progress
+                    repeat
+                }
+            }
+        `;
+
+        const variables = {
+            id: entryId,
+            status: newState.status,
+            progress: newState.progress,
+            repeat: newState.repeat,
+            completedAt: newState.completedAt
+        };
+
+        const response = await this.makeGraphQLRequest(mutation, variables);
+
+        if (response.errors) {
+            throw new Error(`AniList API error: ${response.errors[0].message}`);
         }
     }
 
@@ -1163,6 +1473,47 @@ export class AniListService implements TrackerService {
         } catch (error) {
             console.error('Error deleting AniList notes:', error);
             throw error;
+        }
+    }
+
+    /**
+     * Check if media already exists in user's list
+     */
+    private async getExistingMediaListEntry(
+        mediaId: number
+    ): Promise<any | null> {
+        try {
+            const query = `
+                query GetMediaListEntry($mediaId: Int, $userId: Int) {
+                    MediaList(mediaId: $mediaId, userId: $userId) {
+                        id
+                        status
+                        progress
+                        repeat
+                        startedAt {
+                            year
+                            month
+                            day
+                        }
+                        completedAt {
+                            year
+                            month
+                            day
+                        }
+                    }
+                }
+            `;
+
+            const userId = await this.getUserId();
+            const response = await this.makeGraphQLRequest(query, {
+                mediaId: mediaId,
+                userId: userId
+            });
+
+            return response.data?.MediaList || null;
+        } catch (error) {
+            // If entry doesn't exist or query fails, return null
+            return null;
         }
     }
 

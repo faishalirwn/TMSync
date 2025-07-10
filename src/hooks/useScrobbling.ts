@@ -42,6 +42,9 @@ export function useScrobbling(
     const lastReportedProgressRef = useRef(0);
     const lastSentActionTimestampRef = useRef(0);
     const timeUpdateProcessingScheduledRef = useRef(false);
+    const timeUpdateTimeoutIdRef = useRef<ReturnType<typeof setTimeout> | null>(
+        null
+    );
     const pageUnloadRef = useRef(false);
 
     const sendMessage = useCallback(
@@ -305,10 +308,17 @@ export function useScrobbling(
 
         if (!timeUpdateProcessingScheduledRef.current) {
             timeUpdateProcessingScheduledRef.current = true;
-            setTimeout(
-                () => processThrottledTimeUpdate(currentProgress),
-                VIDEO_PROGRESS_UPDATE_THROTTLE_MS
-            );
+
+            // Cancel any existing timeout
+            if (timeUpdateTimeoutIdRef.current) {
+                clearTimeout(timeUpdateTimeoutIdRef.current);
+            }
+
+            // Store the timeout ID for potential cancellation
+            timeUpdateTimeoutIdRef.current = setTimeout(() => {
+                timeUpdateTimeoutIdRef.current = null;
+                processThrottledTimeUpdate(currentProgress);
+            }, VIDEO_PROGRESS_UPDATE_THROTTLE_MS);
         }
     }, [processThrottledTimeUpdate]);
 
@@ -428,9 +438,21 @@ export function useScrobbling(
     useEffect(() => {
         const handler = () => {
             pageUnloadRef.current = true;
+            // Cancel any pending timeout on page unload
+            if (timeUpdateTimeoutIdRef.current) {
+                clearTimeout(timeUpdateTimeoutIdRef.current);
+                timeUpdateTimeoutIdRef.current = null;
+            }
         };
         window.addEventListener('beforeunload', handler);
-        return () => window.removeEventListener('beforeunload', handler);
+        return () => {
+            window.removeEventListener('beforeunload', handler);
+            // Cancel timeout on component unmount
+            if (timeUpdateTimeoutIdRef.current) {
+                clearTimeout(timeUpdateTimeoutIdRef.current);
+                timeUpdateTimeoutIdRef.current = null;
+            }
+        };
     }, []);
 
     // Reset state when media changes
@@ -506,13 +528,25 @@ export function useScrobbling(
         });
 
         if (response.success) {
+            // Cancel any pending timeout to prevent race conditions
+            if (timeUpdateTimeoutIdRef.current) {
+                clearTimeout(timeUpdateTimeoutIdRef.current);
+                timeUpdateTimeoutIdRef.current = null;
+                console.log('⏹️ Cancelled pending timeout during undo');
+            }
+
             historyIdRef.current = null;
             serviceHistoryIdsRef.current = {};
             autoScrobblingDisabledRef.current = true;
             isScrobbledRef.current = true;
+
+            // Reset status to idle to show manual scrobble button
+            setStatus('idle');
+
             console.log('✅ Cleared all history IDs after successful undo');
             console.log('🚫 Disabled auto-scrobbling after undo');
             console.log('🔄 Reset scrobbled state for re-scrobbling');
+            console.log('🏠 Reset status to idle - manual scrobble available');
         }
         setIsProcessing(false);
         return response.success;

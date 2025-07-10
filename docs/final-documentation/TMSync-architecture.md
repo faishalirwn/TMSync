@@ -1,6 +1,375 @@
 # TMSync - Architecture Documentation
 
-Generated on: 2025-07-07 21:40:41
+Generated on: 2025-07-09 16:06:03
+
+## ADR-0017: Use completedRef Guard to Prevent Video Event Race Conditions
+
+- **Type**: ADR
+- **Status**: Implemented
+- **Created**: 2025-07-09 08:55:15
+- **Updated**: CURRENT_TIMESTAMP
+
+- **Authors**: Claude
+
+### Context
+The fundamental issue is that video timeupdate events fire continuously regardless of scrobble completion state. This causes sendScrobbleStart to be called even after episode completion, creating race conditions with threshold processing. The problem is at the DOM/video level, not the service architecture level.
+
+### Decision
+Implement completedRef.current guard in processThrottledTimeUpdate to prevent any scrobble operations after completion. This stops the video event handler from doing work after the scrobble is complete, addressing the race condition at its source.
+
+### Decision Drivers
+- Video events are the root cause, not service logic
+- Simple guard is more reliable than complex abstractions
+- Performance - avoid unnecessary processing after completion
+- Maintainability - clear single point of control
+
+### Considered Options
+- Complex service architecture abstractions
+- Video event handler guards using completedRef
+- Disconnect video event listeners after completion
+
+### Consequences
+**Positive**: ['Eliminates race conditions at the source', 'Simple and maintainable solution', 'Prevents unnecessary API calls', 'Clear completion state management']
+**Negative**: ['Requires careful management of completedRef state', 'Must ensure completedRef is reset properly on new episodes']
+**Neutral**: ['Addresses root cause rather than symptoms', 'Simpler than service architecture changes']
+
+### Linked Requirements
+- REQ-0002-TECH-00: Fix Video TimeUpdate Race Condition in Scrobbling
+
+---
+
+## ADR-0016: Revert Enhanced Service Independence Architecture
+
+- **Type**: ADR
+- **Status**: Implemented
+- **Created**: 2025-07-09 08:52:18
+- **Updated**: CURRENT_TIMESTAMP
+
+- **Authors**: Claude
+
+### Context
+After implementing a comprehensive enhanced service independence system with capability-based thresholds, service-defined stop behaviors, and generic handlers, the user requested to revert all architectural changes and keep only the race condition fix. The enhanced system included ServiceCapabilityConfig interfaces, service-defined stop behaviors, and generic progress threshold handlers, but was deemed too complex for the current needs.
+
+### Decision
+Revert all architectural enhancements and maintain the original coupled frontend threshold approach with only the race condition fix preserved. Services will continue to be triggered by a unified 80% threshold in the frontend, maintaining the existing simple architecture.
+
+### Decision Drivers
+- User preference for simpler architecture
+- Avoid over-engineering for current requirements
+- Maintain existing proven functionality
+- Focus on essential bug fixes rather than architectural changes
+
+### Considered Options
+- Keep enhanced service independence architecture
+- Revert to original architecture with race condition fix
+- Partial revert keeping only capability enhancements
+
+### Consequences
+**Positive**: ['Simpler codebase maintenance', 'Reduced complexity', 'Preserved essential race condition fix', 'Faster development cycle']
+**Negative**: ['Services remain coupled through frontend threshold', 'Less scalable for future service additions', 'Missed opportunity for true service independence']
+**Neutral**: ['Returns to original well-tested architecture', 'Race condition fix addresses immediate user need']
+
+### Linked Requirements
+- REQ-0007-FUNC-00: Per-Service Independent Scrobbling Logic
+
+---
+
+## ADR-0015: Enhanced Capability-Based Service Independence
+
+- **Type**: ADR
+- **Status**: Implemented
+- **Created**: 2025-07-09 07:39:51
+- **Updated**: CURRENT_TIMESTAMP
+
+- **Authors**: MCP User
+
+### Context
+Current scrobbling implementation couples services through unified 80% threshold in frontend that triggers both Trakt stopScrobble() and AniList addToHistory() operations. The existing capability system uses simple boolean flags (supportsRealTimeScrobbling, supportsProgressTracking) which don't capture service-specific trigger conditions. This prevents true service independence where each service should define its own thresholds and trigger logic.
+
+### Decision
+Enhance the existing capability system to support service-defined thresholds and trigger operations:
+
+1. **Enhanced ServiceCapabilities Interface**:
+   - Extend capability definitions to include threshold and triggerOperation
+   - Services declare their own trigger conditions (e.g., Trakt: 80%, AniList: 90%)
+   - Services specify which method to call (stopScrobble vs addToHistory)
+
+2. **Generic Progress Handler**:
+   - Create handleProgressThreshold() that processes all services generically
+   - Services autonomously decide when to trigger based on their capabilities
+   - Handler uses dynamic method calls based on service configuration
+
+3. **Frontend Decoupling**:
+   - Frontend sends progress updates without threshold decisions
+   - Remove hardcoded TRAKT_SCROBBLE_COMPLETION_THRESHOLD
+   - Services become active participants in their own logic
+
+4. **Maintain Existing Abstraction**:
+   - Preserve service-agnostic handler patterns
+   - Keep parallel processing with Promise.allSettled
+   - Maintain TrackerService interface consistency
+
+### Decision Drivers
+- Service independence principle
+- Abstraction preservation
+- Existing capability system enhancement
+- Scalability for future services
+
+### Considered Options
+- Service-specific handlers
+- Event-driven architecture
+- Service-aware frontend
+- State machine approach
+
+### Consequences
+**Positive**: ['True service independence', 'Maintains abstraction patterns', 'Service-defined thresholds', 'Scalable to new services', 'Generic handler logic']
+**Negative**: ['More complex capability definitions', 'Dynamic method calls', 'Capability interface changes']
+**Neutral**: ['Existing parallel processing maintained', 'TrackerService interface preserved']
+
+### Linked Requirements
+- REQ-0007-FUNC-00: Per-Service Independent Scrobbling Logic
+
+---
+
+## ADR-0014: Service-Specific Handlers for Independent Scrobbling
+
+- **Type**: ADR
+- **Status**: Superseded
+- **Created**: 2025-07-09 07:18:19
+- **Updated**: CURRENT_TIMESTAMP
+
+- **Authors**: MCP User
+
+### Context
+Current scrobbling implementation has Trakt and AniList services coupled through a unified 80% threshold in handleScrobbleStop(). When frontend reaches 80% progress, both services are triggered simultaneously - Trakt executes stopScrobble() and AniList executes addToHistory(). This prevents independent service operation and forces both services to follow the same trigger logic.
+
+### Decision
+Implement service-specific handlers that decouple real-time scrobbling from progress tracking:
+
+1. Create separate handlers:
+   - handleTraktScrobbleStop() - Only processes real-time scrobbling services
+   - handleAnilistAddToHistory() - Only processes progress tracking services
+   - Keep existing handleScrobbleStop() for backward compatibility
+
+2. Allow per-service threshold configuration:
+   - Trakt: 80% threshold for scrobble stop
+   - AniList: Configurable threshold for add to history (could be different)
+
+3. Frontend calls appropriate handlers based on service capabilities and user preferences
+
+4. Maintain existing parallel processing architecture using Promise.allSettled
+
+### Decision Drivers
+- Service independence principle from CLAUDE.md
+- Existing parallel processing architecture
+- Clean separation of concerns
+- Backward compatibility during transition
+
+### Considered Options
+- Per-service threshold configuration
+- Service-specific handlers
+- Event-based decoupling
+- Capability-based independent processing
+
+### Consequences
+**Positive**: ['Independent service operation', 'Configurable per-service thresholds', 'Clean separation of real-time vs progress tracking', 'Maintains existing parallel processing']
+**Negative**: ['Additional handler complexity', 'Potential code duplication', 'Frontend needs to know which handlers to call']
+**Neutral**: ['Backward compatibility maintained during transition']
+
+### Linked Requirements
+- REQ-0007-FUNC-00: Per-Service Independent Scrobbling Logic
+
+---
+
+## ADR-0013: Comprehensive Parallel Service Processing Implementation
+
+- **Type**: ADR
+- **Status**: Implemented
+- **Created**: 2025-07-08 09:36:54
+- **Updated**: CURRENT_TIMESTAMP
+
+- **Authors**: Development Team
+
+### Context
+Extended parallel processing beyond scrobbling to cover ALL service operations in the system. Sequential processing violations found in rating operations (8 functions) and comment operations (3 functions) that also violated service independence.
+
+### Decision
+Implement parallel Promise.allSettled execution for all multi-service operations: scrobbling (start/pause/stop), rating (rate/unrate for movie/show/season/episode), and comments (get/post/delete). Each operation type maintains individual service error handling.
+
+### Decision Drivers
+- Complete REQ-0002-NFUNC-00 compliance
+- Comprehensive service independence
+- Consistent architectural patterns
+- Performance optimization across all features
+- User experience consistency
+
+### Considered Options
+- Fix only scrobbling operations
+- Gradual rollout by feature area
+- Comprehensive parallel implementation
+- Hybrid approaches per operation type
+
+### Consequences
+**Positive**: ['True service independence achieved system-wide', 'Consistent performance across all features', 'No blocking between services anywhere', 'Complete architectural compliance', 'Better fault tolerance universally']
+**Negative**: ['More complex error aggregation patterns', 'Increased implementation scope']
+**Neutral**: ['14 total operations converted to parallel', 'Consistent Promise.allSettled pattern throughout']
+
+### Linked Requirements
+- REQ-0002-NFUNC-00: Enhanced Service Independence Architecture
+
+---
+
+## ADR-0012: Parallel Service Processing for Scrobble Operations
+
+- **Type**: ADR
+- **Status**: Implemented
+- **Created**: 2025-07-08 09:19:28
+- **Updated**: CURRENT_TIMESTAMP
+
+- **Authors**: Development Team
+
+### Context
+Sequential service processing violated REQ-0002-NFUNC-00 P0 requirement for service independence. Primary service (Trakt) would block all other services, and slow/failing services could impact overall performance.
+
+### Decision
+Convert all scrobble operations (start/pause/stop) from sequential for-loops to parallel Promise.allSettled execution. All enabled services now run simultaneously with individual error handling.
+
+### Decision Drivers
+- Service independence requirement (P0)
+- Performance optimization
+- Fault tolerance
+- User experience improvement
+- Architectural consistency
+
+### Considered Options
+- Keep sequential processing
+- Hybrid approach (parallel within categories)
+- Full parallel execution
+- Service prioritization with timeouts
+
+### Consequences
+**Positive**: ['True service independence achieved', 'No blocking between services', 'Better fault tolerance', 'Improved overall performance', 'Consistent with architecture principles']
+**Negative**: ['Slightly more complex error aggregation', 'Loss of service execution order']
+**Neutral**: ['Uses Promise.allSettled for proper error isolation', 'Maintains individual service error handling']
+
+### Linked Requirements
+- REQ-0002-NFUNC-00: Enhanced Service Independence Architecture
+
+---
+
+## ADR-0011: Scrobble Operation Deduplication and Race Condition Prevention
+
+- **Type**: ADR
+- **Status**: Accepted
+- **Created**: 2025-07-08 09:09:18
+- **Updated**: CURRENT_TIMESTAMP
+
+- **Authors**: Development Team
+
+### Context
+Discovered cascading start-stop loops caused by 2-second throttling delays and lack of start operation deduplication. Multiple 409 conflicts led to retry loops, and async timeupdate events continued after stop completion.
+
+### Decision
+Extend scrobbleOperationManager to handle all operations (start/stop/pause) with unified deduplication, add completion state flag to prevent operations after successful stop, and treat 409 conflicts as success since content is already scrobbled.
+
+### Decision Drivers
+- Prevent start-after-stop race conditions
+- Eliminate duplicate scrobble operations
+- Handle Trakt 409 conflicts gracefully
+- Maintain operation atomicity
+- Unified operation management
+
+### Considered Options
+- Frontend-only throttling
+- Backend-only deduplication
+- Status-based prevention
+- Operation manager extension
+- Complete operation blocking
+
+### Consequences
+**Positive**: ['Eliminates start-stop cascading loops', 'Unified operation deduplication', 'Proper 409 conflict handling', 'Atomic completion state', 'Better error resilience']
+**Negative**: ['Additional state management complexity', 'More restrictive operation blocking']
+**Neutral**: ['Operation manager handles all scrobble types', 'Completion state resets on undo']
+
+### Linked Requirements
+- REQ-0001-TECH-00: Handle Trakt 409 Duplicate Scrobble Conflicts
+
+---
+
+## ADR-0010: Auto-Scrobbling Disable Pattern After Undo Operations
+
+- **Type**: ADR
+- **Status**: Accepted
+- **Created**: 2025-07-07 16:14:58
+- **Updated**: CURRENT_TIMESTAMP
+
+- **Authors**: Development Team
+
+### Context
+Users experienced undo→auto-scrobble loops when undoing a scrobble while video remained above 80% threshold. After undo clears historyIdRef, auto-scrobble logic would immediately re-trigger.
+
+### Decision
+Implement autoScrobblingDisabledRef flag pattern to disable ALL auto-scrobbling actions after undo until manual user action re-enables it.
+
+### Decision Drivers
+- Prevent undo→auto-scrobble infinite loops
+- Maintain user control after undo actions
+- Simple flag-based solution over complex state tracking
+- Consistent behavior across all auto-scrobble triggers
+
+### Considered Options
+- Complex state tracking with timestamps
+- Per-action disable flags
+- Global auto-scrobble disable flag
+- Video position-based prevention
+
+### Consequences
+**Positive**: ['Prevents undo loops completely', 'Simple implementation with single flag', 'Re-enables on manual action naturally', 'Blocks all auto-scrobble vectors (play/pause/ended/completion)']
+**Negative**: ['Requires manual action to re-enable', 'Additional state management complexity']
+**Neutral**: ['Flag resets on successful scrobble completion', 'Session-only behavior (no persistence)']
+
+### Linked Requirements
+- REQ-0002-INTF-00: Global Scrobbling Toggle
+
+---
+
+## ADR-0009: Remove Start and Rewatch Prompts in Favor of Global Toggle
+
+- **Type**: ADR
+- **Status**: Accepted
+- **Created**: 2025-07-07 15:31:09
+- **Updated**: CURRENT_TIMESTAMP
+
+- **Authors**: TMSync Team
+
+### Context
+Original design included StartWatchPrompt and RewatchPrompt components to prevent accidental scrobbling. However, during global toggle implementation, user feedback indicated these prompts were annoying barriers that disrupted the user experience. The global toggle provides sufficient control over automatic scrobbling without requiring confirmation prompts.
+
+### Decision
+Remove all confirmation prompts (StartWatchPrompt, RewatchPrompt) entirely and rely solely on the global auto-scrobbling toggle for user control. Users go directly to the main scrobbling UI without any confirmation barriers. The global toggle serves as the primary protection against unwanted automatic scrobbling.
+
+### Decision Drivers
+- User preference for streamlined experience
+- Global toggle provides sufficient control
+- Prompts created friction without adding value
+- Simpler codebase and user flow
+- Immediate access to manual scrobbling controls
+
+### Considered Options
+- Remove prompts entirely
+- Keep prompts but bypass when toggle is off
+- Make prompts optional via settings
+- Reduce prompt frequency
+
+### Consequences
+**Positive**: ['Streamlined user experience', 'Immediate access to scrobbling controls', 'Simpler codebase maintenance', 'No friction for power users']
+**Negative**: ['No protection against accidental scrobbling for new users', 'Potential for unexpected auto-scrobbling behavior', 'Need to handle edge cases like undo loops']
+**Neutral**: ['Shifts control paradigm from confirmation to prevention']
+
+### Linked Requirements
+- REQ-0002-INTF-00: Global Scrobbling Toggle
+
+---
 
 ## ADR-0006: Universal Per-Service Scrobbling Logic
 
