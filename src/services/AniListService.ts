@@ -417,6 +417,17 @@ export class AniListService implements TrackerService {
 
             if (existingEntry) {
                 // Movie already exists - this is a rewatch
+                // Store original completion date before overwriting (only on first rewatch)
+                if (
+                    existingEntry.completedAt &&
+                    (existingEntry.repeat || 0) === 0
+                ) {
+                    await this.storeOriginalCompletionDate(
+                        anilistId,
+                        existingEntry.completedAt
+                    );
+                }
+
                 status = 'REPEATING';
                 repeatCount = (existingEntry.repeat || 0) + 1;
                 startedAt = existingEntry.startedAt; // Keep original start date
@@ -461,6 +472,17 @@ export class AniListService implements TrackerService {
                     // This is a rewatch
                     if (existingStatus === 'COMPLETED' && episodeNumber === 1) {
                         // Starting a new rewatch from episode 1
+                        // Store original completion date before clearing (only on first rewatch)
+                        if (
+                            existingEntry.completedAt &&
+                            (existingEntry.repeat || 0) === 0
+                        ) {
+                            await this.storeOriginalCompletionDate(
+                                anilistId,
+                                existingEntry.completedAt
+                            );
+                        }
+
                         status = 'REPEATING';
                         repeatCount = (existingEntry.repeat || 0) + 1;
                         startedAt = existingEntry.startedAt; // Keep original start date
@@ -614,11 +636,13 @@ export class AniListService implements TrackerService {
             throw new Error('Entry not found or already removed');
         }
 
-        const undoAction = this.determineUndoAction(currentEntry);
+        const undoAction = await this.determineUndoAction(currentEntry);
 
         if (undoAction.action === 'delete') {
             // Delete entire entry (first watch undo)
             await this.deleteMediaListEntry(numericId);
+            // Clean up stored original completion date since entry is deleted
+            await this.clearOriginalCompletionDate(currentEntry.mediaId);
         } else if (undoAction.action === 'update') {
             // Update entry to previous state (rewatch/episode undo)
             await this.updateMediaListEntry(numericId, undoAction.newState);
@@ -668,10 +692,10 @@ export class AniListService implements TrackerService {
     /**
      * Determine what undo action to take based on entry state
      */
-    private determineUndoAction(entry: any): {
+    private async determineUndoAction(entry: any): Promise<{
         action: 'delete' | 'update';
         newState?: any;
-    } {
+    }> {
         const isMovie = entry.media.format === 'MOVIE';
         const progress = entry.progress || 0;
         const repeat = entry.repeat || 0;
@@ -681,16 +705,31 @@ export class AniListService implements TrackerService {
             // Movie undo logic
             if (repeat > 0) {
                 // Movie has rewatches - decrement repeat count
+                // Try to restore original completion date if this is the last rewatch
+                let restoredCompletedAt = null;
+                if (repeat === 1) {
+                    // This is undoing the last rewatch - restore original completion date
+                    restoredCompletedAt = await this.getOriginalCompletionDate(
+                        entry.mediaId
+                    );
+                    // Clean up stored date since we've restored it
+                    if (restoredCompletedAt) {
+                        await this.clearOriginalCompletionDate(entry.mediaId);
+                    }
+                }
+
                 return {
                     action: 'update',
                     newState: {
                         status: repeat === 1 ? 'COMPLETED' : 'REPEATING',
                         repeat: repeat - 1,
-                        completedAt: null // We can't restore previous completion date
+                        completedAt: restoredCompletedAt
                     }
                 };
             } else {
                 // First watch - delete entire entry
+                // Clean up any stored original completion date
+                await this.clearOriginalCompletionDate(entry.mediaId);
                 return { action: 'delete' };
             }
         } else {
@@ -698,13 +737,28 @@ export class AniListService implements TrackerService {
             if (status === 'REPEATING') {
                 if (progress === 1 && repeat > 0) {
                     // Undoing start of rewatch - revert to completed
+                    // Try to restore original completion date if this is the last rewatch
+                    let restoredCompletedAt = null;
+                    if (repeat === 1) {
+                        // This is undoing the last rewatch - restore original completion date
+                        restoredCompletedAt =
+                            await this.getOriginalCompletionDate(entry.mediaId);
+                        // Clean up stored date since we've restored it
+                        if (restoredCompletedAt) {
+                            await this.clearOriginalCompletionDate(
+                                entry.mediaId
+                            );
+                        }
+                    }
+
                     return {
                         action: 'update',
                         newState: {
                             status: 'COMPLETED',
                             progress: entry.media.episodes || progress,
                             repeat: repeat - 1,
-                            completedAt: entry.startedAt // Approximate - can't restore exact date
+                            completedAt:
+                                restoredCompletedAt || entry.completedAt
                         }
                     };
                 } else if (progress > 1) {
@@ -713,12 +767,14 @@ export class AniListService implements TrackerService {
                     return {
                         action: 'update',
                         newState: {
-                            progress: progress - 1,
-                            completedAt: null
+                            progress: progress - 1
+                            // Don't modify completedAt - preserve existing date during rewatch
                         }
                     };
                 } else {
                     // Edge case - delete entry
+                    // Clean up any stored original completion date
+                    await this.clearOriginalCompletionDate(entry.mediaId);
                     return { action: 'delete' };
                 }
             } else if (status === 'COMPLETED') {
@@ -734,6 +790,8 @@ export class AniListService implements TrackerService {
                     };
                 } else {
                     // Undoing first episode - delete entry
+                    // Clean up any stored original completion date
+                    await this.clearOriginalCompletionDate(entry.mediaId);
                     return { action: 'delete' };
                 }
             } else if (status === 'CURRENT') {
@@ -747,10 +805,14 @@ export class AniListService implements TrackerService {
                     };
                 } else {
                     // Undoing first episode - delete entry
+                    // Clean up any stored original completion date
+                    await this.clearOriginalCompletionDate(entry.mediaId);
                     return { action: 'delete' };
                 }
             } else {
                 // Unknown status - delete entry
+                // Clean up any stored original completion date
+                await this.clearOriginalCompletionDate(entry.mediaId);
                 return { action: 'delete' };
             }
         }
@@ -1514,6 +1576,85 @@ export class AniListService implements TrackerService {
         } catch (error) {
             // If entry doesn't exist or query fails, return null
             return null;
+        }
+    }
+
+    /**
+     * Original Completion Date Storage Methods
+     */
+
+    /**
+     * Store original completion date before overwriting during rewatch
+     */
+    private async storeOriginalCompletionDate(
+        mediaId: number,
+        originalCompletedAt: FuzzyDateInput | null
+    ): Promise<void> {
+        if (!originalCompletedAt) return; // Nothing to store
+
+        try {
+            const storageKey = 'anilist_original_completion_dates';
+            const data = await chrome.storage.local.get(storageKey);
+            const originalDates = data[storageKey] || {};
+
+            // Store the original completion date for this media
+            originalDates[`media_${mediaId}`] = originalCompletedAt;
+
+            await chrome.storage.local.set({ [storageKey]: originalDates });
+            console.log(
+                `📅 Stored original completion date for media ${mediaId}:`,
+                originalCompletedAt
+            );
+        } catch (error) {
+            console.error('Failed to store original completion date:', error);
+            // Don't throw - this is not critical for the main operation
+        }
+    }
+
+    /**
+     * Retrieve original completion date for undo operations
+     */
+    private async getOriginalCompletionDate(
+        mediaId: number
+    ): Promise<FuzzyDateInput | null> {
+        try {
+            const storageKey = 'anilist_original_completion_dates';
+            const data = await chrome.storage.local.get(storageKey);
+            const originalDates = data[storageKey] || {};
+
+            const originalDate = originalDates[`media_${mediaId}`] || null;
+            console.log(
+                `📅 Retrieved original completion date for media ${mediaId}:`,
+                originalDate
+            );
+            return originalDate;
+        } catch (error) {
+            console.error(
+                'Failed to retrieve original completion date:',
+                error
+            );
+            return null;
+        }
+    }
+
+    /**
+     * Clear original completion date from storage (when no longer needed)
+     */
+    private async clearOriginalCompletionDate(mediaId: number): Promise<void> {
+        try {
+            const storageKey = 'anilist_original_completion_dates';
+            const data = await chrome.storage.local.get(storageKey);
+            const originalDates = data[storageKey] || {};
+
+            delete originalDates[`media_${mediaId}`];
+
+            await chrome.storage.local.set({ [storageKey]: originalDates });
+            console.log(
+                `🗑️ Cleared original completion date for media ${mediaId}`
+            );
+        } catch (error) {
+            console.error('Failed to clear original completion date:', error);
+            // Don't throw - this is not critical
         }
     }
 

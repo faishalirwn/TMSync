@@ -367,7 +367,7 @@ export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
                                 Auto Scrobbling
                             </span>
                             <span className="text-xs text-(--color-text-secondary)">
-                                {hasHistoryEntries
+                                {isScrobbled
                                     ? Object.keys(serviceHistoryIds).some(
                                           (id) => serviceHistoryIds[id] === -1
                                       )
@@ -378,7 +378,7 @@ export const ScrobbleNotification: React.FC<ScrobbleNotificationProps> = ({
                                       : '⏸️ Paused'}
                             </span>
                         </div>
-                        {!hasHistoryEntries && (
+                        {!isScrobbled && (
                             // Functional toggle for active/paused states
                             <label className="relative inline-flex items-center cursor-pointer">
                                 <input
