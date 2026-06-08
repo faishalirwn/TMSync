@@ -58,6 +58,42 @@ section {
   margin-top: 8px;
 }
 
+.links {
+  margin-top: 8px;
+}
+
+.linkform {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px solid rgba(128, 128, 128, 0.25);
+  border-radius: 8px;
+}
+
+.linkform label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.linkform input {
+  padding: 6px 8px;
+  border: 1px solid rgba(128, 128, 128, 0.4);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: 12px / 1.4 ui-monospace, monospace;
+}
+
+.linkform .hint code {
+  display: inline;
+  margin: 0 1px;
+}
+
 button {
   padding: 5px 12px;
   border: 1px solid currentColor;

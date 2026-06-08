@@ -1,7 +1,7 @@
 import { corrections, customRecipes } from "@/lib/storage";
 import type { ResolvedIdentity } from "@/lib/trakt/types";
 import { type TraktStatus, sendMessage } from "@/messaging";
-import type { Recipe } from "@tmsync/shared";
+import type { Recipe, RecipeLinks } from "@tmsync/shared";
 import { useEffect, useState } from "preact/hooks";
 import { browser } from "wxt/browser";
 
@@ -85,12 +85,84 @@ function EnabledSites({
   );
 }
 
+/** Editor for one recipe's quick-link URL templates (the trakt.tv deep links). */
+function LinkEditor({
+  recipe,
+  onSave,
+}: {
+  recipe: Recipe;
+  onSave: (id: string, links: RecipeLinks) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [movie, setMovie] = useState(recipe.links?.movie ?? "");
+  const [tv, setTv] = useState(recipe.links?.tv ?? "");
+  const [search, setSearch] = useState(recipe.links?.search ?? "");
+  const [saved, setSaved] = useState(false);
+
+  const save = async () => {
+    const links: RecipeLinks = {};
+    if (movie.trim()) links.movie = movie.trim();
+    if (tv.trim()) links.tv = tv.trim();
+    if (search.trim()) links.search = search.trim();
+    await onSave(recipe.id, links);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1500);
+  };
+
+  const has = !!(recipe.links?.movie || recipe.links?.tv || recipe.links?.search);
+
+  return (
+    <div class="links">
+      <button type="button" class="link" onClick={() => setOpen((v) => !v)}>
+        {open ? "Hide quick links" : has ? "Edit quick links ✓" : "Add quick links"}
+      </button>
+      {open && (
+        <div class="linkform">
+          <p class="hint">
+            URLs Trakt pages link to. Placeholders: <code>{"{tmdb}"}</code> <code>{"{imdb}"}</code>{" "}
+            <code>{"{season}"}</code> <code>{"{episode}"}</code> <code>{"{title}"}</code>.
+          </p>
+          <label>
+            Movie
+            <input
+              value={movie}
+              onInput={(e) => setMovie((e.target as HTMLInputElement).value)}
+              placeholder="https://site/movie/{tmdb}"
+            />
+          </label>
+          <label>
+            TV (show→S1E1, season→S{"{n}"}E1, episode→S{"{n}"}E{"{m}"})
+            <input
+              value={tv}
+              onInput={(e) => setTv((e.target as HTMLInputElement).value)}
+              placeholder="https://site/tv/{tmdb}/{season}/{episode}"
+            />
+          </label>
+          <label>
+            Search fallback
+            <input
+              value={search}
+              onInput={(e) => setSearch((e.target as HTMLInputElement).value)}
+              placeholder="https://site/search/{title}"
+            />
+          </label>
+          <button type="button" onClick={save}>
+            {saved ? "Saved" : "Save quick links"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CustomRecipes({
   recipes,
   onDelete,
+  onSaveLinks,
 }: {
   recipes: Recipe[];
   onDelete: (id: string) => void;
+  onSaveLinks: (id: string, links: RecipeLinks) => Promise<void>;
 }) {
   const [copied, setCopied] = useState<string | null>(null);
   const copy = async (r: Recipe) => {
@@ -118,6 +190,7 @@ function CustomRecipes({
                 <code class="block">{r.match.urlPattern}</code>
               </div>
             </div>
+            <LinkEditor recipe={r} onSave={onSaveLinks} />
             <div class="actions">
               <button type="button" class="link" onClick={() => copy(r)}>
                 {copied === r.id ? "Copied JSON" : "Copy JSON"}
@@ -130,7 +203,10 @@ function CustomRecipes({
         ))
       )}
       {recipes.length > 0 && (
-        <p class="hint">Copy a recipe’s JSON to contribute it back via a pull request.</p>
+        <p class="hint">
+          Quick links add “watch on this site” buttons to Trakt movie/show pages. Copy a recipe’s
+          JSON to contribute it back via a pull request.
+        </p>
       )}
     </section>
   );
@@ -227,6 +303,15 @@ export function App() {
     setRecipes(next);
   };
 
+  const saveLinks = async (id: string, links: RecipeLinks) => {
+    const hasAny = !!(links.movie || links.tv || links.search);
+    const next = (await customRecipes.getValue()).map((r) =>
+      r.id === id ? { ...r, links: hasAny ? links : undefined } : r,
+    );
+    await customRecipes.setValue(next);
+    setRecipes(next);
+  };
+
   const deleteCorrection = async (key: string) => {
     setBusy(true);
     const next = { ...(await corrections.getValue()) };
@@ -248,7 +333,7 @@ export function App() {
       <h1>TMSync settings</h1>
       <TraktSection status={status} busy={busy} onChange={refresh} />
       <EnabledSites sites={sites} busy={busy} onDisable={disableSite} />
-      <CustomRecipes recipes={recipes} onDelete={deleteRecipe} />
+      <CustomRecipes recipes={recipes} onDelete={deleteRecipe} onSaveLinks={saveLinks} />
       <Corrections
         entries={Object.entries(corr)}
         busy={busy}

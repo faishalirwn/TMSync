@@ -25,6 +25,23 @@ export const Field = z.object({
 });
 export type Field = z.infer<typeof Field>;
 
+/**
+ * Optional URL templates for deep-linking FROM a Trakt page back OUT to this
+ * streaming site (the "quick links" feature). Declarative data — placeholders
+ * are substituted, never executed. Supported placeholders:
+ *   {tmdb} {imdb}  — ids read from Trakt's own external links
+ *   {title}        — URL-encoded title (search fallback)
+ *   {season} {episode} — for `tv` (show → S1E1, season → S{n}E1, episode → S{n}E{m})
+ * A `tv`/`movie` template that references an id we don't have falls back to
+ * `search`. Omit `links` entirely and the site simply shows no quick link.
+ */
+export const RecipeLinks = z.object({
+  movie: z.string().optional(),
+  tv: z.string().optional(),
+  search: z.string().optional(),
+});
+export type RecipeLinks = z.infer<typeof RecipeLinks>;
+
 export const Recipe = z.object({
   id: z.string(),
   schemaVersion: z.number().int(), // client ignores recipes with a newer schemaVersion than it supports
@@ -50,6 +67,7 @@ export const Recipe = z.object({
     season: Field.optional(), // shows
     episode: Field.optional(), // shows
   }),
+  links: RecipeLinks.optional(), // deep-link out from Trakt (quick links)
 });
 
 export type Recipe = z.infer<typeof Recipe>;
