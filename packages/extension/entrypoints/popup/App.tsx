@@ -1,3 +1,4 @@
+import { tabFrameOrigins } from "@/lib/storage";
 import { type TraktStatus, sendMessage } from "@/messaging";
 import { useEffect, useState } from "preact/hooks";
 import { browser } from "wxt/browser";
@@ -63,9 +64,12 @@ export function App() {
       tabId !== null ? collectOrigins(tabId) : Promise.resolve<string[]>([]),
       sendMessage("listEnabledSites", undefined),
     ]);
+    // Merge the live snapshot with origins the content script accumulated over
+    // the session — catches player iframes that loaded after the page settled.
+    const stored = tabId !== null ? ((await tabFrameOrigins.getValue())[tabId] ?? []) : [];
     setStatus(s);
     setTopOrigin(o);
-    setOrigins(found);
+    setOrigins([...new Set([...found, ...stored])]);
     setEnabled(sites);
   };
 

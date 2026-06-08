@@ -98,3 +98,14 @@ export interface TabSession {
 export const tabSessions = storage.defineItem<Record<number, TabSession>>("session:tab_sessions", {
   fallback: {},
 });
+
+/**
+ * Cross-origin http(s) iframe origins seen in a tab over time (accumulated by
+ * the top-frame content script), so the popup's per-origin enable list surfaces
+ * player iframes that loaded late — not just those present at the popup-open
+ * snapshot. Session-scoped; cleared with the tab session.
+ */
+export const tabFrameOrigins = storage.defineItem<Record<number, string[]>>(
+  "session:tab_frame_origins",
+  { fallback: {} },
+);

@@ -24,6 +24,9 @@ const LABEL: Record<BadgeState, string> = {
   error: "error",
 };
 
+/** How long the rating prompt stays up after a scrobble before auto-collapsing. */
+const AUTO_COLLAPSE_MS = 12_000;
+
 function optionLabel(o: TraktSearchOption): string {
   return `${o.title}${o.year ? ` (${o.year})` : ""} · ${o.type}`;
 }
@@ -346,6 +349,16 @@ function BadgeRoot() {
       void sendMessage("getTabMedia", undefined).then((t) => t && setMedia(t.media));
     }
   }, [status, media]);
+
+  // After a watch lands in history, leave the rating prompt up for a moment then
+  // auto-collapse to the dot so it gets out of the way. Cancelled if a panel is
+  // open (mid note/fix) so we never minimize from under the user.
+  useEffect(() => {
+    if (status?.state === "scrobbled" && panel === null && !minimized) {
+      const t = setTimeout(() => setMinimized(true), AUTO_COLLAPSE_MS);
+      return () => clearTimeout(t);
+    }
+  }, [status?.state, panel, minimized]);
 
   if (!status) return null;
 

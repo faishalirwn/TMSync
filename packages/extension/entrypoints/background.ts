@@ -5,6 +5,7 @@ import {
   ratings,
   remoteRatings,
   resolutionCache,
+  tabFrameOrigins,
   tabSessions,
 } from "@/lib/storage";
 import { connect, disconnect, getRedirectUri, isConnected } from "@/lib/trakt/auth";
@@ -333,8 +334,27 @@ export default defineBackground(() => {
     if (tabId !== undefined) void sendMessage("scrobbleStatus", data, { tabId, frameId: 0 });
   });
 
+  // Top frame reports iframe origins it has seen; accumulate the union per tab so
+  // the popup can offer late-loading player frames (constraint #5 enable flow).
+  onMessage("reportFrameOrigins", async ({ data, sender }) => {
+    const tabId = sender.tab?.id;
+    if (tabId === undefined || data.length === 0) return;
+    const all = await tabFrameOrigins.getValue();
+    const merged = [...new Set([...(all[tabId] ?? []), ...data])];
+    if (merged.length !== (all[tabId]?.length ?? 0)) {
+      all[tabId] = merged;
+      await tabFrameOrigins.setValue(all);
+    }
+  });
+
   // Reconcile a stop if a tab dies before a clean one (point: lost stops).
   browser.tabs.onRemoved.addListener(async (tabId) => {
+    // The tab is gone — drop its accumulated player-frame origins.
+    const frames = await tabFrameOrigins.getValue();
+    if (frames[tabId]) {
+      delete frames[tabId];
+      await tabFrameOrigins.setValue(frames);
+    }
     const all = await tabSessions.getValue();
     const session = all[tabId];
     if (!session) return;
@@ -352,6 +372,10 @@ export default defineBackground(() => {
 });
 
 async function clearTabSession(tabId: number): Promise<void> {
+  // Note: does NOT clear tabFrameOrigins — a `stop` (e.g. the mid-playback
+  // threshold commit) ends the scrobble session but the player iframe is still
+  // on the page, so the popup should keep offering it. Frame origins are cleared
+  // only when the tab is removed (see tabs.onRemoved).
   const all = await tabSessions.getValue();
   if (all[tabId]) {
     delete all[tabId];

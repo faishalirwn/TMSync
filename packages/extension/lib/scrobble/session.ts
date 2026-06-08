@@ -90,6 +90,7 @@ export class SessionManager {
   private watchedThreshold = 0.8;
   private lastPublishedKey: string | null = null;
   private framesObserver: MutationObserver | null = null;
+  private readonly seenFrameOrigins = new Set<string>();
   private currentKey: string | null = null;
   private currentVideo: HTMLVideoElement | null = null;
   private controller: ScrobbleController | null = null;
@@ -275,18 +276,26 @@ export class SessionManager {
   }
 
   /**
-   * Top-frame only: watch for cross-origin player iframes. If one appears whose
-   * origin we haven't been granted/registered, push an actionable badge hint —
-   * the player can't be scrobbled until the user enables that origin. This is the
-   * main feedback channel on sites where the console is unavailable.
+   * Top-frame only: watch for cross-origin player iframes. Two jobs:
+   *  - Always accumulate every cross-origin iframe origin seen (debounced, only
+   *    when new) so the popup can offer late-loading player frames to enable.
+   *  - When the recipe says the player is in an iframe and none is enabled yet,
+   *    push an actionable badge hint (main feedback channel where no console).
    */
   private watchPlayerFrames(): void {
     const scan = async () => {
-      // Only when the recipe says the player is in an iframe — avoids false hints
-      // from ad/analytics iframes on ordinary sites.
-      if (this.frame !== "iframe") return;
       const origins = this.crossOriginIframeOrigins();
       if (origins.length === 0) return;
+
+      const fresh = origins.filter((o) => !this.seenFrameOrigins.has(o));
+      if (fresh.length > 0) {
+        for (const o of fresh) this.seenFrameOrigins.add(o);
+        void sendMessage("reportFrameOrigins", origins);
+      }
+
+      // Only hint when the recipe expects an iframe player — avoids false hints
+      // from ad/analytics iframes on ordinary sites.
+      if (this.frame !== "iframe") return;
       const enabled = new Set(await sendMessage("listEnabledSites", undefined));
       // If any cross-origin frame is already enabled, the player is set up — the
       // rest are almost certainly ads; stay quiet.
@@ -298,7 +307,16 @@ export class SessionManager {
       });
     };
     void scan();
-    this.framesObserver = new MutationObserver(() => void scan());
+    // Debounce: the subtree observer fires constantly on busy SPAs; we only need
+    // to re-scan iframes occasionally.
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    this.framesObserver = new MutationObserver(() => {
+      if (timer) return;
+      timer = setTimeout(() => {
+        timer = null;
+        void scan();
+      }, 500);
+    });
     this.framesObserver.observe(document.documentElement, { childList: true, subtree: true });
     this.ctx.onInvalidated(() => this.framesObserver?.disconnect());
   }

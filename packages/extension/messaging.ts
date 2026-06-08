@@ -90,6 +90,8 @@ export interface ProtocolMap {
   endSession(): void;
   /** Playing frame reports scrobble state; background relays to the top frame's badge. */
   reportScrobble(status: BadgeStatus): void;
+  /** Top frame reports cross-origin iframe origins it has seen (accumulated for the popup). */
+  reportFrameOrigins(origins: string[]): void;
   /** Background → top frame: update the badge. */
   scrobbleStatus(status: BadgeStatus): void;
 
