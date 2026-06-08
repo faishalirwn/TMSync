@@ -47,6 +47,21 @@ export const ratings = storage.defineItem<Record<string, number>>("local:ratings
 });
 
 /**
+ * Short-lived cache of the user's Trakt ratings, so the UI can show ratings set
+ * on the Trakt website (not just via TMSync). Keyed by Trakt type
+ * (movies/shows/seasons/episodes); the inner map is reviewKey → rating, kept
+ * compact (just numbers). Refreshed on a TTL — see client.getRemoteRating.
+ */
+export interface RemoteRatings {
+  at: number;
+  map: Record<string, number>;
+}
+export const remoteRatings = storage.defineItem<Record<string, RemoteRatings>>(
+  "local:remote_ratings",
+  { fallback: {} },
+);
+
+/**
  * The user's single note per item (a managed public Trakt comment), keyed by
  * reviewKey. We store the comment id so the note is always edited/deleted, never
  * duplicated.

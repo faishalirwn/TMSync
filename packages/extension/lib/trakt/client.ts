@@ -1,5 +1,5 @@
 import { TRAKT } from "@/config";
-import { corrections, resolutionCache } from "@/lib/storage";
+import { corrections, remoteRatings, resolutionCache } from "@/lib/storage";
 import type { ParsedMedia } from "@tmsync/shared";
 import { getValidAccessToken, refreshTokens } from "./auth";
 import type {
@@ -12,7 +12,7 @@ import type {
   TraktSearchOption,
   TraktSearchResult,
 } from "./types";
-import { resolutionCacheKey } from "./util";
+import { resolutionCacheKey, reviewKey } from "./util";
 
 export class TraktNotConnectedError extends Error {
   constructor() {
@@ -174,6 +174,63 @@ export async function rate(
   return { ok: true, status: res.status };
 }
 
+const RATING_TYPE: Record<ReviewLevel, string> = {
+  movie: "movies",
+  show: "shows",
+  season: "seasons",
+  episode: "episodes",
+};
+const REMOTE_TTL_MS = 5 * 60 * 1000;
+
+/** reviewKey-shaped key for a /sync/ratings list item (matches util.reviewKey). */
+function remoteItemKey(item: Record<string, unknown>, level: ReviewLevel): string | null {
+  const id = (o: unknown): number | undefined =>
+    (o as { ids?: { trakt?: number } } | undefined)?.ids?.trakt;
+  if (level === "movie") {
+    const t = id(item.movie);
+    return t === undefined ? null : `movie:${t}::`;
+  }
+  const showT = id(item.show);
+  if (showT === undefined) return null;
+  if (level === "show") return `show:${showT}::`;
+  if (level === "season") {
+    const n = (item.season as { number?: number } | undefined)?.number;
+    return n === undefined ? null : `season:${showT}:${n}:`;
+  }
+  const ep = item.episode as { season?: number; number?: number } | undefined;
+  if (ep?.season === undefined || ep.number === undefined) return null;
+  return `episode:${showT}:${ep.season}:${ep.number}`;
+}
+
+/**
+ * The user's current Trakt rating for an item, so the UI reflects ratings set on
+ * the website too. Fetches GET /sync/ratings/{type} (the whole list for that
+ * type), distilled to a compact reviewKey→rating map cached on a TTL.
+ */
+export async function getRemoteRating(
+  identity: ResolvedIdentity,
+  level: ReviewLevel,
+  season?: number,
+  episode?: number,
+): Promise<number | null> {
+  const type = RATING_TYPE[level];
+  const cache = await remoteRatings.getValue();
+  let entry = cache[type];
+  if (!entry || Date.now() - entry.at > REMOTE_TTL_MS) {
+    const res = await api(`/sync/ratings/${type}`, {}, true);
+    if (!res.ok) return null;
+    const items = (await res.json()) as Record<string, unknown>[];
+    const map: Record<string, number> = {};
+    for (const it of items) {
+      const k = remoteItemKey(it, level);
+      if (k) map[k] = it.rating as number;
+    }
+    entry = { at: Date.now(), map };
+    await remoteRatings.setValue({ ...cache, [type]: entry });
+  }
+  return entry.map[reviewKey(identity, level, season, episode)] ?? null;
+}
+
 // --- comments (managed as the user's single editable note per item) ---
 
 /** Trakt comment object (only the fields we use). */
@@ -193,29 +250,40 @@ type CommentItem =
 /**
  * Resolve the item reference for a comment. Movie/show use the resolved id we
  * already have; season/episode need a lookup (Trakt comments require the item's
- * own trakt id, unlike ratings). Returns null if the lookup fails.
+ * own trakt id, unlike ratings). Returns the item, or an error string describing
+ * why the lookup failed (surfaced in the badge for diagnosis).
  */
 export async function commentItem(
   identity: ResolvedIdentity,
   level: ReviewLevel,
   season?: number,
   episode?: number,
-): Promise<CommentItem | null> {
-  if (level === "movie") return { movie: { ids: { trakt: identity.traktId } } };
-  if (level === "show") return { show: { ids: { trakt: identity.traktId } } };
-  if (season === undefined) return null;
+): Promise<{ item: CommentItem } | { error: string }> {
+  if (level === "movie") return { item: { movie: { ids: { trakt: identity.traktId } } } };
+  if (level === "show") return { item: { show: { ids: { trakt: identity.traktId } } } };
+  if (season === undefined) return { error: "no season number scraped" };
   if (level === "season") {
     const res = await api(`/shows/${identity.traktId}/seasons`);
-    if (!res.ok) return null;
+    if (!res.ok) return { error: `season lookup failed (${res.status})` };
     const seasons = (await res.json()) as { number: number; ids: { trakt: number } }[];
     const hit = seasons.find((s) => s.number === season);
-    return hit ? { season: { ids: { trakt: hit.ids.trakt } } } : null;
+    return hit
+      ? { item: { season: { ids: { trakt: hit.ids.trakt } } } }
+      : { error: `season ${season} not found on “${identity.title}”` };
   }
-  if (episode === undefined) return null;
+  if (episode === undefined) return { error: "no episode number scraped" };
   const res = await api(`/shows/${identity.traktId}/seasons/${season}/episodes/${episode}`);
-  if (!res.ok) return null;
-  const ep = (await res.json()) as { ids: { trakt: number } };
-  return { episode: { ids: { trakt: ep.ids.trakt } } };
+  if (!res.ok) {
+    return {
+      error:
+        res.status === 404
+          ? `S${season}E${episode} not found on “${identity.title}” — wrong match?`
+          : `episode lookup failed (${res.status})`,
+    };
+  }
+  const ep = (await res.json()) as { ids?: { trakt?: number } };
+  if (ep.ids?.trakt === undefined) return { error: "episode has no Trakt id" };
+  return { item: { episode: { ids: { trakt: ep.ids.trakt } } } };
 }
 
 /** POST /comments — create a comment. Returns the new comment id. */

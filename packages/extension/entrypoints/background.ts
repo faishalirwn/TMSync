@@ -3,6 +3,7 @@ import {
   enabledOrigins,
   notes,
   ratings,
+  remoteRatings,
   resolutionCache,
   tabSessions,
 } from "@/lib/storage";
@@ -11,6 +12,7 @@ import {
   TraktNotConnectedError,
   commentItem,
   deleteComment,
+  getRemoteRating,
   postComment,
   rate,
   resolve,
@@ -159,7 +161,28 @@ export default defineBackground(() => {
       const identity = await resolve(data.media);
       if (!identity) return { rating: null, note: null };
       const key = reviewKey(identity, data.level, data.media.season, data.media.episode);
-      const rating = (await ratings.getValue())[key] ?? null;
+      const localRating = (await ratings.getValue())[key] ?? null;
+      // Prefer a recent local action; otherwise sync the rating from Trakt so
+      // ratings set on the website show up too. Mirror the remote value locally.
+      let rating = localRating;
+      if (localRating === null) {
+        try {
+          const remote = await getRemoteRating(
+            identity,
+            data.level,
+            data.media.season,
+            data.media.episode,
+          );
+          if (remote !== null) {
+            rating = remote;
+            const all = await ratings.getValue();
+            all[key] = remote;
+            await ratings.setValue(all);
+          }
+        } catch {
+          // not connected / network — fall back to local (null)
+        }
+      }
       const stored = (await notes.getValue())[key];
       return { rating, note: stored ? { text: stored.text, spoiler: stored.spoiler } : null };
     } catch {
@@ -185,6 +208,7 @@ export default defineBackground(() => {
       const all = await ratings.getValue();
       all[key] = data.rating;
       await ratings.setValue(all);
+      await remoteRatings.setValue({}); // invalidate the sync cache
       return { ok: true };
     } catch (e) {
       return { ok: false, error: errMsg(e) };
@@ -203,6 +227,7 @@ export default defineBackground(() => {
       const all = await ratings.getValue();
       delete all[key];
       await ratings.setValue(all);
+      await remoteRatings.setValue({}); // invalidate the sync cache
       return { ok: true };
     } catch (e) {
       return { ok: false, error: errMsg(e) };
@@ -224,9 +249,9 @@ export default defineBackground(() => {
         if (!out.ok) return { ok: false, error: out.error };
         all[key] = { ...existing, text, spoiler: data.spoiler };
       } else {
-        const item = await commentItem(identity, data.level, data.media.season, data.media.episode);
-        if (!item) return { ok: false, error: "couldn't reference this item on Trakt" };
-        const out = await postComment(item, text, data.spoiler);
+        const ref = await commentItem(identity, data.level, data.media.season, data.media.episode);
+        if ("error" in ref) return { ok: false, error: ref.error };
+        const out = await postComment(ref.item, text, data.spoiler);
         if (!out.ok || out.id === undefined)
           return { ok: false, error: out.error ?? "comment failed" };
         all[key] = { commentId: out.id, text, spoiler: data.spoiler };

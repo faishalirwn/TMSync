@@ -28,6 +28,17 @@ function optionLabel(o: TraktSearchOption): string {
   return `${o.title}${o.year ? ` (${o.year})` : ""} · ${o.type}`;
 }
 
+/**
+ * Keep keystrokes inside our inputs from reaching the page — otherwise typing a
+ * note fires the site/player/other-extension keyboard shortcuts (f, k, space…).
+ * Events from a shadow root still bubble to document, so we stop them here.
+ */
+const stopKeys = {
+  onKeyDown: (e: KeyboardEvent) => e.stopPropagation(),
+  onKeyUp: (e: KeyboardEvent) => e.stopPropagation(),
+  onKeyPress: (e: KeyboardEvent) => e.stopPropagation(),
+};
+
 /** The "fix match" panel: search Trakt and pick the correct entry. */
 function Correction({ onClose }: { onClose: () => void }) {
   const [media, setMedia] = useState<ParsedMedia | null>(null);
@@ -87,7 +98,12 @@ function Correction({ onClose }: { onClose: () => void }) {
             <input
               value={query}
               onInput={(e) => setQuery((e.target as HTMLInputElement).value)}
-              onKeyDown={(e) => e.key === "Enter" && runSearch()}
+              onKeyDown={(e) => {
+                e.stopPropagation();
+                if (e.key === "Enter") runSearch();
+              }}
+              onKeyUp={(e) => e.stopPropagation()}
+              onKeyPress={(e) => e.stopPropagation()}
               placeholder="Search Trakt…"
             />
             <button type="button" onClick={runSearch} disabled={busy}>
@@ -119,47 +135,75 @@ function Correction({ onClose }: { onClose: () => void }) {
 
 const NUMS = Array.from({ length: 10 }, (_, i) => i + 1);
 
-/** 1–10 rating scale. Click a number to rate; click your current rating to clear. */
-function RatingRow({ media, level }: { media: ParsedMedia; level: ReviewLevel }) {
+/** 1–10 star scale. Hover to preview, click to set, click your current value to clear. */
+function Stars({ value, onChoose }: { value: number | null; onChoose: (n: number) => void }) {
+  const [hover, setHover] = useState<number | null>(null);
+  const active = hover ?? value ?? 0;
+  return (
+    <div class="stars" onMouseLeave={() => setHover(null)}>
+      {NUMS.map((n) => (
+        <button
+          type="button"
+          key={n}
+          class={`star${n <= active ? " on" : ""}`}
+          onMouseEnter={() => setHover(n)}
+          onClick={() => onChoose(n)}
+          aria-label={`${n} of 10`}
+          title={`${n}/10`}
+        >
+          ★
+        </button>
+      ))}
+      <span class="rval">{value ? `${value}/10` : "—"}</span>
+    </div>
+  );
+}
+
+/**
+ * Your rating for the item at this level. Optimistic: the stars update instantly
+ * and only revert if Trakt rejects the change (no waiting on the round-trip).
+ */
+function RatingRow({
+  media,
+  level,
+  compact = false,
+}: {
+  media: ParsedMedia;
+  level: ReviewLevel;
+  compact?: boolean;
+}) {
   const [rating, setRating] = useState<number | null>(null);
-  const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    void sendMessage("getReview", { media, level }).then((r) => setRating(r.rating));
+    let live = true;
+    void sendMessage("getReview", { media, level }).then((r) => live && setRating(r.rating));
+    return () => {
+      live = false;
+    };
   }, [media, level]);
 
-  const choose = async (n: number) => {
-    setBusy(true);
+  const choose = (n: number) => {
+    const prev = rating;
+    const next = n === rating ? null : n;
+    setRating(next); // optimistic — instant
     setErr(null);
-    if (n === rating) {
-      const out = await sendMessage("unrateItem", { media, level });
-      if (out.ok) setRating(null);
-      else setErr(out.error ?? "Failed");
-    } else {
-      const out = await sendMessage("rateItem", { media, level, rating: n });
-      if (out.ok) setRating(n);
-      else setErr(out.error ?? "Failed");
-    }
-    setBusy(false);
+    void (
+      next === null
+        ? sendMessage("unrateItem", { media, level })
+        : sendMessage("rateItem", { media, level, rating: next })
+    ).then((out) => {
+      if (!out.ok) {
+        setRating(prev); // revert on failure
+        setErr(out.error ?? "Failed");
+      }
+    });
   };
 
   return (
     <div class="rate">
-      <div class="nums">
-        {NUMS.map((n) => (
-          <button
-            type="button"
-            key={n}
-            class={`num${rating !== null && n <= rating ? " on" : ""}`}
-            disabled={busy}
-            onClick={() => choose(n)}
-            title={`Rate ${n}/10`}
-          >
-            {n}
-          </button>
-        ))}
-      </div>
+      {!compact && <span class="rlabel">Your rating</span>}
+      <Stars value={rating} onChoose={choose} />
       {err && <span class="msg err">{err}</span>}
     </div>
   );
@@ -230,21 +274,25 @@ function RateNote({
         </button>
       </div>
       {isShow && (
-        <div class="tabs">
-          {LEVELS.map((l) => (
-            <button
-              type="button"
-              key={l}
-              class={`tab${level === l ? " on" : ""}`}
-              onClick={() => setLevel(l)}
-            >
-              {l}
-            </button>
-          ))}
-        </div>
+        <>
+          <span class="rlabel">Rate &amp; note the</span>
+          <div class="tabs">
+            {LEVELS.map((l) => (
+              <button
+                type="button"
+                key={l}
+                class={`tab${level === l ? " on" : ""}`}
+                onClick={() => setLevel(l)}
+              >
+                {l}
+              </button>
+            ))}
+          </div>
+        </>
       )}
       <RatingRow media={media} level={level} />
       <textarea
+        {...stopKeys}
         class="noteinput"
         rows={4}
         value={note}
@@ -335,8 +383,12 @@ function BadgeRoot() {
       {panel === "fix" && <Correction onClose={() => setPanel(null)} />}
       {showPrompt && media && (
         <div class="prompt">
-          <span class="plabel">Rate it?</span>
-          <RatingRow media={media} level={media.season !== undefined ? "episode" : "movie"} />
+          <span class="plabel">Rate {media.season !== undefined ? "episode" : "movie"}?</span>
+          <RatingRow
+            media={media}
+            level={media.season !== undefined ? "episode" : "movie"}
+            compact
+          />
           <button type="button" class="link" onClick={() => setPanel("review")}>
             note
           </button>
@@ -426,11 +478,12 @@ const CSS = `
   background: #fff; cursor: pointer; font: inherit; text-transform: capitalize; }
 .tab.on { background: #111; color: #fff; border-color: #111; }
 .rate { margin-bottom: 8px; }
-.nums { display: flex; gap: 3px; }
-.num { flex: 1; padding: 5px 0; border: 1px solid #d4d4d8; border-radius: 5px;
-  background: #fff; color: #111; cursor: pointer; font: 11px/1 inherit; }
-.num:hover { border-color: #f5b50a; }
-.num.on { background: #f5b50a; border-color: #f5b50a; color: #111; font-weight: 600; }
+.rlabel { display: block; font-size: 11px; opacity: 0.6; margin-bottom: 2px; }
+.stars { display: flex; align-items: center; gap: 1px; }
+.star { border: none; background: none; padding: 0 1px; cursor: pointer; line-height: 1;
+  font-size: 19px; color: #d4d4d8; }
+.star.on, .star:hover { color: #f5b50a; }
+.rval { margin-left: 8px; font-size: 11px; opacity: 0.75; min-width: 30px; }
 .noteinput { width: 100%; box-sizing: border-box; padding: 6px 8px; border: 1px solid #d4d4d8;
   border-radius: 6px; font: inherit; resize: vertical; }
 .spoil { display: flex; align-items: center; gap: 5px; margin: 6px 0; font-size: 11px; opacity: 0.8; }
@@ -443,8 +496,9 @@ const CSS = `
   box-shadow: 0 4px 16px rgba(0,0,0,0.35); }
 .prompt .plabel { font-weight: 600; white-space: nowrap; }
 .prompt .rate { margin: 0; flex: 1; }
-.prompt .num { background: rgba(255,255,255,0.1); color: #f4f4f5; border-color: rgba(255,255,255,0.2); }
-.prompt .num.on { background: #f5b50a; color: #111; border-color: #f5b50a; }
+.prompt .star { color: rgba(255,255,255,0.3); font-size: 17px; }
+.prompt .star.on, .prompt .star:hover { color: #f5b50a; }
+.prompt .rval { color: #f4f4f5; }
 .prompt .link { color: #93c5fd; }
 .prompt .x { border: none; background: transparent; color: inherit; cursor: pointer; opacity: 0.6; }
 .panel .link { border: none; background: none; padding: 0; color: #2563eb;
