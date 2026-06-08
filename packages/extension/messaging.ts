@@ -59,6 +59,14 @@ export interface ProtocolMap {
   connectTrakt(): { ok: boolean; error?: string };
   disconnectTrakt(): void;
   scrobble(req: ScrobbleRequest): ScrobbleReply;
+  /** Resolve scraped media to its Trakt identity WITHOUT scrobbling — lets the
+   * badge show the matched title before the user presses play (transparency). */
+  resolveMedia(media: ParsedMedia): {
+    resolved: boolean;
+    title?: string;
+    year?: number;
+    mediaType?: "movie" | "show";
+  };
   /** Register the content script for an origin the user just granted access to. */
   registerSite(origin: string): { ok: boolean; error?: string };
   unregisterSite(origin: string): { ok: boolean };

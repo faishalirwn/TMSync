@@ -1,0 +1,117 @@
+:root {
+  color-scheme: light dark;
+}
+
+body {
+  margin: 0;
+  font: 14px / 1.45 system-ui, sans-serif;
+}
+
+.tmsync {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 24px 20px 48px;
+}
+
+.tmsync h1 {
+  margin: 0 0 4px;
+  font-size: 20px;
+}
+
+.tmsync h2 {
+  margin: 0;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.6;
+}
+
+section {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(128, 128, 128, 0.25);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.grow {
+  flex: 1;
+  min-width: 0;
+}
+
+.card {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid rgba(128, 128, 128, 0.25);
+  border-radius: 8px;
+}
+
+.actions {
+  display: flex;
+  gap: 14px;
+  margin-top: 8px;
+}
+
+button {
+  padding: 5px 12px;
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+button.link {
+  border: none;
+  padding: 0;
+  color: #2563eb;
+  text-decoration: underline;
+}
+
+button.link.danger {
+  color: #dc2626;
+}
+
+code {
+  font-size: 12px;
+  word-break: break-all;
+  opacity: 0.85;
+}
+
+code.block {
+  display: block;
+  margin-top: 2px;
+}
+
+.ok {
+  color: #2e7d32;
+  font-weight: 600;
+}
+
+.muted {
+  opacity: 0.6;
+  margin: 8px 0 0;
+}
+
+.hint {
+  margin: 10px 0 0;
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.hint code {
+  display: block;
+  margin-top: 4px;
+}

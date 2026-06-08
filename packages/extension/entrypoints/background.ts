@@ -83,6 +83,24 @@ export default defineBackground(() => {
     }
   });
 
+  // Pre-resolution for the badge: resolve identity (cached) without scrobbling so
+  // the user sees the matched Trakt title before play. Works unauthenticated
+  // (search needs only the api key), so transparency holds even pre-connect.
+  onMessage("resolveMedia", async ({ data }) => {
+    try {
+      const identity = await resolve(data);
+      if (!identity) return { resolved: false };
+      return {
+        resolved: true,
+        title: identity.title,
+        year: identity.year,
+        mediaType: identity.mediaType,
+      };
+    } catch {
+      return { resolved: false };
+    }
+  });
+
   onMessage("registerSite", ({ data }) => registerSite(data));
   onMessage("unregisterSite", ({ data }) => unregisterSite(data));
   onMessage("listEnabledSites", () => enabledOrigins.getValue());

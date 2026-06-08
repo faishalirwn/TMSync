@@ -210,6 +210,12 @@ export function App() {
       </section>
 
       {note && <p class="note">{note}</p>}
+
+      <p class="hint">
+        <button type="button" class="link" onClick={() => browser.runtime.openOptionsPage()}>
+          Manage sites, recipes &amp; corrections
+        </button>
+      </p>
     </main>
   );
 }

@@ -37,6 +37,10 @@ export default defineConfig({
     // `permissions`. We strip both so NOTHING broad is requested at install, and
     // express it as optional on MV2 so the runtime-grant model holds there too.
     "build:manifestGenerated"(_wxt, manifest) {
+      // Settings page reads better full-tab than the cramped embedded dialog
+      // Chrome defaults to. WXT generates options_ui itself, so set it here.
+      if (manifest.options_ui) manifest.options_ui.open_in_tab = true;
+
       const BROAD = "*://*/*";
       // MV3: drop broad required host access.
       if (manifest.host_permissions) {

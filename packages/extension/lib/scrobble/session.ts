@@ -20,15 +20,20 @@ function label(m: ParsedMedia): string {
   return `${m.title}${ep}${yr}`;
 }
 
+/** Title as Trakt matched it, keeping the scraped season/episode (transparency). */
+function resolvedLabel(title: string, year: number | undefined, m: ParsedMedia): string {
+  const ep = m.season !== undefined ? ` S${m.season}E${m.episode ?? "?"}` : "";
+  return `${title}${year ? ` (${year})` : ""}${ep}`;
+}
+
 function statusFromReply(
   action: "start" | "pause" | "stop",
   reply: ScrobbleReply,
   m: ParsedMedia,
 ): BadgeStatus {
   // Prefer what Trakt actually matched (transparency); keep the scraped S/E.
-  const ep = m.season !== undefined ? ` S${m.season}E${m.episode ?? "?"}` : "";
   const title = reply.resolvedTitle
-    ? `${reply.resolvedTitle}${reply.resolvedYear ? ` (${reply.resolvedYear})` : ""}${ep}`
+    ? resolvedLabel(reply.resolvedTitle, reply.resolvedYear, m)
     : label(m);
   if (reply.ok) {
     if (action === "start") return { state: "watching", title };
@@ -184,7 +189,26 @@ export class SessionManager {
       videoSelector: recipe.video.selector,
       frame: recipe.video.frame,
     });
+
+    // Seed the badge immediately with the scraped title, then refine it with what
+    // Trakt actually matched — so the user can verify (and fix) the target BEFORE
+    // pressing play, not only after the first scrobble fires.
     await sendMessage("reportScrobble", { state: "idle", title: label(result.media) });
+    const resolved = await sendMessage("resolveMedia", result.media);
+    await sendMessage(
+      "reportScrobble",
+      resolved.resolved && resolved.title
+        ? {
+            state: "idle",
+            title: resolvedLabel(resolved.title, resolved.year, result.media),
+            detail: "ready · click to fix",
+          }
+        : {
+            state: "error",
+            title: label(result.media),
+            detail: "not found on Trakt — click to fix",
+          },
+    );
   }
 
   /**
