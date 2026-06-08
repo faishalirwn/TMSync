@@ -39,9 +39,19 @@ In place:
 - **Element picker** — uBlock-style point-and-click (`@medv/finder`) in a Shadow-DOM overlay with
   auto-detect + live extract preview; saves a custom recipe and enables the site.
 
-First-run: load `.output/chrome-mv3`, open the popup, register the shown redirect URI in your
-Trakt app, **Connect Trakt**, then **Enable scrobbling** (known site) or **Set it up with the
-picker** (new site), and reload.
+Also handled: a Shadow-DOM **scrobble badge** (live status), **SPA navigation** (re-matches on
+route/episode changes), **cross-origin iframe players** (the content script is granted+registered
+for player-frame origins too, and media is relayed top-frame → iframe), and **background
+reconciliation** (a reconciling stop if a tab dies before a clean one).
 
-Upcoming: Shadow-DOM scrobble badge + correction UI, options page, recipe fetch-from-CDN,
-cross-origin iframe coordination, background reconciliation of interrupted sessions.
+First-run (Chrome):
+1. `pnpm build` → load `.output/chrome-mv3` unpacked. The extension ID is stable
+   (`aplaigellojlejhdjkklgihlmbmdaebk`).
+2. In your Trakt app (trakt.tv/oauth/applications) set the Redirect URI to
+   `https://aplaigellojlejhdjkklgihlmbmdaebk.chromiumapp.org/`.
+3. Popup → **Connect Trakt**.
+4. On a media page → **Enable scrobbling** (known site) or **Set it up with the picker** (new
+   site). Approve the permission prompt (it may list the player's iframe host too), then reload.
+5. Press play — the badge shows the live scrobble state.
+
+Upcoming: correction UI (fix a wrong match), options page, recipe fetch-from-CDN.

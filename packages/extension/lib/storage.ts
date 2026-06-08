@@ -29,15 +29,19 @@ export const customRecipes = storage.defineItem<Recipe[]>("local:custom_recipes"
 });
 
 /**
- * Last-known progress of the active watch session, throttle-persisted by the
- * content script. Safety net for reconciliation if a page dies before a clean
- * stop (constraint #4 — state lives in content+storage, not background memory).
+ * Per-tab watch session, keyed by tabId. Set by the recipe-matching frame and
+ * updated by whichever frame owns the <video> (which may be a cross-origin
+ * iframe). Lives in `session` storage (ephemeral, per browser session) — the
+ * background SW reads it on each wake (constraint #4); the content script and
+ * storage own the state, not background memory. Used to (a) hand the media to a
+ * player iframe and (b) reconcile a stop if a tab dies before a clean one.
  */
-export interface ActiveScrobble {
+export interface TabSession {
   media: ParsedMedia;
+  videoSelector: string;
   progress: number;
   updatedAt: number;
 }
-export const activeScrobble = storage.defineItem<ActiveScrobble | null>("local:active_scrobble", {
-  fallback: null,
+export const tabSessions = storage.defineItem<Record<number, TabSession>>("session:tab_sessions", {
+  fallback: {},
 });

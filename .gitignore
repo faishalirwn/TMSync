@@ -15,6 +15,10 @@ coverage/
 .env.*
 !.env.example
 
+# extension signing keys — private .pem never committed; the PUBLIC key is
+# embedded directly in wxt.config.ts. Ignore the whole dir at any depth.
+.keys/
+
 # editor / OS
 .DS_Store
 *.local

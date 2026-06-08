@@ -1,10 +1,19 @@
 import preact from "@preact/preset-vite";
 import { defineConfig } from "wxt";
 
+// Stable identity so the OAuth redirect URI never changes across reloads:
+//   Chrome ID  : aplaigellojlejhdjkklgihlmbmdaebk
+//   Redirect   : https://aplaigellojlejhdjkklgihlmbmdaebk.chromiumapp.org/
+//   Firefox    : tmsync@tmsync.app  (browser.identity.getRedirectURL() derives from it)
+// The value below is the PUBLIC key (DER, base64) — safe to commit; the private
+// .pem stays in .keys/ (gitignored).
+const CHROME_KEY =
+  "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsnTrCTOs9IeUqPjL4Bzed2fMXEWfWzE8jRjLefx0bEyNhtySxrDHm8qZEq6sZ7RjDKVBLmrM5D3IIDm6wQNtC8HucQSow/oN333P5+No8RdXUsJwqN21uMYrr79VwotQp3/61JrtWlbUWFZmjaCuSPQvNFUPvoEYAn6OuK9K2dzYiGjro46KBVeBSbeXgbm+L4Bhv4ilq4wPAbHtfXg/BrA5sbCF/bf3TUJK5LeFoYvF/hJEW2RkkRY5pKXkUB4bNiDXgCTDIPGuw/kSiVtHo8AEKXWVHX27e8XY56PHPEIkMZHdo6GLPp069f7r+eIpeCB0xzbLDC4SX4luC53mUwIDAQAB";
+
 // See ../../CLAUDE.md for the settled constraints encoded here.
 export default defineConfig({
   srcDir: ".",
-  manifest: {
+  manifest: ({ browser }) => ({
     name: "TMSync",
     description: "Passively scrobble movies & TV to Trakt on any streaming site.",
     // `identity` for Trakt OAuth; `activeTab` lets the popup read the current
@@ -16,7 +25,11 @@ export default defineConfig({
     // Constraint #5: NO broad host_permissions at install. We request per-origin
     // streaming-site access on a user gesture, then registerContentScripts.
     optional_host_permissions: ["*://*/*"],
-  },
+    // Stable extension identity (so the OAuth redirect URI is fixed).
+    ...(browser === "firefox"
+      ? { browser_specific_settings: { gecko: { id: "tmsync@tmsync.app" } } }
+      : { key: CHROME_KEY }),
+  }),
   hooks: {
     // Guard for constraint #5. WXT derives broad host access from the content
     // script's `matches` (even under `registration: "runtime"`): on MV3 it adds

@@ -13,6 +13,40 @@ async function activeTabOrigin(): Promise<string | null> {
   }
 }
 
+async function activeTabId(): Promise<number | null> {
+  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+  return tab?.id ?? null;
+}
+
+/**
+ * The top origin plus every http(s) iframe origin on the page — the player is
+ * often in a cross-origin iframe, and the content script needs to run there too.
+ * Runs in the top frame under `activeTab` (reads iframe src attributes only).
+ */
+async function collectOrigins(tabId: number): Promise<string[]> {
+  try {
+    const results = await browser.scripting.executeScript({
+      target: { tabId },
+      func: () => {
+        const set = new Set<string>([location.origin]);
+        for (const frame of Array.from(document.querySelectorAll("iframe"))) {
+          try {
+            const u = new URL((frame as HTMLIFrameElement).src, location.href);
+            if (u.protocol === "http:" || u.protocol === "https:") set.add(u.origin);
+          } catch {
+            // ignore unparseable/empty iframe src
+          }
+        }
+        return Array.from(set);
+      },
+    });
+    const out = results[0]?.result;
+    return Array.isArray(out) ? out : [];
+  } catch {
+    return [];
+  }
+}
+
 export function App() {
   const [status, setStatus] = useState<TraktStatus | null>(null);
   const [origin, setOrigin] = useState<string | null>(null);
@@ -52,19 +86,32 @@ export function App() {
     setBusy(false);
   };
 
+  // Grant + register the top origin AND any cross-origin player iframe origins,
+  // so the content script reaches the frame that actually owns the <video>.
+  const grantAndRegister = async (tabId: number): Promise<string[] | null> => {
+    const origins = await collectOrigins(tabId);
+    if (origins.length === 0) return null;
+    // permissions.request must run in the user-gesture (popup click) context.
+    const granted = await browser.permissions.request({ origins: origins.map((o) => `${o}/*`) });
+    if (!granted) return null;
+    for (const o of origins) await sendMessage("registerSite", o);
+    return origins;
+  };
+
   const enableSite = async () => {
     if (!origin) return;
     setBusy(true);
     setNote(null);
-    // permissions.request must run in the user-gesture (popup click) context.
-    const granted = await browser.permissions.request({ origins: [`${origin}/*`] });
-    if (!granted) {
+    const tabId = await activeTabId();
+    const origins = tabId !== null ? await grantAndRegister(tabId) : null;
+    if (!origins) {
       setNote("Permission denied");
-      setBusy(false);
-      return;
+    } else {
+      const extra = origins.length - 1;
+      setNote(
+        `Enabled${extra > 0 ? ` (+${extra} player frame${extra > 1 ? "s" : ""})` : ""} — reload to start scrobbling.`,
+      );
     }
-    const res = await sendMessage("registerSite", origin);
-    setNote(res.ok ? "Enabled — reload the page to start scrobbling." : (res.error ?? "Failed"));
     await refresh();
     setBusy(false);
   };
@@ -78,25 +125,25 @@ export function App() {
     setBusy(false);
   };
 
-  // Grant the origin, then inject the element picker into the active tab.
+  // Grant + register origins, then inject the element picker into the active tab.
   const setupSite = async () => {
     if (!origin) return;
     setBusy(true);
     setNote(null);
-    const granted = await browser.permissions.request({ origins: [`${origin}/*`] });
-    if (!granted) {
-      setNote("Permission denied");
-      setBusy(false);
-      return;
-    }
-    const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-    if (tab?.id === undefined) {
+    const tabId = await activeTabId();
+    if (tabId === null) {
       setNote("No active tab");
       setBusy(false);
       return;
     }
+    const origins = await grantAndRegister(tabId);
+    if (!origins) {
+      setNote("Permission denied");
+      setBusy(false);
+      return;
+    }
     await browser.scripting.executeScript({
-      target: { tabId: tab.id },
+      target: { tabId },
       files: ["/content-scripts/picker.js"],
     });
     window.close(); // get out of the way so the picker is visible
