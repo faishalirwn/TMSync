@@ -87,6 +87,7 @@ export class SessionManager {
   private localMedia: ParsedMedia | null = null;
   private videoSelector = "video";
   private frame: PlayerFrame = "auto";
+  private watchedThreshold = 0.8;
   private lastPublishedKey: string | null = null;
   private framesObserver: MutationObserver | null = null;
   private currentKey: string | null = null;
@@ -178,6 +179,7 @@ export class SessionManager {
     this.localMedia = result.media;
     this.videoSelector = recipe.video.selector;
     this.frame = recipe.video.frame;
+    this.watchedThreshold = recipe.video.watchedThreshold;
 
     // Avoid churn from the head observer firing on unrelated mutations.
     const key = mediaKey(result.media);
@@ -188,6 +190,7 @@ export class SessionManager {
       media: result.media,
       videoSelector: recipe.video.selector,
       frame: recipe.video.frame,
+      watchedThreshold: recipe.video.watchedThreshold,
     });
 
     // Seed the badge immediately with the scraped title, then refine it with what
@@ -201,7 +204,7 @@ export class SessionManager {
         ? {
             state: "idle",
             title: resolvedLabel(resolved.title, resolved.year, result.media),
-            detail: "ready · click to fix",
+            detail: "press play to scrobble",
           }
         : {
             state: "error",
@@ -238,6 +241,7 @@ export class SessionManager {
       const tab = await sendMessage("getTabMedia", undefined);
       if (tab) {
         this.videoSelector = tab.videoSelector;
+        this.watchedThreshold = tab.watchedThreshold;
         return { media: tab.media, frame: tab.frame };
       }
       await sleep(TAB_MEDIA_POLL_MS);
@@ -335,13 +339,17 @@ export class SessionManager {
     this.currentVideo = video;
     this.currentKey = mediaKey(media);
 
-    const controller = new ScrobbleController(video, (action, progress) => {
-      void sendMessage("scrobble", { action, media, progress }).then((reply) =>
-        sendMessage("reportScrobble", statusFromReply(action, reply, media)),
-      );
-      if (action === "stop") void sendMessage("endSession");
-      else void sendMessage("updateProgress", progress);
-    });
+    const controller = new ScrobbleController(
+      video,
+      (action, progress) => {
+        void sendMessage("scrobble", { action, media, progress }).then((reply) =>
+          sendMessage("reportScrobble", statusFromReply(action, reply, media)),
+        );
+        if (action === "stop") void sendMessage("endSession");
+        else void sendMessage("updateProgress", progress);
+      },
+      this.watchedThreshold,
+    );
     this.controller = controller;
 
     const on = (target: EventTarget, type: string, fn: () => void) =>

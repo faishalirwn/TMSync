@@ -139,6 +139,7 @@ export default defineBackground(() => {
       media: data.media,
       videoSelector: data.videoSelector,
       frame: data.frame,
+      watchedThreshold: data.watchedThreshold,
       progress: all[tabId]?.progress ?? 0,
       updatedAt: Date.now(),
     };
@@ -150,7 +151,12 @@ export default defineBackground(() => {
     if (tabId === undefined) return null;
     const session = (await tabSessions.getValue())[tabId];
     return session
-      ? { media: session.media, videoSelector: session.videoSelector, frame: session.frame }
+      ? {
+          media: session.media,
+          videoSelector: session.videoSelector,
+          frame: session.frame,
+          watchedThreshold: session.watchedThreshold,
+        }
       : null;
   });
 

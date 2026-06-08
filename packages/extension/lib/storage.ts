@@ -49,6 +49,8 @@ export interface TabSession {
   media: ParsedMedia;
   videoSelector: string;
   frame: "auto" | "top" | "iframe";
+  /** 0–1; a pause at/after this fraction is committed as a stop. */
+  watchedThreshold: number;
   progress: number;
   updatedAt: number;
   /** Frame that owns scrobbling for this tab (first to start). Prevents two

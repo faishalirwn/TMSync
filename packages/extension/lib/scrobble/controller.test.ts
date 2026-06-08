@@ -66,6 +66,36 @@ describe("ScrobbleController", () => {
     ]);
   });
 
+  it("converts a pause past the watched threshold into a stop (commit to history)", () => {
+    const { video, events, controller } = setup();
+    controller.play();
+    tick();
+    video.currentTime = 93; // 93% ≥ 80% default threshold
+    controller.pause();
+    tick();
+    expect(events).toEqual([
+      { action: "start", progress: 0 },
+      { action: "stop", progress: 93 },
+    ]);
+    // Idempotent afterwards: a later resume/pause does not re-scrobble.
+    controller.play();
+    tick();
+    expect(events.filter((e) => e.action === "stop")).toHaveLength(1);
+  });
+
+  it("still pauses normally below the watched threshold", () => {
+    const { video, events, controller } = setup();
+    controller.play();
+    tick();
+    video.currentTime = 50;
+    controller.pause();
+    tick();
+    expect(events).toEqual([
+      { action: "start", progress: 0 },
+      { action: "pause", progress: 50 },
+    ]);
+  });
+
   it("ignores a pause before any start", () => {
     const { events, controller } = setup();
     controller.pause();

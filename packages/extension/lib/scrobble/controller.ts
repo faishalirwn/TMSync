@@ -17,8 +17,11 @@ export type SendScrobble = (action: ScrobbleAction, progress: number) => void;
  * - One `start` per session; debounce play/pause bursts (seeking, ad breaks).
  * - Idempotent: never emit the same action twice in a row.
  * - `ended` → stop(~100). Leaving before `ended` → stop(last progress).
- *
- * It does NOT apply a watched threshold — Trakt owns that on stop.
+ * - A pause at/after `watchedThreshold` becomes a `stop`: Trakt rejects a pause
+ *   that late ("use stop to scrobble"), and a pause this near the end means the
+ *   user finished — so we commit it to history. Trakt still owns the ≥80%
+ *   watched decision on the stop; this only chooses stop-vs-pause for the late
+ *   "treat as finished here" point (per CLAUDE.md `video.watchedThreshold`).
  */
 export class ScrobbleController {
   private started = false;
@@ -30,6 +33,8 @@ export class ScrobbleController {
   constructor(
     private readonly video: VideoLike,
     private readonly send: SendScrobble,
+    /** 0–1; a pause at/after this fraction is sent as a stop. Default 0.8. */
+    private readonly watchedThreshold = 0.8,
     private readonly debounceMs = 800,
   ) {}
 
@@ -76,6 +81,12 @@ export class ScrobbleController {
     this.pending = null;
     if (!action) return;
     if (action === "pause" && !this.started) return; // nothing started to pause
+    // A pause past the "finished here" point → stop (commit to history, dodge the
+    // 422 Trakt returns for a late pause).
+    if (action === "pause" && this.progress() >= this.watchedThreshold * 100) {
+      this.emitStop(this.progress());
+      return;
+    }
     if (action === this.lastAction) return; // idempotent
     this.dispatch(action, this.progress());
     if (action === "start") this.started = true;

@@ -41,6 +41,8 @@ export interface TabMedia {
   videoSelector: string;
   /** Where the player lives: which frame should drive scrobbling. */
   frame: "auto" | "top" | "iframe";
+  /** 0–1; a pause at/after this fraction is committed as a stop. */
+  watchedThreshold: number;
 }
 
 export interface TraktStatus {

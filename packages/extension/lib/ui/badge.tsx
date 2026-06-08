@@ -119,18 +119,40 @@ function Correction({ onClose }: { onClose: () => void }) {
 
 function BadgeRoot() {
   const [status, setStatus] = useState<BadgeStatus | null>(null);
-  const [hidden, setHidden] = useState(false);
+  const [minimized, setMinimized] = useState(false);
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    const off = onMessage("scrobbleStatus", ({ data }) => {
-      setStatus(data);
-      setHidden(false);
-    });
+    // Don't auto-expand on every status: while minimized the dot color keeps
+    // tracking state live, so the user always sees TMSync is working without it
+    // popping back open on each play/pause/timeupdate.
+    const off = onMessage("scrobbleStatus", ({ data }) => setStatus(data));
     return () => off();
   }, []);
 
-  if (!status || hidden) return null;
+  if (!status) return null;
+
+  const summary = `TMSync · ${status.detail ?? LABEL[status.state]}${
+    status.title ? ` — ${status.title}` : ""
+  }`;
+
+  // Minimized: a persistent status dot so presence + state stay visible.
+  if (minimized) {
+    return (
+      <div class="root">
+        <style>{CSS}</style>
+        <button
+          type="button"
+          class="mini"
+          style={{ background: DOT[status.state] }}
+          onClick={() => setMinimized(false)}
+          title={summary}
+          aria-label={summary}
+        />
+      </div>
+    );
+  }
+
   return (
     <div class="root">
       <style>{CSS}</style>
@@ -141,8 +163,14 @@ function BadgeRoot() {
           <strong>TMSync · {status.detail ?? LABEL[status.state]}</strong>
           {status.title && <span class="title">{status.title}</span>}
         </button>
-        <button type="button" class="x" onClick={() => setHidden(true)} aria-label="hide">
-          ✕
+        <button
+          type="button"
+          class="x"
+          onClick={() => setMinimized(true)}
+          aria-label="minimize"
+          title="Minimize to a dot"
+        >
+          –
         </button>
       </div>
     </div>
@@ -168,6 +196,10 @@ const CSS = `
   padding: 8px 10px; border-radius: 10px; background: rgba(17,17,17,0.92);
   color: #f4f4f5; box-shadow: 0 4px 16px rgba(0,0,0,0.35); }
 .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.mini { width: 16px; height: 16px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.85);
+  padding: 0; cursor: pointer; box-shadow: 0 2px 10px rgba(0,0,0,0.4);
+  transition: transform 0.1s; }
+.mini:hover { transform: scale(1.15); }
 .text { display: flex; flex-direction: column; overflow: hidden; gap: 1px;
   border: none; background: transparent; color: inherit; cursor: pointer;
   text-align: left; font: inherit; padding: 0; }
