@@ -1,9 +1,6 @@
+import { loadRecipes } from "@/lib/recipes";
 import { SessionManager } from "@/lib/scrobble/session";
-import { customRecipes } from "@/lib/storage";
 import { mountBadge } from "@/lib/ui/badge";
-import { parseRecipes } from "@tmsync/shared";
-// Versioned recipe list (Phase 1 source of truth). Validated via parseRecipes.
-import rawRecipes from "../../../recipes/index.json";
 
 /**
  * Content script — runs in EVERY frame of an enabled origin (allFrames). Owns
@@ -21,10 +18,7 @@ export default defineContentScript({
   allFrames: true,
   cssInjectionMode: "ui",
   async main(ctx) {
-    const recipes = parseRecipes([
-      ...(rawRecipes as unknown[]),
-      ...(await customRecipes.getValue()),
-    ]);
+    const recipes = await loadRecipes();
 
     if (window === window.top) await mountBadge(ctx);
 

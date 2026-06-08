@@ -29,6 +29,20 @@ export const customRecipes = storage.defineItem<Recipe[]>("local:custom_recipes"
 });
 
 /**
+ * Cached copy of the versioned recipe list fetched from the repo/CDN (Phase 1
+ * source of truth). Validated before storing; refreshed on a TTL by the
+ * background worker. `etag` enables conditional (304) refetches.
+ */
+export interface RemoteRecipes {
+  recipes: Recipe[];
+  fetchedAt: number;
+  etag?: string;
+}
+export const remoteRecipes = storage.defineItem<RemoteRecipes | null>("local:remote_recipes", {
+  fallback: null,
+});
+
+/**
  * Quick links: per-SITE "watch on" buttons injected on Trakt pages. Independent
  * of recipes (which are scraping config) — one site can back several recipes, or
  * none. Only `enabled` entries are shown, so the user keeps it to their

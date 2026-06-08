@@ -74,6 +74,8 @@ export interface ProtocolMap {
     year?: number;
     mediaType?: "movie" | "show";
   };
+  /** Force-refresh the CDN recipe list; returns how many recipes are now cached. */
+  refreshRecipes(): { ok: boolean; count: number; error?: string };
   /** Register the content script for an origin the user just granted access to. */
   registerSite(origin: string): { ok: boolean; error?: string };
   unregisterSite(origin: string): { ok: boolean };

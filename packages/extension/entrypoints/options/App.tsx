@@ -1,4 +1,12 @@
-import { type QuickLinkSite, corrections, customRecipes, quickLinks } from "@/lib/storage";
+import { RECIPES } from "@/config";
+import {
+  type QuickLinkSite,
+  type RemoteRecipes,
+  corrections,
+  customRecipes,
+  quickLinks,
+  remoteRecipes,
+} from "@/lib/storage";
 import type { ResolvedIdentity } from "@/lib/trakt/types";
 import { type TraktStatus, sendMessage } from "@/messaging";
 import type { Recipe } from "@tmsync/shared";
@@ -307,6 +315,42 @@ function QuickLinks({
   );
 }
 
+function RecipeLibrary({
+  remote,
+  busy,
+  note,
+  onRefresh,
+}: {
+  remote: RemoteRecipes | null;
+  busy: boolean;
+  note: string | null;
+  onRefresh: () => void;
+}) {
+  return (
+    <section>
+      <div class="row">
+        <h2>Recipe library</h2>
+        <button type="button" class="link" disabled={busy} onClick={onRefresh}>
+          Refresh
+        </button>
+      </div>
+      <p class="muted">
+        {remote
+          ? `${remote.recipes.length} recipe${remote.recipes.length === 1 ? "" : "s"} from the library · updated ${new Date(remote.fetchedAt).toLocaleString()}`
+          : "Not fetched yet — it syncs automatically in the background."}
+      </p>
+      <p class="hint">
+        Recipes are shared through the project repo (no server). Add a site by opening a PR —{" "}
+        <a href={RECIPES.contributeUrl} target="_blank" rel="noreferrer">
+          contribute here
+        </a>{" "}
+        using a recipe’s “Copy JSON”.
+      </p>
+      {note && <p class="note">{note}</p>}
+    </section>
+  );
+}
+
 function CustomRecipes({
   recipes,
   onDelete,
@@ -431,22 +475,35 @@ export function App() {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [links, setLinks] = useState<QuickLinkSite[]>([]);
   const [corr, setCorr] = useState<Record<string, ResolvedIdentity>>({});
+  const [remote, setRemote] = useState<RemoteRecipes | null>(null);
+  const [recipeNote, setRecipeNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [justAdded, setJustAdded] = useState<string | null>(null);
 
   const refresh = async () => {
-    const [s, sit, rec, ql, c] = await Promise.all([
+    const [s, sit, rec, ql, c, rem] = await Promise.all([
       sendMessage("getTraktStatus", undefined),
       sendMessage("listEnabledSites", undefined),
       customRecipes.getValue(),
       quickLinks.getValue(),
       corrections.getValue(),
+      remoteRecipes.getValue(),
     ]);
     setStatus(s);
     setSites(sit);
     setRecipes(rec);
     setLinks(ql);
     setCorr(c);
+    setRemote(rem);
+  };
+
+  const refreshRecipes = async () => {
+    setBusy(true);
+    setRecipeNote(null);
+    const out = await sendMessage("refreshRecipes", undefined);
+    setRecipeNote(out.ok ? `Synced — ${out.count} recipes.` : `Couldn’t sync: ${out.error}`);
+    setRemote(await remoteRecipes.getValue());
+    setBusy(false);
   };
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: load once on open
@@ -535,6 +592,7 @@ export function App() {
         onAddFromRecipe={addFromRecipe}
         justAdded={justAdded}
       />
+      <RecipeLibrary remote={remote} busy={busy} note={recipeNote} onRefresh={refreshRecipes} />
       <CustomRecipes recipes={recipes} onDelete={deleteRecipe} />
       <Corrections
         entries={Object.entries(corr)}

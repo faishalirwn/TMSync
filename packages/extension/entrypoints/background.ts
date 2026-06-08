@@ -1,3 +1,4 @@
+import { RECIPES } from "@/config";
 import {
   type QuickLinkSite,
   corrections,
@@ -7,6 +8,7 @@ import {
   quickLinks,
   ratings,
   remoteRatings,
+  remoteRecipes,
   resolutionCache,
   tabFrameOrigins,
   tabSessions,
@@ -31,7 +33,7 @@ import {
   reviewKey,
 } from "@/lib/trakt/util";
 import { onMessage, sendMessage } from "@/messaging";
-import type { Recipe } from "@tmsync/shared";
+import { type Recipe, parseRecipes } from "@tmsync/shared";
 import { browser } from "wxt/browser";
 
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -53,6 +55,19 @@ export default defineBackground(() => {
   // One-time: lift any per-recipe `links` (the old quick-links shape) into the
   // standalone quickLinks store, then strip them from the recipes.
   void migrateRecipeLinks();
+
+  // Refresh the CDN recipe list on startup, then on a periodic alarm (the SW is
+  // ephemeral, so we can't hold a timer — constraint #4).
+  void fetchRemoteRecipes();
+  browser.alarms.create("tmsync-recipes", { periodInMinutes: 720 });
+  browser.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === "tmsync-recipes") void fetchRemoteRecipes(true);
+  });
+
+  onMessage("refreshRecipes", async () => {
+    const out = await fetchRemoteRecipes(true);
+    return out;
+  });
 
   onMessage("ping", () => "pong" as const);
 
@@ -415,6 +430,42 @@ async function claimScrobbleOwner(
     await tabSessions.setValue(all);
   }
   return true;
+}
+
+/**
+ * Fetch + cache the CDN recipe list. Skips when the cache is fresh (unless
+ * forced); uses an ETag for conditional refetches. Validates with parseRecipes
+ * so a malformed list never lands in the cache. Best-effort: on any failure the
+ * existing cache (or the bundled seed) stays in use.
+ */
+async function fetchRemoteRecipes(
+  force = false,
+): Promise<{ ok: boolean; count: number; error?: string }> {
+  try {
+    const current = await remoteRecipes.getValue();
+    if (!force && current && Date.now() - current.fetchedAt < RECIPES.refreshMs) {
+      return { ok: true, count: current.recipes.length };
+    }
+    const headers: Record<string, string> = {};
+    if (current?.etag) headers["If-None-Match"] = current.etag;
+    const res = await fetch(RECIPES.url, { headers });
+    if (res.status === 304 && current) {
+      await remoteRecipes.setValue({ ...current, fetchedAt: Date.now() });
+      return { ok: true, count: current.recipes.length };
+    }
+    if (!res.ok)
+      return { ok: false, count: current?.recipes.length ?? 0, error: `HTTP ${res.status}` };
+    const json = (await res.json()) as unknown;
+    const recipes = parseRecipes(Array.isArray(json) ? json : []);
+    await remoteRecipes.setValue({
+      recipes,
+      fetchedAt: Date.now(),
+      etag: res.headers.get("etag") ?? undefined,
+    });
+    return { ok: true, count: recipes.length };
+  } catch (e) {
+    return { ok: false, count: 0, error: errMsg(e) };
+  }
 }
 
 /**

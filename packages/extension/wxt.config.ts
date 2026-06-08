@@ -19,9 +19,10 @@ export default defineConfig({
     // `identity` for Trakt OAuth; `activeTab` lets the popup read the current
     // tab's URL (on the action click) to offer "enable on this site".
     permissions: ["storage", "alarms", "scripting", "identity", "activeTab"],
-    // Specific (non-broad) host access for Trakt API fetches from the SW. This is
-    // allowed by constraint #5 — what's forbidden is broad `*://*/*` / <all_urls>.
-    host_permissions: ["https://api.trakt.tv/*"],
+    // Specific (non-broad) host access: the Trakt API, and the CDN we fetch the
+    // recipe list from. Allowed by constraint #5 — what's forbidden is broad
+    // `*://*/*` / <all_urls>.
+    host_permissions: ["https://api.trakt.tv/*", "https://raw.githubusercontent.com/*"],
     // Constraint #5: NO broad host_permissions at install. We request per-origin
     // streaming-site access on a user gesture, then registerContentScripts.
     optional_host_permissions: ["*://*/*"],
