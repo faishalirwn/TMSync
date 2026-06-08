@@ -32,6 +32,15 @@ export function escapeRegex(value: string): string {
 }
 
 /**
+ * Regex (for a `url` Field) capturing the Nth number in the URL — robust for
+ * season/episode in paths like `/tv/273240/1/1` (n=1 → season 1, n=2 → episode
+ * 1) or `/episode/the-rookie/1-2` (n=0 → season 1, n=1 → episode 2).
+ */
+export function urlTokenRegex(ordinal: number): string {
+  return `(?:\\D*\\d+){${ordinal}}\\D*(\\d+)`;
+}
+
+/**
  * A urlPattern matching the hostname + first path segment (e.g.
  * "cineby\.at/movie"), so a movie recipe doesn't fire on the home/search pages.
  * Hostname-scoped rather than full-URL so it survives the dynamic id segment.

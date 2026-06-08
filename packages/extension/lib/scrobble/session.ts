@@ -44,7 +44,7 @@ function statusFromReply(
         ? "not found on Trakt"
         : reply.reason === "no_episode"
           ? "missing episode #"
-          : "scrobble failed";
+          : `scrobble failed${reply.status ? ` (${reply.status})` : ""}`;
   return { state: "error", title, detail };
 }
 

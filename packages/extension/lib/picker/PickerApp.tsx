@@ -10,6 +10,7 @@ import {
   buildRecipe,
   emptyDraft,
   previewDraft,
+  urlTokenRegex,
 } from "./recipe-builder";
 
 const HOST_TAG = "tmsync-picker";
@@ -42,8 +43,27 @@ interface Rect {
   height: number;
 }
 
+type UrlPart = { text: string } | { num: string; ordinal: number };
+
+/** Split the current href into text + clickable numeric chips (in order). */
+function urlChips(): UrlPart[] {
+  const href = location.href;
+  const parts: UrlPart[] = [];
+  let last = 0;
+  let ordinal = 0;
+  for (const m of href.matchAll(/\d+/g)) {
+    const idx = m.index ?? 0;
+    if (idx > last) parts.push({ text: href.slice(last, idx) });
+    parts.push({ num: m[0], ordinal: ordinal++ });
+    last = idx + m[0].length;
+  }
+  if (last < href.length) parts.push({ text: href.slice(last) });
+  return parts;
+}
+
 export function PickerApp({ onClose }: { onClose: () => void }) {
   const ctx: EngineContext = useMemo(() => ({ document, url: location.href }), []);
+  const parts = useMemo(urlChips, []);
 
   const [draft, setDraft] = useState<RecipeDraft>(() => {
     const base = emptyDraft(ctx.url);
@@ -109,6 +129,18 @@ export function PickerApp({ onClose }: { onClose: () => void }) {
     setStatus(null);
   }
 
+  /** Use the Nth number in the URL for this field (reliable for season/episode). */
+  function selectUrlToken(field: DraftFieldKey, ordinal: number) {
+    const regex = urlTokenRegex(ordinal);
+    setDraft((d) => ({
+      ...d,
+      fields: { ...d.fields, [field]: { source: "url", regex, group: 1, transforms: ["toInt"] } },
+    }));
+    setPicking(null);
+    setHighlight(null);
+    setStatus(null);
+  }
+
   function clearField(field: DraftFieldKey) {
     setDraft((d) => {
       const fields = { ...d.fields };
@@ -160,7 +192,9 @@ export function PickerApp({ onClose }: { onClose: () => void }) {
       )}
 
       {picking && (
-        <div class="banner">Click the {FIELD_LABELS[picking]} on the page · Esc to cancel</div>
+        <div class="banner">
+          Click the {FIELD_LABELS[picking]} on the page, or a number in the URL · Esc to cancel
+        </div>
       )}
 
       <div class="panel">
@@ -198,6 +232,31 @@ export function PickerApp({ onClose }: { onClose: () => void }) {
               </div>
             );
           })}
+        </div>
+
+        <div class="url">
+          <span class="lbl">
+            From URL{picking ? ` → click a number for ${FIELD_LABELS[picking]}` : ""}
+          </span>
+          <div class="urlline">
+            {parts.map((p, i) =>
+              "num" in p ? (
+                <button
+                  // biome-ignore lint/suspicious/noArrayIndexKey: positional URL tokens are stable
+                  key={i}
+                  type="button"
+                  class="chip"
+                  disabled={!picking}
+                  onClick={() => picking && selectUrlToken(picking, p.ordinal)}
+                >
+                  {p.num}
+                </button>
+              ) : (
+                // biome-ignore lint/suspicious/noArrayIndexKey: positional URL tokens are stable
+                <span key={i}>{p.text}</span>
+              ),
+            )}
+          </div>
         </div>
 
         <label class="type">
@@ -287,6 +346,13 @@ const CSS = `
 .field .clear { padding: 3px 6px; }
 .preview { margin: 8px 0; padding: 6px 8px; border-radius: 6px; font-size: 12px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.url { margin-bottom: 8px; }
+.url .lbl { display: block; font-size: 11px; opacity: 0.7; margin-bottom: 3px; }
+.urlline { font-size: 11px; word-break: break-all; line-height: 1.8; color: #52525b; }
+.chip { font: inherit; font-size: 11px; padding: 1px 5px; margin: 0 1px; border-radius: 4px;
+  border: 1px solid #d4d4d8; background: #f4f4f5; color: #111; cursor: pointer; }
+.chip:disabled { cursor: default; opacity: 0.6; }
+.chip:not(:disabled):hover { background: #fde68a; border-color: #f59e0b; }
 .check { display: flex; flex-direction: row; align-items: center; gap: 6px;
   font-size: 11px; opacity: 0.85; margin-bottom: 8px; cursor: pointer; }
 .check input { width: auto; margin: 0; flex: none; }

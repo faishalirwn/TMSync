@@ -77,6 +77,8 @@ export async function resolve(media: ParsedMedia): Promise<ResolvedIdentity | nu
     media.season !== undefined || media.episode !== undefined ? "show" : media.mediaType;
 
   const query = new URLSearchParams({ query: media.title });
+  // Year filters results, so only use it for movies — a scraped show "year"
+  // is often the wrong (non-first-aired) year and would filter out the match.
   if (type === "movie" && media.year !== undefined) query.set("years", String(media.year));
 
   const res = await api(`/search/${type}?${query.toString()}`);

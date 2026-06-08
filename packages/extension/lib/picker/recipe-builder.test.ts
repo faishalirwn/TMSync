@@ -1,3 +1,4 @@
+import { type Recipe, extract } from "@tmsync/shared";
 import { describe, expect, it } from "vitest";
 // Reuse the recipe-snapshot fixtures.
 import episodeHtml from "../../test/fixtures/sample-episode.html?raw";
@@ -10,6 +11,7 @@ import {
   escapeRegex,
   previewDraft,
   suggestUrlPattern,
+  urlTokenRegex,
 } from "./recipe-builder";
 
 function parse(html: string): Document {
@@ -25,6 +27,49 @@ describe("escapeRegex / suggestUrlPattern", () => {
       "watch\\.example\\.tv/movie",
     );
     expect(suggestUrlPattern("https://watch.example.tv/")).toBe("watch\\.example\\.tv");
+  });
+});
+
+describe("urlTokenRegex (season/episode from URL)", () => {
+  // Build a show recipe whose season/episode come from the Nth URL number.
+  function urlRecipe(seasonOrdinal: number, episodeOrdinal: number): Recipe {
+    return {
+      id: "u",
+      schemaVersion: 1,
+      name: "U",
+      match: { urlPattern: ".*" },
+      mediaType: "show",
+      video: { selector: "video", frame: "auto", watchedThreshold: 0.8 },
+      extract: {
+        title: { source: "title" },
+        season: {
+          source: "url",
+          regex: urlTokenRegex(seasonOrdinal),
+          group: 1,
+          transforms: ["toInt"],
+        },
+        episode: {
+          source: "url",
+          regex: urlTokenRegex(episodeOrdinal),
+          group: 1,
+          transforms: ["toInt"],
+        },
+      },
+    };
+  }
+
+  it("cineby /tv/273240/1/2 → S1E2 (skip the show id)", () => {
+    const doc = new DOMParser().parseFromString("<title>x</title>", "text/html");
+    const url = "https://www.cineby.at/tv/273240/1/2?play=true";
+    const r = extract(urlRecipe(1, 2), { document: doc, url });
+    expect(r).toMatchObject({ ok: true, media: { season: 1, episode: 2 } });
+  });
+
+  it("popcornmovies /episode/the-rookie/1-2 → S1E2", () => {
+    const doc = new DOMParser().parseFromString("<title>x</title>", "text/html");
+    const url = "https://popcornmovies.org/episode/the-rookie/1-2";
+    const r = extract(urlRecipe(0, 1), { document: doc, url });
+    expect(r).toMatchObject({ ok: true, media: { season: 1, episode: 2 } });
   });
 });
 
