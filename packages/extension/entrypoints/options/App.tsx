@@ -120,7 +120,8 @@ function LinkEditor({
         <div class="linkform">
           <p class="hint">
             URLs Trakt pages link to. Placeholders: <code>{"{tmdb}"}</code> <code>{"{imdb}"}</code>{" "}
-            <code>{"{season}"}</code> <code>{"{episode}"}</code> <code>{"{title}"}</code>.
+            <code>{"{season}"}</code> <code>{"{episode}"}</code> <code>{"{title}"}</code> (spaces){" "}
+            <code>{"{slug}"}</code> (hyphens).
           </p>
           <label>
             Movie

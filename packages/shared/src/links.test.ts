@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildSiteLink, fillTemplate } from "./links";
+import { buildSiteLinks, fillTemplate, slugify } from "./links";
 import type { RecipeLinks } from "./schema";
 
 describe("fillTemplate", () => {
@@ -13,54 +13,54 @@ describe("fillTemplate", () => {
     expect(fillTemplate("https://s/movie/{tmdb}", { tmdb: undefined })).toBeNull();
     expect(fillTemplate("https://s/movie/{tmdb}", {})).toBeNull();
   });
+});
 
-  it("leaves unrelated braces-free text intact", () => {
-    expect(fillTemplate("https://s/movie/{imdb}", { imdb: "tt99" })).toBe("https://s/movie/tt99");
+describe("slugify", () => {
+  it("lowercases and hyphen-joins, trimming stray separators", () => {
+    expect(slugify("The Rookie")).toBe("the-rookie");
+    expect(slugify("Spider-Man: No Way Home!")).toBe("spider-man-no-way-home");
   });
 });
 
-describe("buildSiteLink", () => {
+describe("buildSiteLinks", () => {
   const cineby: RecipeLinks = {
     movie: "https://cineby.app/movie/{tmdb}",
     tv: "https://cineby.app/tv/{tmdb}/{season}/{episode}",
     search: "https://cineby.app/search/{title}",
   };
 
-  it("builds a direct movie link from tmdb", () => {
-    expect(buildSiteLink(cineby, { type: "movie", tmdb: "1034541", title: "Terrifier 3" })).toEqual(
-      {
-        url: "https://cineby.app/movie/1034541",
-        kind: "direct",
-      },
-    );
+  it("returns a direct movie link from tmdb plus a search fallback", () => {
+    expect(
+      buildSiteLinks(cineby, { type: "movie", tmdb: "1034541", title: "Terrifier 3" }),
+    ).toEqual({
+      direct: "https://cineby.app/movie/1034541",
+      search: "https://cineby.app/search/Terrifier%203",
+    });
   });
 
   it("builds a direct tv link with season/episode", () => {
-    expect(buildSiteLink(cineby, { type: "tv", tmdb: "273240", season: 1, episode: 2 })).toEqual({
-      url: "https://cineby.app/tv/273240/1/2",
-      kind: "direct",
-    });
-  });
-
-  it("falls back to search when the id is missing", () => {
-    expect(buildSiteLink(cineby, { type: "movie", title: "The Rookie" })).toEqual({
-      url: "https://cineby.app/search/The%20Rookie",
-      kind: "search",
-    });
-  });
-
-  it("returns null when neither a fillable template nor search applies", () => {
-    const tmdbOnly: RecipeLinks = { movie: "https://s/movie/{tmdb}" };
-    expect(buildSiteLink(tmdbOnly, { type: "movie", title: "X" })).toBeNull();
-  });
-
-  it("uses search for a slug-only site (no direct template)", () => {
-    const slugSite: RecipeLinks = { search: "https://popcornmovies.org/search/{title}" };
     expect(
-      buildSiteLink(slugSite, { type: "tv", season: 2, episode: 4, title: "The Rookie" }),
-    ).toEqual({
-      url: "https://popcornmovies.org/search/The%20Rookie",
-      kind: "search",
+      buildSiteLinks(cineby, { type: "tv", tmdb: "273240", season: 1, episode: 2 }).direct,
+    ).toBe("https://cineby.app/tv/273240/1/2");
+  });
+
+  it("omits direct when the id is missing, keeping search", () => {
+    expect(buildSiteLinks(cineby, { type: "movie", title: "The Rookie" })).toEqual({
+      search: "https://cineby.app/search/The%20Rookie",
     });
+  });
+
+  it("supports a {slug} search (hyphen-joined title)", () => {
+    const slugSite: RecipeLinks = { search: "https://popcornmovies.org/search/{slug}" };
+    expect(
+      buildSiteLinks(slugSite, { type: "tv", season: 2, episode: 4, title: "The Rookie" }),
+    ).toEqual({
+      search: "https://popcornmovies.org/search/the-rookie",
+    });
+  });
+
+  it("returns nothing when no template can be filled", () => {
+    const tmdbOnly: RecipeLinks = { movie: "https://s/movie/{tmdb}" };
+    expect(buildSiteLinks(tmdbOnly, { type: "movie", title: "X" })).toEqual({});
   });
 });

@@ -15,7 +15,7 @@ import {
  * recipe shape but with every extracted field optional while the user builds it.
  */
 export interface RecipeDraft {
-  match: { urlPattern: string; domFingerprint?: string };
+  match: { urlPattern: string; domFingerprint?: string; hostnames?: string[] };
   mediaType: "auto" | "movie" | "show";
   video: { selector: string; frame: "auto" | "top" | "iframe" };
   fields: {
@@ -81,12 +81,52 @@ export function suggestLinkTemplate(url: string, season?: number, episode?: numb
 }
 
 export function emptyDraft(url: string): RecipeDraft {
+  let hostname: string | undefined;
+  try {
+    hostname = new URL(url).hostname;
+  } catch {
+    hostname = undefined;
+  }
   return {
-    match: { urlPattern: suggestUrlPattern(url) },
+    match: {
+      urlPattern: suggestUrlPattern(url),
+      hostnames: hostname ? [hostname] : undefined,
+    },
     mediaType: "auto",
     video: { selector: "video", frame: "auto" },
     fields: {},
   };
+}
+
+/** Reverse of buildRecipe: load a saved recipe back into an editable draft. */
+export function recipeToDraft(recipe: Recipe): RecipeDraft {
+  return {
+    match: {
+      urlPattern: recipe.match.urlPattern,
+      domFingerprint: recipe.match.domFingerprint,
+      hostnames: recipe.match.hostnames,
+    },
+    mediaType: recipe.mediaType,
+    video: { selector: recipe.video.selector, frame: recipe.video.frame },
+    fields: {
+      title: recipe.extract.title,
+      year: recipe.extract.year,
+      season: recipe.extract.season,
+      episode: recipe.extract.episode,
+    },
+    links: recipe.links,
+  };
+}
+
+/**
+ * Whether a saved recipe belongs to this host — used to reload it into the
+ * picker for editing, even from a non-media page (homepage) where its urlPattern
+ * wouldn't match the current URL. Checks the hostnames hint, then falls back to
+ * the escaped hostname appearing in the urlPattern (how the picker builds them).
+ */
+export function recipeMatchesHost(recipe: Recipe, hostname: string): boolean {
+  if (recipe.match.hostnames?.includes(hostname)) return true;
+  return recipe.match.urlPattern.includes(escapeRegex(hostname));
 }
 
 function firstWorking(candidates: Field[], ctx: EngineContext): Field | undefined {

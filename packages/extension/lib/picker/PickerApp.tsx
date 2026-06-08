@@ -10,6 +10,8 @@ import {
   buildRecipe,
   emptyDraft,
   previewDraft,
+  recipeMatchesHost,
+  recipeToDraft,
   suggestLinkTemplate,
   urlTokenRegex,
 } from "./recipe-builder";
@@ -88,6 +90,26 @@ export function PickerApp({ onClose }: { onClose: () => void }) {
   const [highlight, setHighlight] = useState<Rect | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [showLinks, setShowLinks] = useState(false);
+  // Set once we've loaded an existing saved recipe for this site — we then edit
+  // it in place (keep its id) instead of creating a duplicate.
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  // Reload a saved recipe for this host so the panel reflects what's stored
+  // (and editing — e.g. adding quick links — doesn't clobber the scrape fields),
+  // even when opened from the homepage rather than a media page.
+  useEffect(() => {
+    void (async () => {
+      const saved = (await customRecipes.getValue()).find((r) =>
+        recipeMatchesHost(r, location.hostname),
+      );
+      if (saved) {
+        setDraft(recipeToDraft(saved));
+        setName(saved.name);
+        setEditingId(saved.id);
+        if (saved.links) setShowLinks(true);
+      }
+    })();
+  }, []);
 
   // Element-picking mode: highlight on hover, capture the next page click.
   useEffect(() => {
@@ -178,14 +200,16 @@ export function PickerApp({ onClose }: { onClose: () => void }) {
   }
 
   async function save() {
-    const id = `custom-${location.hostname}-${Date.now()}`;
+    const id = editingId ?? `custom-${location.hostname}-${Date.now()}`;
     const built = buildRecipe(draft, { id, name });
     if (!built.ok) return setStatus(built.error);
-    // Replace any prior custom recipe for the same urlPattern (re-picking a site).
+    // Replace the recipe being edited (same id) and any other for the same
+    // urlPattern — so we never leave a stale duplicate behind.
     const list = (await customRecipes.getValue()).filter(
-      (r) => r.match.urlPattern !== built.recipe.match.urlPattern,
+      (r) => r.id !== built.recipe.id && r.match.urlPattern !== built.recipe.match.urlPattern,
     );
     await customRecipes.setValue([...list, built.recipe]);
+    setEditingId(built.recipe.id);
     await sendMessage("registerSite", location.origin);
     setStatus("Saved! Reload the page to start scrobbling.");
   }
@@ -227,7 +251,7 @@ export function PickerApp({ onClose }: { onClose: () => void }) {
 
       <div class="panel">
         <header>
-          <strong>TMSync · set up site</strong>
+          <strong>TMSync · {editingId ? "edit site" : "set up site"}</strong>
           <button type="button" class="x" onClick={onClose}>
             ✕
           </button>
@@ -341,7 +365,8 @@ export function PickerApp({ onClose }: { onClose: () => void }) {
                 />
               ))}
               <span class="hint">
-                Placeholders: {"{tmdb}"} {"{imdb}"} {"{season}"} {"{episode}"} {"{title}"}
+                Placeholders: {"{tmdb}"} {"{imdb}"} {"{season}"} {"{episode}"} {"{title}"} (spaces)
+                {" {slug}"} (hyphens)
               </span>
             </div>
           )}
@@ -359,11 +384,18 @@ export function PickerApp({ onClose }: { onClose: () => void }) {
             : `✗ ${preview.error}`}
         </div>
 
+        {!preview.ok && draft.fields.title && (
+          <p class="status">
+            Can’t preview on this page, but the saved fields are intact — safe to save quick-link
+            edits.
+          </p>
+        )}
+
         <div class="actions">
-          <button type="button" class="primary" onClick={save} disabled={!preview.ok}>
+          <button type="button" class="primary" onClick={save} disabled={!draft.fields.title}>
             Save & enable
           </button>
-          <button type="button" onClick={copyJson} disabled={!preview.ok}>
+          <button type="button" onClick={copyJson} disabled={!draft.fields.title}>
             Copy JSON
           </button>
         </div>

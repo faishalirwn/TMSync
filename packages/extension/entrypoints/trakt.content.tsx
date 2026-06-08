@@ -1,6 +1,6 @@
 import { customRecipes } from "@/lib/storage";
 import { type QuickLinkItem, mountQuickLinks } from "@/lib/ui/quicklinks";
-import { type TraktPageMedia, buildSiteLink, parseRecipes } from "@tmsync/shared";
+import { type TraktPageMedia, buildSiteLinks, parseRecipes } from "@tmsync/shared";
 import rawRecipes from "../../../recipes/index.json";
 
 /**
@@ -25,8 +25,8 @@ export default defineContentScript({
       const items: QuickLinkItem[] = [];
       for (const r of recipes) {
         if (!r.links) continue;
-        const link = buildSiteLink(r.links, media);
-        if (link) items.push({ name: r.name, ...link });
+        const links = buildSiteLinks(r.links, media);
+        if (links.direct || links.search) items.push({ name: r.name, ...links });
       }
       return items;
     });

@@ -14,10 +14,18 @@ export interface TraktPageMedia {
   episode?: number;
 }
 
-export interface SiteLink {
-  url: string;
-  /** "direct" = built from ids; "search" = title-based fallback. */
-  kind: "direct" | "search";
+/** The links a site can offer for one Trakt item: a direct deep link and/or search. */
+export interface SiteLinks {
+  direct?: string;
+  search?: string;
+}
+
+/** Lowercase, hyphen-joined slug of a title (e.g. "The Rookie" → "the-rookie"). */
+export function slugify(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 }
 
 /**
@@ -42,26 +50,29 @@ export function fillTemplate(
 }
 
 /**
- * Build the best outbound link for a site: the id-based `movie`/`tv` template if
- * it can be filled, else the title-based `search` template. Null if neither
- * applies (e.g. a tmdb-only template with no tmdb id and no search fallback).
+ * Build the outbound links for a site from its templates and the Trakt page
+ * media: the id-based `movie`/`tv` deep link (if fillable) and the title-based
+ * `search` link (if defined). Placeholders: {tmdb} {imdb} {season} {episode}
+ * {title} (URL-encoded, spaces → %20) and {slug} (lowercase, hyphen-joined).
  */
-export function buildSiteLink(links: RecipeLinks, media: TraktPageMedia): SiteLink | null {
-  const title = media.title !== undefined ? encodeURIComponent(media.title) : undefined;
-  const direct = media.type === "movie" ? links.movie : links.tv;
-  if (direct) {
-    const url = fillTemplate(direct, {
-      tmdb: media.tmdb,
-      imdb: media.imdb,
-      title,
-      season: media.season,
-      episode: media.episode,
-    });
-    if (url) return { url, kind: "direct" };
+export function buildSiteLinks(links: RecipeLinks, media: TraktPageMedia): SiteLinks {
+  const params = {
+    tmdb: media.tmdb,
+    imdb: media.imdb,
+    title: media.title !== undefined ? encodeURIComponent(media.title) : undefined,
+    slug: media.title !== undefined ? slugify(media.title) : undefined,
+    season: media.season,
+    episode: media.episode,
+  };
+  const out: SiteLinks = {};
+  const directTpl = media.type === "movie" ? links.movie : links.tv;
+  if (directTpl) {
+    const url = fillTemplate(directTpl, params);
+    if (url) out.direct = url;
   }
-  if (links.search && title) {
-    const url = fillTemplate(links.search, { title });
-    if (url) return { url, kind: "search" };
+  if (links.search) {
+    const url = fillTemplate(links.search, params);
+    if (url) out.search = url;
   }
-  return null;
+  return out;
 }
