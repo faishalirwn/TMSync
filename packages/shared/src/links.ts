@@ -60,11 +60,14 @@ export function fillTemplate(
  */
 export function buildSiteLinks(links: LinkTemplates, media: TraktPageMedia): SiteLinks {
   const titleSlug = media.title !== undefined ? slugify(media.title) : undefined;
-  // {slug}: a clean, year-free slug. For movies the title slugifies cleanly
-  // (Trakt's URL slug appends a disambiguation year — "terrifier-3-2024" — which
-  // most sites don't use). For tv the og:title is the EPISODE, so use Trakt's
-  // show URL slug instead. {slugyear} keeps Trakt's raw slug for sites that mirror it.
-  const slug = media.type === "movie" ? (titleSlug ?? media.slug) : (media.slug ?? titleSlug);
+  // {slug}: a clean, year-free slug. Trakt appends a disambiguation year to BOTH
+  // movie ("terrifier-3-2024") and show ("invincible-2021") slugs, which most
+  // sites omit. For movies the title slugifies cleanly (and keeps a year that is
+  // part of the title, e.g. "blade-runner-2049"). For tv the og:title is the
+  // EPISODE, so strip a trailing -YYYY off Trakt's show slug. {slugyear} keeps
+  // Trakt's raw slug for sites that mirror it.
+  const bareSlug = media.slug?.replace(/-(?:19|20)\d{2}$/, "");
+  const slug = media.type === "movie" ? (titleSlug ?? bareSlug) : (bareSlug ?? titleSlug);
   const params = {
     tmdb: media.tmdb,
     imdb: media.imdb,

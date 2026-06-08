@@ -59,19 +59,26 @@ describe("buildSiteLinks", () => {
     });
   });
 
-  it("prefers the Trakt URL slug over the (episode) title for tv {slug}", () => {
+  it("uses the show slug (not the episode title) and strips its year for tv {slug}", () => {
     const site: LinkTemplates = {
       tv: "https://popcornmovies.org/episode/{slug}/{season}-{episode}",
     };
     expect(
       buildSiteLinks(site, {
         type: "tv",
-        slug: "invincible",
+        slug: "invincible-2021", // Trakt show slug carries a disambiguation year
         title: "Invincible 4x04 Hurm", // episode title — must NOT drive the slug
         season: 4,
         episode: 4,
       }),
     ).toEqual({ direct: "https://popcornmovies.org/episode/invincible/4-4" });
+  });
+
+  it("does not strip a trailing number that isn't a -YYYY suffix (e.g. 1923)", () => {
+    const site: LinkTemplates = { tv: "https://s/{slug}" };
+    expect(buildSiteLinks(site, { type: "tv", slug: "1923", season: 1, episode: 1 }).direct).toBe(
+      "https://s/1923",
+    );
   });
 
   it("uses the clean title slug for movie {slug}, not Trakt's year-suffixed url slug", () => {
