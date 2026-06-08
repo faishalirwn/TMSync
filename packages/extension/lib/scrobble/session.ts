@@ -364,6 +364,9 @@ export class SessionManager {
 
     let lastPersist = 0;
     on(video, "timeupdate", () => {
+      // Commit to history the moment playback crosses the threshold — no pause
+      // or `ended` required. Cheap + idempotent (one stop per session).
+      controller.progressTick();
       const now = Date.now();
       if (now - lastPersist < PROGRESS_PERSIST_MS) return;
       lastPersist = now;

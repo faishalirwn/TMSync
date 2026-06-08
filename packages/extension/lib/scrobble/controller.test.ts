@@ -66,6 +66,36 @@ describe("ScrobbleController", () => {
     ]);
   });
 
+  it("auto-commits a stop once playback crosses the threshold (no pause needed)", () => {
+    const { video, events, controller } = setup();
+    controller.play();
+    tick();
+    video.currentTime = 85; // crosses the 80% default while playing
+    controller.progressTick();
+    expect(events).toEqual([
+      { action: "start", progress: 0 },
+      { action: "stop", progress: 85 },
+    ]);
+    // Keeps playing to the end → no further scrobbles (idempotent).
+    video.currentTime = 100;
+    controller.progressTick();
+    controller.ended();
+    expect(events.filter((e) => e.action === "stop")).toHaveLength(1);
+  });
+
+  it("does not commit on tick before the threshold or before any start", () => {
+    const { video, events, controller } = setup();
+    video.currentTime = 90;
+    controller.progressTick(); // not started yet → nothing
+    expect(events).toEqual([]);
+    video.currentTime = 10;
+    controller.play();
+    tick();
+    video.currentTime = 50;
+    controller.progressTick(); // below threshold → nothing new
+    expect(events).toEqual([{ action: "start", progress: 10 }]);
+  });
+
   it("converts a pause past the watched threshold into a stop (commit to history)", () => {
     const { video, events, controller } = setup();
     controller.play();

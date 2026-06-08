@@ -17,11 +17,12 @@ export type SendScrobble = (action: ScrobbleAction, progress: number) => void;
  * - One `start` per session; debounce play/pause bursts (seeking, ad breaks).
  * - Idempotent: never emit the same action twice in a row.
  * - `ended` → stop(~100). Leaving before `ended` → stop(last progress).
- * - A pause at/after `watchedThreshold` becomes a `stop`: Trakt rejects a pause
- *   that late ("use stop to scrobble"), and a pause this near the end means the
- *   user finished — so we commit it to history. Trakt still owns the ≥80%
- *   watched decision on the stop; this only chooses stop-vs-pause for the late
- *   "treat as finished here" point (per CLAUDE.md `video.watchedThreshold`).
+ * - Crossing `watchedThreshold` while playing (`progressTick`) commits a stop —
+ *   no pause/ended needed (long-credits sites, players that never fire `ended`).
+ * - A pause at/after `watchedThreshold` also becomes a `stop`: Trakt rejects a
+ *   pause that late ("use stop to scrobble") and it means the user finished.
+ *   Trakt still owns the ≥80% watched decision on the stop; the threshold only
+ *   picks the "treat as finished here" point (per CLAUDE.md `video.watchedThreshold`).
  */
 export class ScrobbleController {
   private started = false;
@@ -58,6 +59,17 @@ export class ScrobbleController {
     this.clearTimer();
     this.pending = null;
     this.emitStop(100);
+  }
+
+  /**
+   * Called on playback progress (timeupdate). Once the "treat as finished here"
+   * threshold is crossed WHILE PLAYING, commit a stop — no pause/ended needed.
+   * This is the robust path for long-credits sites and gray-market players that
+   * never fire `ended`. Idempotent: emits the stop exactly once.
+   */
+  progressTick(): void {
+    if (!this.started || this.stopped) return;
+    if (this.progress() >= this.watchedThreshold * 100) this.emitStop(this.progress());
   }
 
   /** Leaving before `ended` — tab close, SPA nav, or video element removed. */
