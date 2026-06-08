@@ -1,32 +1,27 @@
-import { customRecipes } from "@/lib/storage";
+import { quickLinks } from "@/lib/storage";
 import { type QuickLinkItem, mountQuickLinks } from "@/lib/ui/quicklinks";
-import { type TraktPageMedia, buildSiteLinks, parseRecipes } from "@tmsync/shared";
-import rawRecipes from "../../../recipes/index.json";
+import { type TraktPageMedia, buildSiteLinks } from "@tmsync/shared";
 
 /**
  * Runs on trakt.tv (static, specific host — not the broad runtime registration
  * the streaming content script uses). Reads the media + TMDB/IMDB ids from the
- * page and injects "watch on <site>" links for every recipe that defines link
- * templates, deep-linked to the matching movie / SxEx.
+ * page and injects "watch on <site>" links for every ENABLED quick-link site,
+ * deep-linked to the matching movie / SxEx.
  */
 export default defineContentScript({
   matches: ["*://trakt.tv/*", "*://www.trakt.tv/*"],
   cssInjectionMode: "ui",
   async main(ctx) {
-    const recipes = parseRecipes([
-      ...(rawRecipes as unknown[]),
-      ...(await customRecipes.getValue()),
-    ]).filter((r) => r.links);
-    if (recipes.length === 0) return; // nothing can produce a link
+    const sites = (await quickLinks.getValue()).filter((s) => s.enabled);
+    if (sites.length === 0) return; // nothing to show
 
     await mountQuickLinks(ctx, () => {
       const media = parseTraktPage();
       if (!media) return [];
       const items: QuickLinkItem[] = [];
-      for (const r of recipes) {
-        if (!r.links) continue;
-        const links = buildSiteLinks(r.links, media);
-        if (links.direct || links.search) items.push({ name: r.name, ...links });
+      for (const s of sites) {
+        const links = buildSiteLinks(s, media);
+        if (links.direct || links.search) items.push({ name: s.name, ...links });
       }
       return items;
     });

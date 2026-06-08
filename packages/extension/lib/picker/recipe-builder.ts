@@ -3,7 +3,6 @@ import {
   type ExtractResult,
   type Field,
   type Recipe,
-  type RecipeLinks,
   RecipeSchema,
   SCHEMA_VERSION,
   extract,
@@ -24,7 +23,6 @@ export interface RecipeDraft {
     season?: Field;
     episode?: Field;
   };
-  links?: RecipeLinks;
 }
 
 export type DraftFieldKey = keyof RecipeDraft["fields"];
@@ -55,28 +53,6 @@ export function suggestUrlPattern(url: string): string {
     return escapeRegex(base);
   } catch {
     return escapeRegex(url);
-  }
-}
-
-/**
- * Pre-fill a quick-link template from the current page URL by replacing the
- * scraped season/episode path segments with `{season}`/`{episode}`. The site's
- * id segment stays literal — the user swaps it for `{tmdb}`/`{imdb}` (or clears
- * it and uses a `{title}` search for slug-based sites). Best-effort.
- */
-export function suggestLinkTemplate(url: string, season?: number, episode?: number): string {
-  try {
-    const u = new URL(url);
-    const segs = u.pathname.split("/");
-    const idxS = season !== undefined ? segs.indexOf(String(season)) : -1;
-    if (idxS >= 0) segs[idxS] = "{season}";
-    if (episode !== undefined) {
-      const idxE = segs.indexOf(String(episode), idxS >= 0 ? idxS + 1 : 0);
-      if (idxE >= 0) segs[idxE] = "{episode}";
-    }
-    return `${u.origin}${segs.join("/")}${u.search}`;
-  } catch {
-    return url;
   }
 }
 
@@ -114,7 +90,6 @@ export function recipeToDraft(recipe: Recipe): RecipeDraft {
       season: recipe.extract.season,
       episode: recipe.extract.episode,
     },
-    links: recipe.links,
   };
 }
 
@@ -174,16 +149,6 @@ export function autoDetectFields(ctx: EngineContext): RecipeDraft["fields"] {
   return { title, year, season, episode };
 }
 
-/** Drop empty link fields; return undefined if nothing's set (keeps recipes clean). */
-function normalizeLinks(links: RecipeLinks | undefined): RecipeLinks | undefined {
-  if (!links) return undefined;
-  const out: RecipeLinks = {};
-  if (links.movie?.trim()) out.movie = links.movie.trim();
-  if (links.tv?.trim()) out.tv = links.tv.trim();
-  if (links.search?.trim()) out.search = links.search.trim();
-  return out.movie || out.tv || out.search ? out : undefined;
-}
-
 export type BuildResult = { ok: true; recipe: Recipe } | { ok: false; error: string };
 
 /** Assemble + validate a recipe from a draft. */
@@ -203,7 +168,6 @@ export function buildRecipe(draft: RecipeDraft, meta: { id: string; name: string
       season: draft.fields.season,
       episode: draft.fields.episode,
     },
-    links: normalizeLinks(draft.links),
   };
 
   const parsed = RecipeSchema.safeParse(candidate);

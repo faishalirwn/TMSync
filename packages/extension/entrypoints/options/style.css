@@ -58,6 +58,33 @@ section {
   margin-top: 8px;
 }
 
+.group {
+  margin-top: 12px;
+}
+
+.grouphead {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.grouphead code {
+  font-weight: 600;
+  opacity: 1;
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.toggle input {
+  flex: none;
+}
+
 .links {
   margin-top: 8px;
 }

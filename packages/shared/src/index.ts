@@ -1,7 +1,7 @@
 export {
   Field,
+  LinkTemplates,
   Recipe,
-  RecipeLinks,
   RecipeSchema,
   SCHEMA_VERSION,
   Transform,

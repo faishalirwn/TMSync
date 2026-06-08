@@ -1,4 +1,4 @@
-import type { RecipeLinks } from "./schema";
+import type { LinkTemplates } from "./schema";
 
 /**
  * Media identified on a Trakt page, used to build an outbound quick link.
@@ -55,7 +55,7 @@ export function fillTemplate(
  * `search` link (if defined). Placeholders: {tmdb} {imdb} {season} {episode}
  * {title} (URL-encoded, spaces → %20) and {slug} (lowercase, hyphen-joined).
  */
-export function buildSiteLinks(links: RecipeLinks, media: TraktPageMedia): SiteLinks {
+export function buildSiteLinks(links: LinkTemplates, media: TraktPageMedia): SiteLinks {
   const params = {
     tmdb: media.tmdb,
     imdb: media.imdb,

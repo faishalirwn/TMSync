@@ -10,7 +10,6 @@ import {
   emptyDraft,
   escapeRegex,
   previewDraft,
-  suggestLinkTemplate,
   suggestUrlPattern,
   urlTokenRegex,
 } from "./recipe-builder";
@@ -18,38 +17,6 @@ import {
 function parse(html: string): Document {
   return new DOMParser().parseFromString(html, "text/html");
 }
-
-describe("suggestLinkTemplate", () => {
-  it("replaces season/episode path segments, leaving the id literal", () => {
-    expect(suggestLinkTemplate("https://www.cineby.at/tv/273240/1/2", 1, 2)).toBe(
-      "https://www.cineby.at/tv/273240/{season}/{episode}",
-    );
-  });
-
-  it("keeps the season/episode order when both numbers are equal", () => {
-    expect(suggestLinkTemplate("https://www.cineby.at/tv/273240/1/1", 1, 1)).toBe(
-      "https://www.cineby.at/tv/273240/{season}/{episode}",
-    );
-  });
-
-  it("returns a movie URL unchanged when there is no season/episode", () => {
-    expect(suggestLinkTemplate("https://www.cineby.at/movie/1273221")).toBe(
-      "https://www.cineby.at/movie/1273221",
-    );
-  });
-
-  it("preserves the query string", () => {
-    expect(suggestLinkTemplate("https://www.cineby.at/tv/273240/1/1?play=true", 1, 1)).toBe(
-      "https://www.cineby.at/tv/273240/{season}/{episode}?play=true",
-    );
-  });
-
-  it("leaves slug URLs (no matching number segment) intact", () => {
-    expect(suggestLinkTemplate("https://popcornmovies.org/episode/the-rookie/1-2", 1, 2)).toBe(
-      "https://popcornmovies.org/episode/the-rookie/1-2",
-    );
-  });
-});
 
 describe("escapeRegex / suggestUrlPattern", () => {
   it("escapes regex metacharacters", () => {

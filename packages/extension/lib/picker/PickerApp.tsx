@@ -12,17 +12,8 @@ import {
   previewDraft,
   recipeMatchesHost,
   recipeToDraft,
-  suggestLinkTemplate,
   urlTokenRegex,
 } from "./recipe-builder";
-
-type LinkKey = "movie" | "tv" | "search";
-
-const LINK_PLACEHOLDER: Record<LinkKey, string> = {
-  movie: "https://site/movie/{tmdb}",
-  tv: "https://site/tv/{tmdb}/{season}/{episode}",
-  search: "https://site/search/{title}",
-};
 
 const HOST_TAG = "tmsync-picker";
 const FIELD_LABELS: Record<DraftFieldKey, string> = {
@@ -89,7 +80,6 @@ export function PickerApp({ onClose }: { onClose: () => void }) {
   const [picking, setPicking] = useState<DraftFieldKey | null>(null);
   const [highlight, setHighlight] = useState<Rect | null>(null);
   const [status, setStatus] = useState<string | null>(null);
-  const [showLinks, setShowLinks] = useState(false);
   // Set once we've loaded an existing saved recipe for this site — we then edit
   // it in place (keep its id) instead of creating a duplicate.
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -106,7 +96,6 @@ export function PickerApp({ onClose }: { onClose: () => void }) {
         setDraft(recipeToDraft(saved));
         setName(saved.name);
         setEditingId(saved.id);
-        if (saved.links) setShowLinks(true);
       }
     })();
   }, []);
@@ -179,24 +168,6 @@ export function PickerApp({ onClose }: { onClose: () => void }) {
       delete fields[field];
       return { ...d, fields };
     });
-  }
-
-  function setLink(key: LinkKey, value: string) {
-    setDraft((d) => ({ ...d, links: { ...d.links, [key]: value } }));
-  }
-
-  /**
-   * Pre-fill movie/tv from this page's URL, swapping the scraped season/episode
-   * for {season}/{episode}. The user then replaces the id segment with {tmdb}.
-   */
-  function suggestLinks() {
-    const p = previewDraft(draft, ctx);
-    const season = p.ok ? p.media.season : undefined;
-    const episode = p.ok ? p.media.episode : undefined;
-    const isShow = season !== undefined || episode !== undefined;
-    const tmpl = suggestLinkTemplate(ctx.url, season, episode);
-    setLink(isShow ? "tv" : "movie", tmpl);
-    setStatus("Pre-filled from URL — replace the id with {tmdb} (or use search).");
   }
 
   async function save() {
@@ -345,33 +316,6 @@ export function PickerApp({ onClose }: { onClose: () => void }) {
           Player loads in a separate frame (iframe)
         </label>
 
-        <div class="links">
-          <button type="button" class="linktoggle" onClick={() => setShowLinks((v) => !v)}>
-            {showLinks ? "▾" : "▸"} Quick links (Trakt → this site)
-          </button>
-          {showLinks && (
-            <div class="linkform">
-              <button type="button" class="suggest" onClick={suggestLinks}>
-                Suggest from this URL
-              </button>
-              {(["movie", "tv", "search"] as LinkKey[]).map((key) => (
-                <input
-                  key={key}
-                  value={draft.links?.[key] ?? ""}
-                  onInput={(e) => setLink(key, (e.target as HTMLInputElement).value)}
-                  onKeyDown={(e) => e.stopPropagation()}
-                  onKeyUp={(e) => e.stopPropagation()}
-                  placeholder={LINK_PLACEHOLDER[key]}
-                />
-              ))}
-              <span class="hint">
-                Placeholders: {"{tmdb}"} {"{imdb}"} {"{season}"} {"{episode}"} {"{title}"} (spaces)
-                {" {slug}"} (hyphens)
-              </span>
-            </div>
-          )}
-        </div>
-
         <div class={`preview ${preview.ok ? "ok" : "bad"}`}>
           {preview.ok
             ? `✓ ${preview.media.mediaType}: ${preview.media.title}${
@@ -444,14 +388,6 @@ const CSS = `
 .check input { width: auto; margin: 0; flex: none; }
 .preview.ok { background: #ecfdf5; color: #047857; }
 .preview.bad { background: #fef2f2; color: #b91c1c; }
-.links { margin-bottom: 8px; }
-.linktoggle { border: none; background: none; padding: 0; font: inherit; font-size: 11px;
-  opacity: 0.8; cursor: pointer; color: #111; }
-.linkform { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
-.linkform input { font: 11px/1.4 ui-monospace, monospace; }
-.linkform .suggest { align-self: flex-start; padding: 3px 8px; border: 1px solid #d4d4d8;
-  border-radius: 6px; background: #f4f4f5; cursor: pointer; font: inherit; font-size: 11px; }
-.linkform .hint { font-size: 10px; opacity: 0.6; }
 .actions { display: flex; gap: 8px; }
 .actions button { flex: 1; padding: 6px; border: 1px solid #d4d4d8; border-radius: 6px;
   background: #fff; cursor: pointer; font: inherit; }

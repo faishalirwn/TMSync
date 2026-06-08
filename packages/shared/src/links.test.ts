@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildSiteLinks, fillTemplate, slugify } from "./links";
-import type { RecipeLinks } from "./schema";
+import type { LinkTemplates } from "./schema";
 
 describe("fillTemplate", () => {
   it("substitutes present placeholders", () => {
@@ -23,7 +23,7 @@ describe("slugify", () => {
 });
 
 describe("buildSiteLinks", () => {
-  const cineby: RecipeLinks = {
+  const cineby: LinkTemplates = {
     movie: "https://cineby.app/movie/{tmdb}",
     tv: "https://cineby.app/tv/{tmdb}/{season}/{episode}",
     search: "https://cineby.app/search/{title}",
@@ -51,7 +51,7 @@ describe("buildSiteLinks", () => {
   });
 
   it("supports a {slug} search (hyphen-joined title)", () => {
-    const slugSite: RecipeLinks = { search: "https://popcornmovies.org/search/{slug}" };
+    const slugSite: LinkTemplates = { search: "https://popcornmovies.org/search/{slug}" };
     expect(
       buildSiteLinks(slugSite, { type: "tv", season: 2, episode: 4, title: "The Rookie" }),
     ).toEqual({
@@ -60,7 +60,7 @@ describe("buildSiteLinks", () => {
   });
 
   it("returns nothing when no template can be filled", () => {
-    const tmdbOnly: RecipeLinks = { movie: "https://s/movie/{tmdb}" };
+    const tmdbOnly: LinkTemplates = { movie: "https://s/movie/{tmdb}" };
     expect(buildSiteLinks(tmdbOnly, { type: "movie", title: "X" })).toEqual({});
   });
 });

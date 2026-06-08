@@ -1,4 +1,4 @@
-import type { ParsedMedia, Recipe } from "@tmsync/shared";
+import type { LinkTemplates, ParsedMedia, Recipe } from "@tmsync/shared";
 import { storage } from "wxt/utils/storage";
 import type { ResolvedIdentity, TraktTokens } from "./trakt/types";
 
@@ -25,6 +25,21 @@ export const enabledOrigins = storage.defineItem<string[]>("local:enabled_origin
 
 /** Recipes authored locally via the element picker (merged with the bundled list). */
 export const customRecipes = storage.defineItem<Recipe[]>("local:custom_recipes", {
+  fallback: [],
+});
+
+/**
+ * Quick links: per-SITE "watch on" buttons injected on Trakt pages. Independent
+ * of recipes (which are scraping config) — one site can back several recipes, or
+ * none. Only `enabled` entries are shown, so the user keeps it to their
+ * favourites even as the recipe list grows.
+ */
+export interface QuickLinkSite extends LinkTemplates {
+  id: string;
+  name: string;
+  enabled: boolean;
+}
+export const quickLinks = storage.defineItem<QuickLinkSite[]>("local:quick_links", {
   fallback: [],
 });
 

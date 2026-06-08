@@ -1,7 +1,10 @@
 import {
+  type QuickLinkSite,
   corrections,
+  customRecipes,
   enabledOrigins,
   notes,
+  quickLinks,
   ratings,
   remoteRatings,
   resolutionCache,
@@ -28,6 +31,7 @@ import {
   reviewKey,
 } from "@/lib/trakt/util";
 import { onMessage, sendMessage } from "@/messaging";
+import type { Recipe } from "@tmsync/shared";
 import { browser } from "wxt/browser";
 
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -45,6 +49,10 @@ export default defineBackground(() => {
   // (not browser restart). Re-establish them from the enabled-origins list so a
   // plain "reload the extension" is enough and survives updates.
   void reconcileRegistrations();
+
+  // One-time: lift any per-recipe `links` (the old quick-links shape) into the
+  // standalone quickLinks store, then strip them from the recipes.
+  void migrateRecipeLinks();
 
   onMessage("ping", () => "pong" as const);
 
@@ -407,6 +415,45 @@ async function claimScrobbleOwner(
     await tabSessions.setValue(all);
   }
   return true;
+}
+
+/**
+ * Migrate legacy per-recipe `links` (quick links used to live on the recipe)
+ * into the standalone quickLinks store, deduped by name, then strip them from
+ * the stored recipes. Idempotent: a no-op once recipes carry no `links`.
+ */
+async function migrateRecipeLinks(): Promise<void> {
+  try {
+    const stored = (await customRecipes.getValue()) as (Recipe & { links?: QuickLinkSite })[];
+    const withLinks = stored.filter(
+      (r) => r.links && (r.links.movie || r.links.tv || r.links.search),
+    );
+    if (withLinks.length === 0) return;
+
+    const existing = await quickLinks.getValue();
+    const seen = new Set(existing.map((s) => s.name));
+    const additions: QuickLinkSite[] = [];
+    for (const r of withLinks) {
+      if (seen.has(r.name)) continue;
+      seen.add(r.name);
+      const l = r.links as { movie?: string; tv?: string; search?: string };
+      additions.push({
+        id: `ql-${r.id}`,
+        name: r.name,
+        enabled: true,
+        movie: l.movie,
+        tv: l.tv,
+        search: l.search,
+      });
+    }
+    if (additions.length > 0) await quickLinks.setValue([...existing, ...additions]);
+
+    // Strip `links` from every recipe so the migration doesn't run again.
+    const cleaned = stored.map(({ links: _drop, ...rest }) => rest);
+    await customRecipes.setValue(cleaned as Recipe[]);
+  } catch {
+    // best effort — a failed migration just leaves the old data in place
+  }
 }
 
 /** Re-register content scripts for every enabled origin (idempotent). */
