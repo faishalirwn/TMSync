@@ -51,6 +51,14 @@ export interface ResolvedIdentity {
   year?: number;
 }
 
+/** A simplified search result for the correction picker. */
+export interface TraktSearchOption {
+  type: "movie" | "show";
+  traktId: number;
+  title: string;
+  year?: number;
+}
+
 export type ScrobbleAction = "start" | "pause" | "stop";
 
 /** Body for POST /scrobble/{start,pause,stop}. */

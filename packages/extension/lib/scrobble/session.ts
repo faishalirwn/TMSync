@@ -1,4 +1,4 @@
-import { type BadgeStatus, type ScrobbleReply, sendMessage } from "@/messaging";
+import { type BadgeStatus, type ScrobbleReply, onMessage, sendMessage } from "@/messaging";
 import { type ParsedMedia, type Recipe, extract, selectRecipe } from "@tmsync/shared";
 import type { ContentScriptContext } from "wxt/utils/content-script-context";
 import { ScrobbleController } from "./controller";
@@ -25,7 +25,11 @@ function statusFromReply(
   reply: ScrobbleReply,
   m: ParsedMedia,
 ): BadgeStatus {
-  const title = label(m);
+  // Prefer what Trakt actually matched (transparency); keep the scraped S/E.
+  const ep = m.season !== undefined ? ` S${m.season}E${m.episode ?? "?"}` : "";
+  const title = reply.resolvedTitle
+    ? `${reply.resolvedTitle}${reply.resolvedYear ? ` (${reply.resolvedYear})` : ""}${ep}`
+    : label(m);
   if (reply.ok) {
     if (action === "start") return { state: "watching", title };
     if (action === "pause") return { state: "paused", title };
@@ -76,6 +80,7 @@ export class SessionManager {
   private localMedia: ParsedMedia | null = null;
   private videoSelector = "video";
   private frame: PlayerFrame = "auto";
+  private lastPublishedKey: string | null = null;
   private framesObserver: MutationObserver | null = null;
   private currentKey: string | null = null;
   private currentVideo: HTMLVideoElement | null = null;
@@ -99,6 +104,36 @@ export class SessionManager {
       signal: this.frameSignal(),
     });
     this.ctx.onInvalidated(() => this.teardownSession());
+
+    // SPA sites often set the real title/og:title AFTER initial load (e.g. cineby
+    // shows the site name first). Re-extract when <head> metadata changes.
+    if (document.head) {
+      const headObserver = new MutationObserver(this.scheduleReconcile);
+      headObserver.observe(document.head, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+        attributes: true,
+        attributeFilter: ["content"],
+      });
+      this.ctx.onInvalidated(() => headObserver.disconnect());
+    }
+
+    // A correction was saved → drop the current (wrong) session and re-resolve.
+    const offRecheck = onMessage("recheck", () => {
+      this.lastPublishedKey = null;
+      this.teardownSession();
+      void this.reconcile();
+    });
+    this.ctx.onInvalidated(() => offRecheck());
+
+    // Any video starting to play is a strong signal to (re-)evaluate — catches a
+    // player that reuses the trailer's element or appears only after Play.
+    window.addEventListener("play", () => void this.ensurePlaying(), {
+      capture: true,
+      signal: this.frameSignal(),
+    });
+
     void this.reconcile();
     if (this.isTop) this.watchPlayerFrames();
   }
@@ -136,6 +171,12 @@ export class SessionManager {
     this.localMedia = result.media;
     this.videoSelector = recipe.video.selector;
     this.frame = recipe.video.frame;
+
+    // Avoid churn from the head observer firing on unrelated mutations.
+    const key = mediaKey(result.media);
+    if (key === this.lastPublishedKey) return;
+    this.lastPublishedKey = key;
+
     await sendMessage("publishMedia", {
       media: result.media,
       videoSelector: recipe.video.selector,
@@ -159,7 +200,11 @@ export class SessionManager {
         }
       }
     }
-    return candidates.find((v) => !(v.loop && v.muted)) ?? candidates[0] ?? null;
+    // Exclude muted, looping background trailers entirely (never fall back to
+    // one — that would scrobble just from viewing a movie landing page). Prefer
+    // a video that's actually playing.
+    const real = candidates.filter((v) => !(v.loop && v.muted));
+    return real.find((v) => !v.paused) ?? real[0] ?? null;
   }
 
   private async pullTabMedia(): Promise<{ media: ParsedMedia; frame: PlayerFrame } | null> {
@@ -174,21 +219,18 @@ export class SessionManager {
     return null;
   }
 
-  /** Find the video and start a session for the resolved media (its own or the tab's). */
+  /**
+   * Find the video and start a session for the resolved media (its own or the
+   * tab's). The play decision is trailer-skip (findVideo) + one-owner-per-tab
+   * dedup in the background — a wrong "iframe"/"top" guess no longer blocks it.
+   */
   private async ensurePlaying(): Promise<void> {
     let media = this.localMedia;
-    let frame: PlayerFrame = this.frame;
     if (!media) {
       const tab = await this.pullTabMedia();
       if (!tab) return;
       media = tab.media;
-      frame = tab.frame;
     }
-
-    // Frame gating: don't let the wrong frame scrobble (e.g. the top frame's
-    // background trailer when the real player is in an iframe).
-    if (this.isTop && frame === "iframe") return;
-    if (!this.isTop && frame === "top") return;
 
     const video = this.findVideo();
     if (!video) {

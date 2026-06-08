@@ -29,6 +29,15 @@ export const customRecipes = storage.defineItem<Recipe[]>("local:custom_recipes"
 });
 
 /**
+ * User corrections: scraped media key → the Trakt identity the user picked.
+ * Authoritative over search results (so a wrong auto-match stays fixed).
+ */
+export const corrections = storage.defineItem<Record<string, ResolvedIdentity>>(
+  "local:corrections",
+  { fallback: {} },
+);
+
+/**
  * Per-tab watch session, keyed by tabId. Set by the recipe-matching frame and
  * updated by whichever frame owns the <video> (which may be a cross-origin
  * iframe). Lives in `session` storage (ephemeral, per browser session) — the
@@ -42,6 +51,9 @@ export interface TabSession {
   frame: "auto" | "top" | "iframe";
   progress: number;
   updatedAt: number;
+  /** Frame that owns scrobbling for this tab (first to start). Prevents two
+   * frames — e.g. the page + a player iframe — scrobbling the same item. */
+  ownerFrameId?: number;
 }
 export const tabSessions = storage.defineItem<Record<number, TabSession>>("session:tab_sessions", {
   fallback: {},

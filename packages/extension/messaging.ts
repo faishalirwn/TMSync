@@ -1,4 +1,4 @@
-import type { ScrobbleAction } from "@/lib/trakt/types";
+import type { ResolvedIdentity, ScrobbleAction, TraktSearchOption } from "@/lib/trakt/types";
 import type { ParsedMedia } from "@tmsync/shared";
 import { defineExtensionMessaging } from "@webext-core/messaging";
 
@@ -19,6 +19,9 @@ export interface ScrobbleReply {
   action?: "start" | "pause" | "scrobble";
   /** Why a scrobble failed, for the badge. */
   reason?: "not_connected" | "unresolved" | "no_episode" | "http";
+  /** What this resolved to on Trakt (transparency for the badge). */
+  resolvedTitle?: string;
+  resolvedYear?: number;
 }
 
 export type BadgeState = "idle" | "watching" | "paused" | "scrobbled" | "stopped" | "error";
@@ -72,6 +75,14 @@ export interface ProtocolMap {
   reportScrobble(status: BadgeStatus): void;
   /** Background → top frame: update the badge. */
   scrobbleStatus(status: BadgeStatus): void;
+
+  // --- corrections (fix a wrong match) ---
+  /** Free-text Trakt search for the correction picker. */
+  searchTrakt(q: { query: string; type?: "movie" | "show" }): TraktSearchOption[];
+  /** Persist a correction for the scraped media and re-resolve the tab. */
+  saveCorrection(data: { media: ParsedMedia; identity: ResolvedIdentity }): void;
+  /** Background → frames: a correction landed, re-resolve the current session. */
+  recheck(): void;
 }
 
 export const { sendMessage, onMessage } = defineExtensionMessaging<ProtocolMap>();

@@ -39,19 +39,22 @@ In place:
 - **Element picker** — uBlock-style point-and-click (`@medv/finder`) in a Shadow-DOM overlay with
   auto-detect + live extract preview; saves a custom recipe and enables the site.
 
-Also handled: a Shadow-DOM **scrobble badge** (live status), **SPA navigation** (re-matches on
-route/episode changes), **cross-origin iframe players** (the content script is granted+registered
-for player-frame origins too, and media is relayed top-frame → iframe), and **background
-reconciliation** (a reconciling stop if a tab dies before a clean one).
+Also handled: a Shadow-DOM **scrobble badge** showing the live state **and what Trakt matched**,
+**click-to-correct** (search Trakt and fix a wrong match, remembered per scraped title),
+**SPA navigation** + late metadata (re-matches when the route/episode/og:title changes),
+same-page **and** cross-origin **iframe players** (only one frame scrobbles per tab), background
+**reconciliation** (a stop if a tab dies), and **re-registration on startup** (a plain extension
+reload re-enables your sites).
 
 First-run (Chrome):
 1. `pnpm build` → load `.output/chrome-mv3` unpacked. The extension ID is stable
-   (`aplaigellojlejhdjkklgihlmbmdaebk`).
+   (`aplaigellojlejhdjkklgihlmbmdaebk`). **After later `pnpm build`s, just hit the reload ↻ on the
+   extension card — no need to remove/re-add; enabled sites re-register automatically.**
 2. In your Trakt app (trakt.tv/oauth/applications) set the Redirect URI to
    `https://aplaigellojlejhdjkklgihlmbmdaebk.chromiumapp.org/`.
 3. Popup → **Connect Trakt**.
-4. On a media page → **Enable scrobbling** (known site) or **Set it up with the picker** (new
-   site). Approve the permission prompt (it may list the player's iframe host too), then reload.
-5. Press play — the badge shows the live scrobble state.
+4. On a media page → **Enable** the site (and any player-frame origin the popup lists), or **Set it
+   up with the picker** for a new site. Reload, press play.
+5. The badge shows live state + the matched title. Wrong match? Click the badge → search → pick.
 
-Upcoming: correction UI (fix a wrong match), options page, recipe fetch-from-CDN.
+Upcoming: options page (manage sites/corrections), recipe fetch-from-CDN.

@@ -1,5 +1,5 @@
 import { TRAKT } from "@/config";
-import { resolutionCache } from "@/lib/storage";
+import { corrections, resolutionCache } from "@/lib/storage";
 import type { ParsedMedia } from "@tmsync/shared";
 import { getValidAccessToken, refreshTokens } from "./auth";
 import type {
@@ -7,6 +7,7 @@ import type {
   ScrobbleAction,
   ScrobbleBody,
   ScrobbleResponse,
+  TraktSearchOption,
   TraktSearchResult,
 } from "./types";
 import { resolutionCacheKey } from "./util";
@@ -63,6 +64,11 @@ async function api(path: string, init: ApiInit = {}, requireAuth = false): Promi
  */
 export async function resolve(media: ParsedMedia): Promise<ResolvedIdentity | null> {
   const key = resolutionCacheKey(media);
+
+  // A user correction is authoritative — never overridden by search.
+  const correction = (await corrections.getValue())[key];
+  if (correction) return correction;
+
   const cache = await resolutionCache.getValue();
   const cached = cache[key];
   if (cached) return cached;
@@ -89,6 +95,22 @@ export async function resolve(media: ParsedMedia): Promise<ResolvedIdentity | nu
   };
   await resolutionCache.setValue({ ...cache, [key]: identity });
   return identity;
+}
+
+/** Free-text Trakt search for the correction picker. */
+export async function search(query: string, type?: "movie" | "show"): Promise<TraktSearchOption[]> {
+  if (!query.trim()) return [];
+  const res = await api(`/search/${type ?? "movie,show"}?query=${encodeURIComponent(query)}`);
+  if (!res.ok) return [];
+  const results = (await res.json()) as TraktSearchResult[];
+  const options: TraktSearchOption[] = [];
+  for (const r of results) {
+    const obj = r.type === "movie" ? r.movie : r.type === "show" ? r.show : undefined;
+    if (obj && (r.type === "movie" || r.type === "show")) {
+      options.push({ type: r.type, traktId: obj.ids.trakt, title: obj.title, year: obj.year });
+    }
+  }
+  return options;
 }
 
 export interface ScrobbleOutcome {
