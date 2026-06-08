@@ -52,6 +52,16 @@ export default defineBackground(() => {
       if (!identity) return { ok: false, resolved: false, reason: "unresolved" as const };
       const body = buildScrobbleBody(identity, data.media, data.progress);
       if (!body) return { ok: false, resolved: true, reason: "no_episode" as const };
+      // Trakt rejects a pause under 1% ("progress should be at least 1.0% to
+      // pause"). Pausing that early has nothing meaningful to save — skip it.
+      if (data.action === "pause" && body.progress < 1) {
+        return {
+          ok: true,
+          resolved: true,
+          resolvedTitle: identity.title,
+          resolvedYear: identity.year,
+        };
+      }
       const outcome = await scrobble(data.action, body);
       return {
         ok: outcome.ok,
