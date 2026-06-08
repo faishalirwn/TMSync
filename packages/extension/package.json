@@ -17,6 +17,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@medv/finder": "^4.0.2",
     "@tmsync/shared": "workspace:*",
     "@webext-core/messaging": "^3.0.2",
     "preact": "^10.25.4"

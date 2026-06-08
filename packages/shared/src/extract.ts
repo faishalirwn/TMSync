@@ -50,9 +50,10 @@ function readInt(field: Field | undefined, ctx: EngineContext): number | undefin
 
 /**
  * Resolve a single field to a cleaned, non-empty string, or `null` if the
- * value is absent/unreadable.
+ * value is absent/unreadable. Exported for the element picker (auto-detect +
+ * per-field live preview).
  */
-function readField(field: Field | undefined, ctx: EngineContext): string | null {
+export function readField(field: Field | undefined, ctx: EngineContext): string | null {
   if (!field) return null;
 
   const raw = rawValue(field, ctx);

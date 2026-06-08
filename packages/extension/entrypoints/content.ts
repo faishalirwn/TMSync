@@ -1,5 +1,5 @@
 import { ScrobbleController } from "@/lib/scrobble/controller";
-import { activeScrobble } from "@/lib/storage";
+import { activeScrobble, customRecipes } from "@/lib/storage";
 import { sendMessage } from "@/messaging";
 import { type ParsedMedia, type Recipe, extract, parseRecipes, selectRecipe } from "@tmsync/shared";
 import type { ContentScriptContext } from "wxt/utils/content-script-context";
@@ -17,9 +17,14 @@ export default defineContentScript({
   matches: ["*://*/*"],
   registration: "runtime",
   allFrames: true,
-  main(ctx) {
+  async main(ctx) {
     const engineCtx = { document, url: location.href };
-    const recipe = selectRecipe(parseRecipes(rawRecipes), engineCtx);
+    // Bundled recipes + picker-authored custom recipes (re-validated together).
+    const recipes = parseRecipes([
+      ...(rawRecipes as unknown[]),
+      ...(await customRecipes.getValue()),
+    ]);
+    const recipe = selectRecipe(recipes, engineCtx);
     if (!recipe) return;
 
     const result = extract(recipe, engineCtx);

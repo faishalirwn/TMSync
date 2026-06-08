@@ -78,6 +78,30 @@ export function App() {
     setBusy(false);
   };
 
+  // Grant the origin, then inject the element picker into the active tab.
+  const setupSite = async () => {
+    if (!origin) return;
+    setBusy(true);
+    setNote(null);
+    const granted = await browser.permissions.request({ origins: [`${origin}/*`] });
+    if (!granted) {
+      setNote("Permission denied");
+      setBusy(false);
+      return;
+    }
+    const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+    if (tab?.id === undefined) {
+      setNote("No active tab");
+      setBusy(false);
+      return;
+    }
+    await browser.scripting.executeScript({
+      target: { tabId: tab.id },
+      files: ["/content-scripts/picker.js"],
+    });
+    window.close(); // get out of the way so the picker is visible
+  };
+
   const connected = status?.connected ?? false;
   const siteEnabled = origin !== null && enabled.includes(origin);
 
@@ -113,18 +137,26 @@ export function App() {
       <section>
         <h2>This site</h2>
         {origin ? (
-          <div class="row">
-            <code>{origin}</code>
-            {siteEnabled ? (
-              <button type="button" onClick={disableSite} disabled={busy}>
-                Disable
+          <>
+            <div class="row">
+              <code>{origin}</code>
+              {siteEnabled ? (
+                <button type="button" onClick={disableSite} disabled={busy}>
+                  Disable
+                </button>
+              ) : (
+                <button type="button" onClick={enableSite} disabled={busy}>
+                  Enable scrobbling
+                </button>
+              )}
+            </div>
+            <p class="hint">
+              No match on this site?{" "}
+              <button type="button" class="link" onClick={setupSite} disabled={busy}>
+                Set it up with the picker
               </button>
-            ) : (
-              <button type="button" onClick={enableSite} disabled={busy}>
-                Enable scrobbling
-              </button>
-            )}
-          </div>
+            </p>
+          </>
         ) : (
           <p class="muted">No eligible page in the active tab.</p>
         )}

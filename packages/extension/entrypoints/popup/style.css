@@ -72,3 +72,13 @@ code {
   display: block;
   margin-top: 4px;
 }
+
+button.link {
+  border: none;
+  background: none;
+  padding: 0;
+  color: #2563eb;
+  cursor: pointer;
+  text-decoration: underline;
+  font: inherit;
+}

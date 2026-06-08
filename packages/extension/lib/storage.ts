@@ -1,4 +1,4 @@
-import type { ParsedMedia } from "@tmsync/shared";
+import type { ParsedMedia, Recipe } from "@tmsync/shared";
 import { storage } from "wxt/utils/storage";
 import type { ResolvedIdentity, TraktTokens } from "./trakt/types";
 
@@ -20,6 +20,11 @@ export const resolutionCache = storage.defineItem<Record<string, ResolvedIdentit
 
 /** Origins where the user granted host access and we registered the content script. */
 export const enabledOrigins = storage.defineItem<string[]>("local:enabled_origins", {
+  fallback: [],
+});
+
+/** Recipes authored locally via the element picker (merged with the bundled list). */
+export const customRecipes = storage.defineItem<Recipe[]>("local:custom_recipes", {
   fallback: [],
 });
 
