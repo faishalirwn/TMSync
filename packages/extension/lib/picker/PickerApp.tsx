@@ -48,11 +48,10 @@ export function PickerApp({ onClose }: { onClose: () => void }) {
   const [draft, setDraft] = useState<RecipeDraft>(() => {
     const base = emptyDraft(ctx.url);
     base.fields = autoDetectFields(ctx);
-    const video = document.querySelector("video");
-    if (video) {
-      base.video.selector = safeFinder(video) ?? "video";
-      base.match.domFingerprint = safeFinder(video);
-    }
+    // Intentionally NO domFingerprint / video selector from the page video: the
+    // movie page often autoplays a muted background trailer, which is the wrong
+    // element and an unstable match key. Match by urlPattern; the player frame's
+    // own <video> is found at play time.
     return base;
   });
   const [name, setName] = useState(location.hostname);
@@ -122,7 +121,10 @@ export function PickerApp({ onClose }: { onClose: () => void }) {
     const id = `custom-${location.hostname}-${Date.now()}`;
     const built = buildRecipe(draft, { id, name });
     if (!built.ok) return setStatus(built.error);
-    const list = await customRecipes.getValue();
+    // Replace any prior custom recipe for the same urlPattern (re-picking a site).
+    const list = (await customRecipes.getValue()).filter(
+      (r) => r.match.urlPattern !== built.recipe.match.urlPattern,
+    );
     await customRecipes.setValue([...list, built.recipe]);
     await sendMessage("registerSite", location.origin);
     setStatus("Saved! Reload the page to start scrobbling.");
@@ -215,6 +217,23 @@ export function PickerApp({ onClose }: { onClose: () => void }) {
           </select>
         </label>
 
+        <label class="check">
+          <input
+            type="checkbox"
+            checked={draft.video.frame === "iframe"}
+            onChange={(e) =>
+              setDraft((d) => ({
+                ...d,
+                video: {
+                  ...d.video,
+                  frame: (e.target as HTMLInputElement).checked ? "iframe" : "auto",
+                },
+              }))
+            }
+          />
+          Player loads in a separate frame (iframe)
+        </label>
+
         <div class={`preview ${preview.ok ? "ok" : "bad"}`}>
           {preview.ok
             ? `✓ ${preview.media.mediaType}: ${preview.media.title}${
@@ -268,6 +287,9 @@ const CSS = `
 .field .clear { padding: 3px 6px; }
 .preview { margin: 8px 0; padding: 6px 8px; border-radius: 6px; font-size: 12px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.check { display: flex; flex-direction: row; align-items: center; gap: 6px;
+  font-size: 11px; opacity: 0.85; margin-bottom: 8px; cursor: pointer; }
+.check input { width: auto; margin: 0; flex: none; }
 .preview.ok { background: #ecfdf5; color: #047857; }
 .preview.bad { background: #fef2f2; color: #b91c1c; }
 .actions { display: flex; gap: 8px; }

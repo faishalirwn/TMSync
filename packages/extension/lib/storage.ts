@@ -39,6 +39,7 @@ export const customRecipes = storage.defineItem<Recipe[]>("local:custom_recipes"
 export interface TabSession {
   media: ParsedMedia;
   videoSelector: string;
+  frame: "auto" | "top" | "iframe";
   progress: number;
   updatedAt: number;
 }

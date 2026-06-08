@@ -34,6 +34,8 @@ export interface BadgeStatus {
 export interface TabMedia {
   media: ParsedMedia;
   videoSelector: string;
+  /** Where the player lives: which frame should drive scrobbling. */
+  frame: "auto" | "top" | "iframe";
 }
 
 export interface TraktStatus {

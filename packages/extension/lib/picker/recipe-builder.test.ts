@@ -20,8 +20,11 @@ describe("escapeRegex / suggestUrlPattern", () => {
   it("escapes regex metacharacters", () => {
     expect(escapeRegex("a.b+c")).toBe("a\\.b\\+c");
   });
-  it("suggests the hostname as the url pattern", () => {
-    expect(suggestUrlPattern("https://watch.example.tv/movie/42?x=1")).toBe("watch\\.example\\.tv");
+  it("suggests hostname + first path segment as the url pattern", () => {
+    expect(suggestUrlPattern("https://watch.example.tv/movie/42?x=1")).toBe(
+      "watch\\.example\\.tv/movie",
+    );
+    expect(suggestUrlPattern("https://watch.example.tv/")).toBe("watch\\.example\\.tv");
   });
 });
 

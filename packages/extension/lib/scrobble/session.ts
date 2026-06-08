@@ -70,9 +70,13 @@ function ensureLocationChangeEvents(): void {
  *  - both (no iframe): the common case.
  * Re-reconciles on SPA navigation and on the video loading new media.
  */
+type PlayerFrame = "auto" | "top" | "iframe";
+
 export class SessionManager {
   private localMedia: ParsedMedia | null = null;
   private videoSelector = "video";
+  private frame: PlayerFrame = "auto";
+  private framesObserver: MutationObserver | null = null;
   private currentKey: string | null = null;
   private currentVideo: HTMLVideoElement | null = null;
   private controller: ScrobbleController | null = null;
@@ -85,6 +89,10 @@ export class SessionManager {
     private readonly recipes: Recipe[],
   ) {}
 
+  private get isTop(): boolean {
+    return window === window.top;
+  }
+
   start(): void {
     ensureLocationChangeEvents();
     window.addEventListener("tmsync:locationchange", this.scheduleReconcile, {
@@ -92,6 +100,7 @@ export class SessionManager {
     });
     this.ctx.onInvalidated(() => this.teardownSession());
     void this.reconcile();
+    if (this.isTop) this.watchPlayerFrames();
   }
 
   /** AbortSignal tied to the content-script lifetime (frame-level listeners). */
@@ -126,26 +135,39 @@ export class SessionManager {
     }
     this.localMedia = result.media;
     this.videoSelector = recipe.video.selector;
+    this.frame = recipe.video.frame;
     await sendMessage("publishMedia", {
       media: result.media,
       videoSelector: recipe.video.selector,
+      frame: recipe.video.frame,
     });
     await sendMessage("reportScrobble", { state: "idle", title: label(result.media) });
   }
 
+  /**
+   * The first <video> that isn't a muted, looping background trailer (common on
+   * movie landing pages). Falls back to any video if all look like trailers.
+   */
   private findVideo(): HTMLVideoElement | null {
-    return (
-      document.querySelector<HTMLVideoElement>(this.videoSelector) ??
-      document.querySelector<HTMLVideoElement>("video")
-    );
+    const seen = new Set<HTMLVideoElement>();
+    const candidates: HTMLVideoElement[] = [];
+    for (const sel of [this.videoSelector, "video"]) {
+      for (const v of document.querySelectorAll<HTMLVideoElement>(sel)) {
+        if (!seen.has(v)) {
+          seen.add(v);
+          candidates.push(v);
+        }
+      }
+    }
+    return candidates.find((v) => !(v.loop && v.muted)) ?? candidates[0] ?? null;
   }
 
-  private async pullTabMedia(): Promise<ParsedMedia | null> {
+  private async pullTabMedia(): Promise<{ media: ParsedMedia; frame: PlayerFrame } | null> {
     for (let i = 0; i < TAB_MEDIA_POLL_TRIES; i++) {
       const tab = await sendMessage("getTabMedia", undefined);
       if (tab) {
         this.videoSelector = tab.videoSelector;
-        return tab.media;
+        return { media: tab.media, frame: tab.frame };
       }
       await sleep(TAB_MEDIA_POLL_MS);
     }
@@ -154,18 +176,74 @@ export class SessionManager {
 
   /** Find the video and start a session for the resolved media (its own or the tab's). */
   private async ensurePlaying(): Promise<void> {
+    let media = this.localMedia;
+    let frame: PlayerFrame = this.frame;
+    if (!media) {
+      const tab = await this.pullTabMedia();
+      if (!tab) return;
+      media = tab.media;
+      frame = tab.frame;
+    }
+
+    // Frame gating: don't let the wrong frame scrobble (e.g. the top frame's
+    // background trailer when the real player is in an iframe).
+    if (this.isTop && frame === "iframe") return;
+    if (!this.isTop && frame === "top") return;
+
     const video = this.findVideo();
     if (!video) {
       this.observeForVideo();
       return;
     }
-    const media = this.localMedia ?? (await this.pullTabMedia());
-    if (!media) return;
 
     const key = mediaKey(media);
     if (this.abort && key === this.currentKey && this.currentVideo === video) return; // already running
 
     this.startSession(video, media);
+  }
+
+  /**
+   * Top-frame only: watch for cross-origin player iframes. If one appears whose
+   * origin we haven't been granted/registered, push an actionable badge hint —
+   * the player can't be scrobbled until the user enables that origin. This is the
+   * main feedback channel on sites where the console is unavailable.
+   */
+  private watchPlayerFrames(): void {
+    const scan = async () => {
+      // Only when the recipe says the player is in an iframe — avoids false hints
+      // from ad/analytics iframes on ordinary sites.
+      if (this.frame !== "iframe") return;
+      const origins = this.crossOriginIframeOrigins();
+      if (origins.length === 0) return;
+      const enabled = new Set(await sendMessage("listEnabledSites", undefined));
+      // If any cross-origin frame is already enabled, the player is set up — the
+      // rest are almost certainly ads; stay quiet.
+      if (origins.some((o) => enabled.has(o))) return;
+      await sendMessage("reportScrobble", {
+        state: "error",
+        title: this.localMedia ? label(this.localMedia) : undefined,
+        detail: `enable player frame in TMSync popup: ${origins.join(", ")}`,
+      });
+    };
+    void scan();
+    this.framesObserver = new MutationObserver(() => void scan());
+    this.framesObserver.observe(document.documentElement, { childList: true, subtree: true });
+    this.ctx.onInvalidated(() => this.framesObserver?.disconnect());
+  }
+
+  private crossOriginIframeOrigins(): string[] {
+    const set = new Set<string>();
+    for (const frame of document.querySelectorAll("iframe")) {
+      try {
+        const u = new URL((frame as HTMLIFrameElement).src, location.href);
+        if ((u.protocol === "http:" || u.protocol === "https:") && u.origin !== location.origin) {
+          set.add(u.origin);
+        }
+      } catch {
+        // empty/relative/unparseable src — skip
+      }
+    }
+    return [...set];
   }
 
   private observeForVideo(): void {

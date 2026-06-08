@@ -49,19 +49,23 @@ async function collectOrigins(tabId: number): Promise<string[]> {
 
 export function App() {
   const [status, setStatus] = useState<TraktStatus | null>(null);
-  const [origin, setOrigin] = useState<string | null>(null);
+  const [topOrigin, setTopOrigin] = useState<string | null>(null);
+  const [origins, setOrigins] = useState<string[]>([]); // top + every iframe origin on the page
   const [enabled, setEnabled] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
 
   const refresh = async () => {
-    const [s, o, sites] = await Promise.all([
+    const tabId = await activeTabId();
+    const [s, o, found, sites] = await Promise.all([
       sendMessage("getTraktStatus", undefined),
       activeTabOrigin(),
+      tabId !== null ? collectOrigins(tabId) : Promise.resolve<string[]>([]),
       sendMessage("listEnabledSites", undefined),
     ]);
     setStatus(s);
-    setOrigin(o);
+    setTopOrigin(o);
+    setOrigins(found);
     setEnabled(sites);
   };
 
@@ -86,38 +90,22 @@ export function App() {
     setBusy(false);
   };
 
-  // Grant + register the top origin AND any cross-origin player iframe origins,
-  // so the content script reaches the frame that actually owns the <video>.
-  const grantAndRegister = async (tabId: number): Promise<string[] | null> => {
-    const origins = await collectOrigins(tabId);
-    if (origins.length === 0) return null;
-    // permissions.request must run in the user-gesture (popup click) context.
-    const granted = await browser.permissions.request({ origins: origins.map((o) => `${o}/*`) });
-    if (!granted) return null;
-    for (const o of origins) await sendMessage("registerSite", o);
-    return origins;
-  };
-
-  const enableSite = async () => {
-    if (!origin) return;
+  const enableOrigin = async (origin: string) => {
     setBusy(true);
     setNote(null);
-    const tabId = await activeTabId();
-    const origins = tabId !== null ? await grantAndRegister(tabId) : null;
-    if (!origins) {
-      setNote("Permission denied");
+    // permissions.request must run in the user-gesture (popup click) context.
+    const granted = await browser.permissions.request({ origins: [`${origin}/*`] });
+    if (granted) {
+      const res = await sendMessage("registerSite", origin);
+      setNote(res.ok ? "Enabled — reload the page to start." : (res.error ?? "Failed"));
     } else {
-      const extra = origins.length - 1;
-      setNote(
-        `Enabled${extra > 0 ? ` (+${extra} player frame${extra > 1 ? "s" : ""})` : ""} — reload to start scrobbling.`,
-      );
+      setNote("Permission denied");
     }
     await refresh();
     setBusy(false);
   };
 
-  const disableSite = async () => {
-    if (!origin) return;
+  const disableOrigin = async (origin: string) => {
     setBusy(true);
     await sendMessage("unregisterSite", origin);
     await browser.permissions.remove({ origins: [`${origin}/*`] });
@@ -125,9 +113,9 @@ export function App() {
     setBusy(false);
   };
 
-  // Grant + register origins, then inject the element picker into the active tab.
+  // Grant + register the top origin, then inject the element picker.
   const setupSite = async () => {
-    if (!origin) return;
+    if (!topOrigin) return;
     setBusy(true);
     setNote(null);
     const tabId = await activeTabId();
@@ -136,12 +124,13 @@ export function App() {
       setBusy(false);
       return;
     }
-    const origins = await grantAndRegister(tabId);
-    if (!origins) {
+    const granted = await browser.permissions.request({ origins: [`${topOrigin}/*`] });
+    if (!granted) {
       setNote("Permission denied");
       setBusy(false);
       return;
     }
+    await sendMessage("registerSite", topOrigin);
     await browser.scripting.executeScript({
       target: { tabId },
       files: ["/content-scripts/picker.js"],
@@ -150,7 +139,6 @@ export function App() {
   };
 
   const connected = status?.connected ?? false;
-  const siteEnabled = origin !== null && enabled.includes(origin);
 
   return (
     <main class="tmsync">
@@ -182,30 +170,42 @@ export function App() {
       </section>
 
       <section>
-        <h2>This site</h2>
-        {origin ? (
+        <h2>Sites &amp; player frames</h2>
+        {origins.length === 0 ? (
+          <p class="muted">No eligible page in the active tab.</p>
+        ) : (
           <>
-            <div class="row">
-              <code>{origin}</code>
-              {siteEnabled ? (
-                <button type="button" onClick={disableSite} disabled={busy}>
-                  Disable
-                </button>
-              ) : (
-                <button type="button" onClick={enableSite} disabled={busy}>
-                  Enable scrobbling
-                </button>
-              )}
-            </div>
+            {origins.map((origin) => {
+              const isEnabled = enabled.includes(origin);
+              const isTop = origin === topOrigin;
+              return (
+                <div class="row" key={origin}>
+                  <code title={origin}>
+                    {origin.replace(/^https?:\/\//, "")}
+                    {!isTop && <span class="muted"> · frame</span>}
+                  </code>
+                  {isEnabled ? (
+                    <button type="button" onClick={() => disableOrigin(origin)} disabled={busy}>
+                      Disable
+                    </button>
+                  ) : (
+                    <button type="button" onClick={() => enableOrigin(origin)} disabled={busy}>
+                      Enable
+                    </button>
+                  )}
+                </div>
+              );
+            })}
             <p class="hint">
-              No match on this site?{" "}
+              No recipe yet for this page?{" "}
               <button type="button" class="link" onClick={setupSite} disabled={busy}>
                 Set it up with the picker
               </button>
+              <br />
+              Player in another site (e.g. a player iframe)? Press play first so it loads, then
+              reopen this popup and Enable it here.
             </p>
           </>
-        ) : (
-          <p class="muted">No eligible page in the active tab.</p>
         )}
       </section>
 

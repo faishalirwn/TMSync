@@ -68,6 +68,7 @@ export default defineBackground(() => {
     all[tabId] = {
       media: data.media,
       videoSelector: data.videoSelector,
+      frame: data.frame,
       progress: all[tabId]?.progress ?? 0,
       updatedAt: Date.now(),
     };
@@ -78,7 +79,9 @@ export default defineBackground(() => {
     const tabId = sender.tab?.id;
     if (tabId === undefined) return null;
     const session = (await tabSessions.getValue())[tabId];
-    return session ? { media: session.media, videoSelector: session.videoSelector } : null;
+    return session
+      ? { media: session.media, videoSelector: session.videoSelector, frame: session.frame }
+      : null;
   });
 
   onMessage("updateProgress", async ({ data, sender }) => {

@@ -16,7 +16,7 @@ import {
 export interface RecipeDraft {
   match: { urlPattern: string; domFingerprint?: string };
   mediaType: "auto" | "movie" | "show";
-  video: { selector: string };
+  video: { selector: string; frame: "auto" | "top" | "iframe" };
   fields: {
     title?: Field;
     year?: Field;
@@ -31,10 +31,17 @@ export function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/** A urlPattern that matches the current site's hostname (clone domains differ; the fingerprint is the resilient key). */
+/**
+ * A urlPattern matching the hostname + first path segment (e.g.
+ * "cineby\.at/movie"), so a movie recipe doesn't fire on the home/search pages.
+ * Hostname-scoped rather than full-URL so it survives the dynamic id segment.
+ */
 export function suggestUrlPattern(url: string): string {
   try {
-    return escapeRegex(new URL(url).hostname);
+    const u = new URL(url);
+    const firstSegment = u.pathname.split("/").filter(Boolean)[0];
+    const base = firstSegment ? `${u.hostname}/${firstSegment}` : u.hostname;
+    return escapeRegex(base);
   } catch {
     return escapeRegex(url);
   }
@@ -44,7 +51,7 @@ export function emptyDraft(url: string): RecipeDraft {
   return {
     match: { urlPattern: suggestUrlPattern(url) },
     mediaType: "auto",
-    video: { selector: "video" },
+    video: { selector: "video", frame: "auto" },
     fields: {},
   };
 }
@@ -106,7 +113,7 @@ export function buildRecipe(draft: RecipeDraft, meta: { id: string; name: string
     name: meta.name,
     match: draft.match,
     mediaType: draft.mediaType,
-    video: { selector: draft.video.selector },
+    video: { selector: draft.video.selector, frame: draft.video.frame },
     extract: {
       title: draft.fields.title,
       year: draft.fields.year,
