@@ -1,0 +1,23 @@
+{
+  "name": "@tmsync/shared",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "TMSync recipe schema, types, and the pure recipe-extraction engine (no DOM globals, no browser APIs).",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "happy-dom": "^15.11.7",
+    "typescript": "^5.7.3",
+    "vitest": "^3.2.4"
+  }
+}

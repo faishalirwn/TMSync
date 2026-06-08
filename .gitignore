@@ -1,0 +1,23 @@
+# dependencies
+node_modules/
+
+# WXT
+.wxt/
+.output/
+stats.html
+
+# build / test artifacts
+dist/
+coverage/
+
+# env & secrets (Trakt OAuth creds never committed)
+.env
+.env.*
+!.env.example
+
+# editor / OS
+.DS_Store
+*.local
+.idea/
+.vscode/*
+!.vscode/extensions.json
