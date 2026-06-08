@@ -7,9 +7,14 @@ export default defineConfig({
   manifest: {
     name: "TMSync",
     description: "Passively scrobble movies & TV to Trakt on any streaming site.",
+    // `identity` for Trakt OAuth; `activeTab` lets the popup read the current
+    // tab's URL (on the action click) to offer "enable on this site".
+    permissions: ["storage", "alarms", "scripting", "identity", "activeTab"],
+    // Specific (non-broad) host access for Trakt API fetches from the SW. This is
+    // allowed by constraint #5 — what's forbidden is broad `*://*/*` / <all_urls>.
+    host_permissions: ["https://api.trakt.tv/*"],
     // Constraint #5: NO broad host_permissions at install. We request per-origin
-    // host access on a user gesture, then chrome.scripting.registerContentScripts.
-    permissions: ["storage", "alarms", "scripting"],
+    // streaming-site access on a user gesture, then registerContentScripts.
     optional_host_permissions: ["*://*/*"],
   },
   hooks: {
