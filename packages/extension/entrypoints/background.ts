@@ -61,6 +61,7 @@ export default defineBackground(() => {
         reason: outcome.ok ? undefined : ("http" as const),
         resolvedTitle: identity.title,
         resolvedYear: identity.year,
+        httpError: outcome.error,
       };
     } catch (e) {
       return {

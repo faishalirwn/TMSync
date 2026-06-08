@@ -22,6 +22,8 @@ export interface ScrobbleReply {
   /** What this resolved to on Trakt (transparency for the badge). */
   resolvedTitle?: string;
   resolvedYear?: number;
+  /** Trakt's error body on an http failure (for diagnosis in the badge). */
+  httpError?: string;
 }
 
 export type BadgeState = "idle" | "watching" | "paused" | "scrobbled" | "stopped" | "error";

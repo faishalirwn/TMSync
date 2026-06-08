@@ -120,6 +120,8 @@ export interface ScrobbleOutcome {
   status: number;
   /** Trakt's echoed action; "scrobble" means it was added to history. */
   action?: ScrobbleResponse["action"];
+  /** Trakt's error body on failure (truncated) — surfaced for diagnosis. */
+  error?: string;
 }
 
 /** POST /scrobble/{action}. A 409 ("already scrobbling") is treated as a no-op success. */
@@ -133,7 +135,15 @@ export async function scrobble(
     true,
   );
   if (res.status === 409) return { ok: true, status: 409 };
-  if (!res.ok) return { ok: false, status: res.status };
+  if (!res.ok) {
+    let detail = "";
+    try {
+      detail = (await res.text()).trim().slice(0, 120);
+    } catch {
+      // ignore unreadable body
+    }
+    return { ok: false, status: res.status, error: detail || undefined };
+  }
   const data = (await res.json()) as ScrobbleResponse;
   return { ok: true, status: res.status, action: data.action };
 }

@@ -11,6 +11,11 @@ describe("clampProgress", () => {
     expect(clampProgress(Number.NaN)).toBe(0);
     expect(clampProgress(Number.POSITIVE_INFINITY)).toBe(0);
   });
+
+  it("rounds to 2 decimals (avoids high-precision 422s)", () => {
+    expect(clampProgress(37.49987)).toBe(37.5);
+    expect(clampProgress(42.555)).toBe(42.56);
+  });
 });
 
 describe("buildScrobbleBody", () => {

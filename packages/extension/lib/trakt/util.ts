@@ -1,10 +1,14 @@
 import type { ParsedMedia } from "@tmsync/shared";
 import type { ResolvedIdentity, ScrobbleBody, TraktTokens } from "./types";
 
-/** Trakt `progress` is a 0–100 float. Coerce anything non-finite to 0. */
+/**
+ * Trakt `progress` is a 0–100 float. Coerce non-finite to 0, clamp, and round to
+ * 2 decimals — high-precision floats are a known cause of 422 on /scrobble/*.
+ */
 export function clampProgress(n: number): number {
   if (!Number.isFinite(n)) return 0;
-  return Math.min(100, Math.max(0, n));
+  const clamped = Math.min(100, Math.max(0, n));
+  return Math.round(clamped * 100) / 100;
 }
 
 /**
