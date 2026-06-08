@@ -74,6 +74,29 @@ describe("buildSiteLinks", () => {
     ).toEqual({ direct: "https://popcornmovies.org/episode/invincible/4-4" });
   });
 
+  it("uses the clean title slug for movie {slug}, not Trakt's year-suffixed url slug", () => {
+    const site: LinkTemplates = { movie: "https://popcornmovies.org/movie/{slug}" };
+    expect(
+      buildSiteLinks(site, { type: "movie", slug: "terrifier-3-2024", title: "Terrifier 3" }),
+    ).toEqual({ direct: "https://popcornmovies.org/movie/terrifier-3" });
+  });
+
+  it("keeps a year that is part of the movie title (Blade Runner 2049)", () => {
+    const site: LinkTemplates = { movie: "https://s/movie/{slug}" };
+    expect(
+      buildSiteLinks(site, { type: "movie", slug: "blade-runner-2049", title: "Blade Runner 2049" })
+        .direct,
+    ).toBe("https://s/movie/blade-runner-2049");
+  });
+
+  it("exposes Trakt's raw slug as {slugyear}", () => {
+    const site: LinkTemplates = { movie: "https://s/m/{slugyear}" };
+    expect(
+      buildSiteLinks(site, { type: "movie", slug: "terrifier-3-2024", title: "Terrifier 3" })
+        .direct,
+    ).toBe("https://s/m/terrifier-3-2024");
+  });
+
   it("returns nothing when no template can be filled", () => {
     const tmdbOnly: LinkTemplates = { movie: "https://s/movie/{tmdb}" };
     expect(buildSiteLinks(tmdbOnly, { type: "movie", title: "X" })).toEqual({});

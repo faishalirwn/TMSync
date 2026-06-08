@@ -55,17 +55,22 @@ export function fillTemplate(
  * Build the outbound links for a site from its templates and the Trakt page
  * media: the id-based `movie`/`tv` deep link (if fillable) and the title-based
  * `search` link (if defined). Placeholders: {tmdb} {imdb} {season} {episode}
- * {title} (URL-encoded, spaces → %20) and {slug} (lowercase, hyphen-joined).
+ * {title} (URL-encoded), {slug} (clean, year-free) and {slugyear} (Trakt's raw
+ * slug, which may include a disambiguation year).
  */
 export function buildSiteLinks(links: LinkTemplates, media: TraktPageMedia): SiteLinks {
-  // Prefer Trakt's own URL slug (the SHOW slug on tv pages, not the episode's
-  // title) and fall back to slugifying the title only when there's no URL slug.
-  const slug = media.slug ?? (media.title !== undefined ? slugify(media.title) : undefined);
+  const titleSlug = media.title !== undefined ? slugify(media.title) : undefined;
+  // {slug}: a clean, year-free slug. For movies the title slugifies cleanly
+  // (Trakt's URL slug appends a disambiguation year — "terrifier-3-2024" — which
+  // most sites don't use). For tv the og:title is the EPISODE, so use Trakt's
+  // show URL slug instead. {slugyear} keeps Trakt's raw slug for sites that mirror it.
+  const slug = media.type === "movie" ? (titleSlug ?? media.slug) : (media.slug ?? titleSlug);
   const params = {
     tmdb: media.tmdb,
     imdb: media.imdb,
     title: media.title !== undefined ? encodeURIComponent(media.title) : undefined,
     slug,
+    slugyear: media.slug,
     season: media.season,
     episode: media.episode,
   };

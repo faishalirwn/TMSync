@@ -227,8 +227,8 @@ function QuickLinkRow({
           </label>
           <p class="hint">
             Placeholders: <code>{"{tmdb}"}</code> <code>{"{imdb}"}</code> <code>{"{season}"}</code>{" "}
-            <code>{"{episode}"}</code> <code>{"{title}"}</code> (spaces) <code>{"{slug}"}</code>{" "}
-            (hyphens).
+            <code>{"{episode}"}</code> <code>{"{title}"}</code> <code>{"{slug}"}</code> (year-free){" "}
+            <code>{"{slugyear}"}</code> (with year).
           </p>
           <button type="button" onClick={save}>
             {saved ? "Saved" : "Save"}
