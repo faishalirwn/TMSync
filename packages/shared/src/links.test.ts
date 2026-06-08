@@ -59,6 +59,21 @@ describe("buildSiteLinks", () => {
     });
   });
 
+  it("prefers the Trakt URL slug over the (episode) title for tv {slug}", () => {
+    const site: LinkTemplates = {
+      tv: "https://popcornmovies.org/episode/{slug}/{season}-{episode}",
+    };
+    expect(
+      buildSiteLinks(site, {
+        type: "tv",
+        slug: "invincible",
+        title: "Invincible 4x04 Hurm", // episode title — must NOT drive the slug
+        season: 4,
+        episode: 4,
+      }),
+    ).toEqual({ direct: "https://popcornmovies.org/episode/invincible/4-4" });
+  });
+
   it("returns nothing when no template can be filled", () => {
     const tmdbOnly: LinkTemplates = { movie: "https://s/movie/{tmdb}" };
     expect(buildSiteLinks(tmdbOnly, { type: "movie", title: "X" })).toEqual({});

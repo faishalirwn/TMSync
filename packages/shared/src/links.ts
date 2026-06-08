@@ -10,6 +10,8 @@ export interface TraktPageMedia {
   tmdb?: string;
   imdb?: string;
   title?: string;
+  /** Trakt's own URL slug (the SHOW slug for tv) — the reliable {slug} source. */
+  slug?: string;
   season?: number;
   episode?: number;
 }
@@ -56,11 +58,14 @@ export function fillTemplate(
  * {title} (URL-encoded, spaces → %20) and {slug} (lowercase, hyphen-joined).
  */
 export function buildSiteLinks(links: LinkTemplates, media: TraktPageMedia): SiteLinks {
+  // Prefer Trakt's own URL slug (the SHOW slug on tv pages, not the episode's
+  // title) and fall back to slugifying the title only when there's no URL slug.
+  const slug = media.slug ?? (media.title !== undefined ? slugify(media.title) : undefined);
   const params = {
     tmdb: media.tmdb,
     imdb: media.imdb,
     title: media.title !== undefined ? encodeURIComponent(media.title) : undefined,
-    slug: media.title !== undefined ? slugify(media.title) : undefined,
+    slug,
     season: media.season,
     episode: media.episode,
   };

@@ -14,6 +14,55 @@ function recipeHost(r: Recipe): string {
   return unescaped.split("/")[0] || r.name;
 }
 
+const isShowRecipe = (r: Recipe) =>
+  r.mediaType === "show" || !!r.extract.season || !!r.extract.episode;
+
+/** `https://host/segment/` from a recipe's urlPattern — the inferable part of a link. */
+function recipeBaseUrl(r: Recipe): string {
+  const unescaped = r.match.urlPattern.replace(/\\(.)/g, "$1");
+  const [host, ...rest] = unescaped.split("/");
+  const segments = rest.join("/");
+  return `https://${host}/${segments}${segments ? "/" : ""}`;
+}
+
+interface RecipeSuggestion {
+  host: string;
+  name: string;
+  movie?: string;
+  tv?: string;
+}
+
+/**
+ * What we CAN infer for a quick link from existing recipes: the site name and
+ * the URL base (host + path prefix). The id/slug tail is left for the user —
+ * recipes don't know how a site maps to Trakt's tmdb/imdb. Hosts that already
+ * have a quick link are skipped.
+ */
+function recipeSuggestions(recipes: Recipe[], links: QuickLinkSite[]): RecipeSuggestion[] {
+  const hasLinkFor = (host: string) =>
+    links.some((l) => [l.movie, l.tv, l.search].some((u) => u?.includes(host)));
+  const byHost = new Map<string, Recipe[]>();
+  for (const r of recipes) {
+    const h = recipeHost(r);
+    const g = byHost.get(h) ?? [];
+    g.push(r);
+    byHost.set(h, g);
+  }
+  const out: RecipeSuggestion[] = [];
+  for (const [host, group] of byHost) {
+    if (hasLinkFor(host)) continue;
+    const movieR = group.find((r) => !isShowRecipe(r));
+    const tvR = group.find((r) => isShowRecipe(r));
+    out.push({
+      host,
+      name: group[0]?.name ?? host,
+      movie: movieR ? recipeBaseUrl(movieR) : undefined,
+      tv: tvR ? recipeBaseUrl(tvR) : undefined,
+    });
+  }
+  return out;
+}
+
 /** Trakt connect/disconnect — mirrors the popup, lives here for a stable home. */
 function TraktSection({
   status,
@@ -192,19 +241,23 @@ function QuickLinkRow({
 
 function QuickLinks({
   sites,
+  suggestions,
   busy,
   onSave,
   onDelete,
   onToggle,
   onAdd,
+  onAddFromRecipe,
   justAdded,
 }: {
   sites: QuickLinkSite[];
+  suggestions: RecipeSuggestion[];
   busy: boolean;
   onSave: (site: QuickLinkSite) => Promise<void>;
   onDelete: (id: string) => void;
   onToggle: (id: string) => void;
   onAdd: () => void;
+  onAddFromRecipe: (s: RecipeSuggestion) => void;
   justAdded: string | null;
 }) {
   return (
@@ -212,13 +265,29 @@ function QuickLinks({
       <div class="row">
         <h2>Quick links</h2>
         <button type="button" class="link" disabled={busy} onClick={onAdd}>
-          + Add site
+          + Add blank
         </button>
       </div>
       <p class="hint">
         “Watch on …” buttons added to Trakt movie/show pages. Toggle a site on to show it — keep it
         to your favourites.
       </p>
+      {suggestions.length > 0 && (
+        <p class="hint">
+          From your recipes (name + URL base pre-filled; add the id/slug):{" "}
+          {suggestions.map((s) => (
+            <button
+              type="button"
+              class="link"
+              key={s.host}
+              disabled={busy}
+              onClick={() => onAddFromRecipe(s)}
+            >
+              + {s.host}
+            </button>
+          ))}
+        </p>
+      )}
       {sites.length === 0 ? (
         <p class="muted">No quick-link sites yet. Add one and give it the site’s URL patterns.</p>
       ) : (
@@ -425,6 +494,14 @@ export function App() {
     setLinks(next);
     setJustAdded(id);
   };
+  const addFromRecipe = async (s: RecipeSuggestion) => {
+    const id = `ql-${Date.now()}`;
+    const site: QuickLinkSite = { id, name: s.name, enabled: true, movie: s.movie, tv: s.tv };
+    const next = [...(await quickLinks.getValue()), site];
+    await quickLinks.setValue(next);
+    setLinks(next);
+    setJustAdded(id);
+  };
 
   const deleteCorrection = async (key: string) => {
     setBusy(true);
@@ -449,11 +526,13 @@ export function App() {
       <EnabledSites sites={sites} busy={busy} onDisable={disableSite} />
       <QuickLinks
         sites={links}
+        suggestions={recipeSuggestions(recipes, links)}
         busy={busy}
         onSave={saveLink}
         onDelete={deleteLink}
         onToggle={toggleLink}
         onAdd={addLink}
+        onAddFromRecipe={addFromRecipe}
         justAdded={justAdded}
       />
       <CustomRecipes recipes={recipes} onDelete={deleteRecipe} />

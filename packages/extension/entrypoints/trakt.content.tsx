@@ -56,15 +56,18 @@ function parseTraktPage(): TraktPageMedia | null {
   const ids = readIds();
   const title = readTitle();
 
-  if (/^\/movies\/[^/]+/.test(path)) {
-    return { type: "movie", ...ids, title };
-  }
+  const movie = path.match(/^\/movies\/([^/]+)/);
+  if (movie) return { type: "movie", slug: movie[1], ...ids, title };
+
+  // For tv the show slug is the FIRST path segment — use it for {slug} so links
+  // key off the show, not the episode/season title.
+  const show = path.match(/^\/shows\/([^/]+)/);
+  if (!show) return null;
+  const slug = show[1];
+
   let m = path.match(/^\/shows\/[^/]+\/seasons\/(\d+)\/episodes\/(\d+)/);
-  if (m) return { type: "tv", season: Number(m[1]), episode: Number(m[2]), ...ids, title };
+  if (m) return { type: "tv", slug, season: Number(m[1]), episode: Number(m[2]), ...ids, title };
   m = path.match(/^\/shows\/[^/]+\/seasons\/(\d+)/);
-  if (m) return { type: "tv", season: Number(m[1]), episode: 1, ...ids, title };
-  if (/^\/shows\/[^/]+/.test(path)) {
-    return { type: "tv", season: 1, episode: 1, ...ids, title };
-  }
-  return null;
+  if (m) return { type: "tv", slug, season: Number(m[1]), episode: 1, ...ids, title };
+  return { type: "tv", slug, season: 1, episode: 1, ...ids, title };
 }

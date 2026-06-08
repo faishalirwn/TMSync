@@ -83,6 +83,8 @@ export function PickerApp({ onClose }: { onClose: () => void }) {
   // Set once we've loaded an existing saved recipe for this site — we then edit
   // it in place (keep its id) instead of creating a duplicate.
   const [editingId, setEditingId] = useState<string | null>(null);
+  // The loaded recipe as a draft, so "Reset to saved" can revert edits.
+  const [savedDraft, setSavedDraft] = useState<RecipeDraft | null>(null);
 
   // Reload a saved recipe for this host so the panel reflects what's stored
   // (and editing — e.g. adding quick links — doesn't clobber the scrape fields),
@@ -93,7 +95,9 @@ export function PickerApp({ onClose }: { onClose: () => void }) {
         recipeMatchesHost(r, location.hostname),
       );
       if (saved) {
-        setDraft(recipeToDraft(saved));
+        const loaded = recipeToDraft(saved);
+        setDraft(loaded);
+        setSavedDraft(loaded);
         setName(saved.name);
         setEditingId(saved.id);
       }
@@ -228,6 +232,22 @@ export function PickerApp({ onClose }: { onClose: () => void }) {
           </button>
         </header>
 
+        {editingId && savedDraft && (
+          <div class="editbanner">
+            <span>Loaded your saved recipe — the fields below are from it, not auto-detected.</span>
+            <button
+              type="button"
+              class="resetlink"
+              onClick={() => {
+                setDraft(savedDraft);
+                setStatus("Reverted to your saved recipe.");
+              }}
+            >
+              Reset to saved
+            </button>
+          </div>
+        )}
+
         <label class="name">
           Site name
           <input value={name} onInput={(e) => setName((e.target as HTMLInputElement).value)} />
@@ -337,7 +357,7 @@ export function PickerApp({ onClose }: { onClose: () => void }) {
 
         <div class="actions">
           <button type="button" class="primary" onClick={save} disabled={!draft.fields.title}>
-            Save & enable
+            {editingId ? "Update saved recipe" : "Save & enable"}
           </button>
           <button type="button" onClick={copyJson} disabled={!draft.fields.title}>
             Copy JSON
@@ -388,6 +408,11 @@ const CSS = `
 .check input { width: auto; margin: 0; flex: none; }
 .preview.ok { background: #ecfdf5; color: #047857; }
 .preview.bad { background: #fef2f2; color: #b91c1c; }
+.editbanner { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px;
+  padding: 6px 8px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px;
+  font-size: 11px; color: #1e40af; }
+.resetlink { align-self: flex-start; border: none; background: none; padding: 0;
+  color: #2563eb; text-decoration: underline; cursor: pointer; font: inherit; font-size: 11px; }
 .actions { display: flex; gap: 8px; }
 .actions button { flex: 1; padding: 6px; border: 1px solid #d4d4d8; border-radius: 6px;
   background: #fff; cursor: pointer; font: inherit; }
