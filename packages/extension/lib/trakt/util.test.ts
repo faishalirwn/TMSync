@@ -1,7 +1,14 @@
 import type { ParsedMedia } from "@tmsync/shared";
 import { describe, expect, it } from "vitest";
 import type { ResolvedIdentity, TraktTokens } from "./types";
-import { buildScrobbleBody, clampProgress, isTokenExpired, resolutionCacheKey } from "./util";
+import {
+  buildRatingBody,
+  buildScrobbleBody,
+  clampProgress,
+  isTokenExpired,
+  resolutionCacheKey,
+  reviewKey,
+} from "./util";
 
 describe("clampProgress", () => {
   it("clamps to 0..100 and coerces non-finite to 0", () => {
@@ -73,6 +80,57 @@ describe("resolutionCacheKey", () => {
   it("distinguishes movie vs show and year", () => {
     const movie: ParsedMedia = { mediaType: "movie", title: "Dune", year: 2021 };
     expect(resolutionCacheKey(movie)).toBe("movie:dune:2021");
+  });
+});
+
+describe("buildRatingBody", () => {
+  const movie: ResolvedIdentity = { mediaType: "movie", traktId: 28, title: "Neon Tides" };
+  const show: ResolvedIdentity = { mediaType: "show", traktId: 1, title: "The Pixel Frontier" };
+
+  it("rates a movie", () => {
+    expect(buildRatingBody(movie, "movie", undefined, undefined, 9)).toEqual({
+      movies: [{ ids: { trakt: 28 }, rating: 9 }],
+    });
+  });
+
+  it("rates a whole show", () => {
+    expect(buildRatingBody(show, "show", 2, 4, 8)).toEqual({
+      shows: [{ ids: { trakt: 1 }, rating: 8 }],
+    });
+  });
+
+  it("rates a season by number nested under the show", () => {
+    expect(buildRatingBody(show, "season", 2, 4, 7)).toEqual({
+      shows: [{ ids: { trakt: 1 }, seasons: [{ number: 2, rating: 7 }] }],
+    });
+  });
+
+  it("rates an episode by number nested under season + show", () => {
+    expect(buildRatingBody(show, "episode", 2, 4, 10)).toEqual({
+      shows: [
+        { ids: { trakt: 1 }, seasons: [{ number: 2, episodes: [{ number: 4, rating: 10 }] }] },
+      ],
+    });
+  });
+
+  it("omits rating for the remove endpoint", () => {
+    expect(buildRatingBody(show, "episode", 2, 4)).toEqual({
+      shows: [{ ids: { trakt: 1 }, seasons: [{ number: 2, episodes: [{ number: 4 }] }] }],
+    });
+  });
+
+  it("returns null when a season/episode level lacks its number(s)", () => {
+    expect(buildRatingBody(show, "season", undefined, undefined, 7)).toBeNull();
+    expect(buildRatingBody(show, "episode", 2, undefined, 7)).toBeNull();
+  });
+});
+
+describe("reviewKey", () => {
+  const show: ResolvedIdentity = { mediaType: "show", traktId: 1, title: "X" };
+  it("separates levels and includes season/episode where relevant", () => {
+    expect(reviewKey(show, "show", 2, 4)).toBe("show:1::");
+    expect(reviewKey(show, "season", 2, 4)).toBe("season:1:2:");
+    expect(reviewKey(show, "episode", 2, 4)).toBe("episode:1:2:4");
   });
 });
 

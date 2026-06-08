@@ -1,12 +1,35 @@
-import { corrections, enabledOrigins, resolutionCache, tabSessions } from "@/lib/storage";
+import {
+  corrections,
+  enabledOrigins,
+  notes,
+  ratings,
+  resolutionCache,
+  tabSessions,
+} from "@/lib/storage";
 import { connect, disconnect, getRedirectUri, isConnected } from "@/lib/trakt/auth";
-import { TraktNotConnectedError, resolve, scrobble, search } from "@/lib/trakt/client";
-import { buildScrobbleBody, resolutionCacheKey } from "@/lib/trakt/util";
+import {
+  TraktNotConnectedError,
+  commentItem,
+  deleteComment,
+  postComment,
+  rate,
+  resolve,
+  scrobble,
+  search,
+  updateComment,
+} from "@/lib/trakt/client";
+import {
+  buildRatingBody,
+  buildScrobbleBody,
+  resolutionCacheKey,
+  reviewKey,
+} from "@/lib/trakt/util";
 import { onMessage, sendMessage } from "@/messaging";
 import { browser } from "wxt/browser";
 
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const siteId = (origin: string) => `tmsync-${origin.replace(/[^a-z0-9]/gi, "-")}`;
+const wordCount = (s: string) => s.split(/\s+/).filter(Boolean).length;
 
 /**
  * MV3 service worker. STATELESS (constraint #4): every handler reads from
@@ -128,6 +151,109 @@ export default defineBackground(() => {
     // Re-resolve the current session in the tab (replaces the wrong scrobble).
     const tabId = sender.tab?.id;
     if (tabId !== undefined) void sendMessage("recheck", undefined, tabId);
+  });
+
+  // --- ratings & notes ---
+  onMessage("getReview", async ({ data }) => {
+    try {
+      const identity = await resolve(data.media);
+      if (!identity) return { rating: null, note: null };
+      const key = reviewKey(identity, data.level, data.media.season, data.media.episode);
+      const rating = (await ratings.getValue())[key] ?? null;
+      const stored = (await notes.getValue())[key];
+      return { rating, note: stored ? { text: stored.text, spoiler: stored.spoiler } : null };
+    } catch {
+      return { rating: null, note: null };
+    }
+  });
+
+  onMessage("rateItem", async ({ data }) => {
+    try {
+      const identity = await resolve(data.media);
+      if (!identity) return { ok: false, error: "not found on Trakt" };
+      const body = buildRatingBody(
+        identity,
+        data.level,
+        data.media.season,
+        data.media.episode,
+        data.rating,
+      );
+      if (!body) return { ok: false, error: "missing season/episode" };
+      const out = await rate(body);
+      if (!out.ok) return { ok: false, error: out.error ?? `failed (${out.status})` };
+      const key = reviewKey(identity, data.level, data.media.season, data.media.episode);
+      const all = await ratings.getValue();
+      all[key] = data.rating;
+      await ratings.setValue(all);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: errMsg(e) };
+    }
+  });
+
+  onMessage("unrateItem", async ({ data }) => {
+    try {
+      const identity = await resolve(data.media);
+      if (!identity) return { ok: false, error: "not found on Trakt" };
+      const body = buildRatingBody(identity, data.level, data.media.season, data.media.episode);
+      if (!body) return { ok: false, error: "missing season/episode" };
+      const out = await rate(body, true);
+      if (!out.ok) return { ok: false, error: out.error ?? `failed (${out.status})` };
+      const key = reviewKey(identity, data.level, data.media.season, data.media.episode);
+      const all = await ratings.getValue();
+      delete all[key];
+      await ratings.setValue(all);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: errMsg(e) };
+    }
+  });
+
+  onMessage("saveNote", async ({ data }) => {
+    try {
+      const text = data.text.trim();
+      if (wordCount(text) < 5)
+        return { ok: false, error: "Trakt needs a note of at least 5 words" };
+      const identity = await resolve(data.media);
+      if (!identity) return { ok: false, error: "not found on Trakt" };
+      const key = reviewKey(identity, data.level, data.media.season, data.media.episode);
+      const all = await notes.getValue();
+      const existing = all[key];
+      if (existing) {
+        const out = await updateComment(existing.commentId, text, data.spoiler);
+        if (!out.ok) return { ok: false, error: out.error };
+        all[key] = { ...existing, text, spoiler: data.spoiler };
+      } else {
+        const item = await commentItem(identity, data.level, data.media.season, data.media.episode);
+        if (!item) return { ok: false, error: "couldn't reference this item on Trakt" };
+        const out = await postComment(item, text, data.spoiler);
+        if (!out.ok || out.id === undefined)
+          return { ok: false, error: out.error ?? "comment failed" };
+        all[key] = { commentId: out.id, text, spoiler: data.spoiler };
+      }
+      await notes.setValue(all);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: errMsg(e) };
+    }
+  });
+
+  onMessage("deleteNote", async ({ data }) => {
+    try {
+      const identity = await resolve(data.media);
+      if (!identity) return { ok: false, error: "not found on Trakt" };
+      const key = reviewKey(identity, data.level, data.media.season, data.media.episode);
+      const all = await notes.getValue();
+      const existing = all[key];
+      if (!existing) return { ok: true };
+      const out = await deleteComment(existing.commentId);
+      if (!out.ok) return { ok: false, error: out.error };
+      delete all[key];
+      await notes.setValue(all);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: errMsg(e) };
+    }
   });
 
   // --- per-tab session coordination ---

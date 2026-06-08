@@ -1,4 +1,9 @@
-import type { ResolvedIdentity, ScrobbleAction, TraktSearchOption } from "@/lib/trakt/types";
+import type {
+  ResolvedIdentity,
+  ReviewLevel,
+  ScrobbleAction,
+  TraktSearchOption,
+} from "@/lib/trakt/types";
 import type { ParsedMedia } from "@tmsync/shared";
 import { defineExtensionMessaging } from "@webext-core/messaging";
 
@@ -95,6 +100,27 @@ export interface ProtocolMap {
   saveCorrection(data: { media: ParsedMedia; identity: ResolvedIdentity }): void;
   /** Background → frames: a correction landed, re-resolve the current session. */
   recheck(): void;
+
+  // --- ratings & notes (a managed public Trakt comment per item) ---
+  /** Current rating (1–10) and note for an item at a level, from the local mirror. */
+  getReview(q: { media: ParsedMedia; level: ReviewLevel }): {
+    rating: number | null;
+    note: { text: string; spoiler: boolean } | null;
+  };
+  /** Set a 1–10 rating. */
+  rateItem(q: { media: ParsedMedia; level: ReviewLevel; rating: number }): {
+    ok: boolean;
+    error?: string;
+  };
+  /** Remove the rating. */
+  unrateItem(q: { media: ParsedMedia; level: ReviewLevel }): { ok: boolean; error?: string };
+  /** Create or edit the single note (Trakt requires ≥5 words). */
+  saveNote(q: { media: ParsedMedia; level: ReviewLevel; text: string; spoiler: boolean }): {
+    ok: boolean;
+    error?: string;
+  };
+  /** Delete the note. */
+  deleteNote(q: { media: ParsedMedia; level: ReviewLevel }): { ok: boolean; error?: string };
 }
 
 export const { sendMessage, onMessage } = defineExtensionMessaging<ProtocolMap>();

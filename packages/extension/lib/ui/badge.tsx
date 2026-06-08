@@ -1,4 +1,4 @@
-import type { TraktSearchOption } from "@/lib/trakt/types";
+import type { ReviewLevel, TraktSearchOption } from "@/lib/trakt/types";
 import { type BadgeState, type BadgeStatus, onMessage, sendMessage } from "@/messaging";
 import type { ParsedMedia } from "@tmsync/shared";
 import { render } from "preact";
@@ -117,10 +117,172 @@ function Correction({ onClose }: { onClose: () => void }) {
   );
 }
 
+const NUMS = Array.from({ length: 10 }, (_, i) => i + 1);
+
+/** 1–10 rating scale. Click a number to rate; click your current rating to clear. */
+function RatingRow({ media, level }: { media: ParsedMedia; level: ReviewLevel }) {
+  const [rating, setRating] = useState<number | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    void sendMessage("getReview", { media, level }).then((r) => setRating(r.rating));
+  }, [media, level]);
+
+  const choose = async (n: number) => {
+    setBusy(true);
+    setErr(null);
+    if (n === rating) {
+      const out = await sendMessage("unrateItem", { media, level });
+      if (out.ok) setRating(null);
+      else setErr(out.error ?? "Failed");
+    } else {
+      const out = await sendMessage("rateItem", { media, level, rating: n });
+      if (out.ok) setRating(n);
+      else setErr(out.error ?? "Failed");
+    }
+    setBusy(false);
+  };
+
+  return (
+    <div class="rate">
+      <div class="nums">
+        {NUMS.map((n) => (
+          <button
+            type="button"
+            key={n}
+            class={`num${rating !== null && n <= rating ? " on" : ""}`}
+            disabled={busy}
+            onClick={() => choose(n)}
+            title={`Rate ${n}/10`}
+          >
+            {n}
+          </button>
+        ))}
+      </div>
+      {err && <span class="msg err">{err}</span>}
+    </div>
+  );
+}
+
+const LEVELS: ReviewLevel[] = ["episode", "season", "show"];
+
+/** Rate + keep a single editable note (public Trakt comment) for the matched item. */
+function RateNote({
+  media,
+  onClose,
+  onFix,
+}: {
+  media: ParsedMedia;
+  onClose: () => void;
+  onFix: () => void;
+}) {
+  const isShow = media.season !== undefined || media.episode !== undefined;
+  const [level, setLevel] = useState<ReviewLevel>(isShow ? "episode" : "movie");
+  const [note, setNote] = useState("");
+  const [spoiler, setSpoiler] = useState(false);
+  const [hasNote, setHasNote] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    setMsg(null);
+    void sendMessage("getReview", { media, level }).then((r) => {
+      setNote(r.note?.text ?? "");
+      setSpoiler(r.note?.spoiler ?? false);
+      setHasNote(!!r.note);
+    });
+  }, [media, level]);
+
+  const save = async () => {
+    setBusy(true);
+    setMsg(null);
+    const out = await sendMessage("saveNote", { media, level, text: note, spoiler });
+    if (out.ok) {
+      setHasNote(true);
+      setMsg("Saved to Trakt");
+    } else {
+      setMsg(out.error ?? "Failed");
+    }
+    setBusy(false);
+  };
+
+  const remove = async () => {
+    setBusy(true);
+    setMsg(null);
+    const out = await sendMessage("deleteNote", { media, level });
+    if (out.ok) {
+      setNote("");
+      setHasNote(false);
+      setMsg("Deleted");
+    } else {
+      setMsg(out.error ?? "Failed");
+    }
+    setBusy(false);
+  };
+
+  return (
+    <div class="panel">
+      <div class="phead">
+        <strong>Rate &amp; note</strong>
+        <button type="button" class="x" onClick={onClose} aria-label="close">
+          ✕
+        </button>
+      </div>
+      {isShow && (
+        <div class="tabs">
+          {LEVELS.map((l) => (
+            <button
+              type="button"
+              key={l}
+              class={`tab${level === l ? " on" : ""}`}
+              onClick={() => setLevel(l)}
+            >
+              {l}
+            </button>
+          ))}
+        </div>
+      )}
+      <RatingRow media={media} level={level} />
+      <textarea
+        class="noteinput"
+        rows={4}
+        value={note}
+        onInput={(e) => setNote((e.target as HTMLTextAreaElement).value)}
+        placeholder="Your note — public on Trakt, at least 5 words…"
+      />
+      <label class="spoil">
+        <input
+          type="checkbox"
+          checked={spoiler}
+          onChange={(e) => setSpoiler((e.target as HTMLInputElement).checked)}
+        />
+        Mark as spoiler
+      </label>
+      <div class="actions">
+        <button type="button" onClick={save} disabled={busy || note.trim().length === 0}>
+          {hasNote ? "Update note" : "Post note"}
+        </button>
+        {hasNote && (
+          <button type="button" class="danger" onClick={remove} disabled={busy}>
+            Delete
+          </button>
+        )}
+        <button type="button" class="link" onClick={onFix}>
+          Wrong match?
+        </button>
+      </div>
+      {msg && <p class="msg">{msg}</p>}
+    </div>
+  );
+}
+
 function BadgeRoot() {
   const [status, setStatus] = useState<BadgeStatus | null>(null);
   const [minimized, setMinimized] = useState(false);
-  const [open, setOpen] = useState(false);
+  const [panel, setPanel] = useState<null | "review" | "fix">(null);
+  const [media, setMedia] = useState<ParsedMedia | null>(null);
+  const [promptDismissed, setPromptDismissed] = useState(false);
 
   useEffect(() => {
     // Don't auto-expand on every status: while minimized the dot color keeps
@@ -129,6 +291,13 @@ function BadgeRoot() {
     const off = onMessage("scrobbleStatus", ({ data }) => setStatus(data));
     return () => off();
   }, []);
+
+  // Pull the tab's media once a session exists (needed for rating/note/fix).
+  useEffect(() => {
+    if (status && !media) {
+      void sendMessage("getTabMedia", undefined).then((t) => t && setMedia(t.media));
+    }
+  }, [status, media]);
 
   if (!status) return null;
 
@@ -153,13 +322,42 @@ function BadgeRoot() {
     );
   }
 
+  // Compact, dismissible rating prompt right after a watch lands in history.
+  const showPrompt =
+    status.state === "scrobbled" && media !== null && panel === null && !promptDismissed;
+
   return (
     <div class="root">
       <style>{CSS}</style>
-      {open && <Correction onClose={() => setOpen(false)} />}
+      {panel === "review" && media && (
+        <RateNote media={media} onClose={() => setPanel(null)} onFix={() => setPanel("fix")} />
+      )}
+      {panel === "fix" && <Correction onClose={() => setPanel(null)} />}
+      {showPrompt && media && (
+        <div class="prompt">
+          <span class="plabel">Rate it?</span>
+          <RatingRow media={media} level={media.season !== undefined ? "episode" : "movie"} />
+          <button type="button" class="link" onClick={() => setPanel("review")}>
+            note
+          </button>
+          <button
+            type="button"
+            class="x"
+            onClick={() => setPromptDismissed(true)}
+            aria-label="dismiss"
+          >
+            ✕
+          </button>
+        </div>
+      )}
       <div class="badge">
         <span class="dot" style={{ background: DOT[status.state] }} />
-        <button type="button" class="text" onClick={() => setOpen((v) => !v)} title="Fix match">
+        <button
+          type="button"
+          class="text"
+          onClick={() => setPanel((p) => (p ? null : "review"))}
+          title="Rate, note, or fix the match"
+        >
           <strong>TMSync · {status.detail ?? LABEL[status.state]}</strong>
           {status.title && <span class="title">{status.title}</span>}
         </button>
@@ -223,4 +421,32 @@ const CSS = `
 .result:hover { background: #f0f0f0; }
 .muted { opacity: 0.6; margin: 4px 0; }
 .saved { margin: 4px 0; color: #047857; }
+.tabs { display: flex; gap: 4px; margin-bottom: 8px; }
+.tab { flex: 1; padding: 4px 6px; border: 1px solid #d4d4d8; border-radius: 6px;
+  background: #fff; cursor: pointer; font: inherit; text-transform: capitalize; }
+.tab.on { background: #111; color: #fff; border-color: #111; }
+.rate { margin-bottom: 8px; }
+.nums { display: flex; gap: 3px; }
+.num { flex: 1; padding: 5px 0; border: 1px solid #d4d4d8; border-radius: 5px;
+  background: #fff; color: #111; cursor: pointer; font: 11px/1 inherit; }
+.num:hover { border-color: #f5b50a; }
+.num.on { background: #f5b50a; border-color: #f5b50a; color: #111; font-weight: 600; }
+.noteinput { width: 100%; box-sizing: border-box; padding: 6px 8px; border: 1px solid #d4d4d8;
+  border-radius: 6px; font: inherit; resize: vertical; }
+.spoil { display: flex; align-items: center; gap: 5px; margin: 6px 0; font-size: 11px; opacity: 0.8; }
+.actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.actions .danger { border-color: #dc2626; color: #dc2626; }
+.msg { margin: 6px 0 0; font-size: 11px; opacity: 0.8; }
+.msg.err { color: #dc2626; opacity: 1; }
+.prompt { display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+  border-radius: 10px; background: rgba(17,17,17,0.92); color: #f4f4f5;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.35); }
+.prompt .plabel { font-weight: 600; white-space: nowrap; }
+.prompt .rate { margin: 0; flex: 1; }
+.prompt .num { background: rgba(255,255,255,0.1); color: #f4f4f5; border-color: rgba(255,255,255,0.2); }
+.prompt .num.on { background: #f5b50a; color: #111; border-color: #f5b50a; }
+.prompt .link { color: #93c5fd; }
+.prompt .x { border: none; background: transparent; color: inherit; cursor: pointer; opacity: 0.6; }
+.panel .link { border: none; background: none; padding: 0; color: #2563eb;
+  cursor: pointer; text-decoration: underline; font: inherit; }
 `;

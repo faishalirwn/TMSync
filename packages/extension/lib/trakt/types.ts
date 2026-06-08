@@ -59,6 +59,30 @@ export interface TraktSearchOption {
   year?: number;
 }
 
+/**
+ * What a rating/note targets. A movie has one level; a show episode can be rated
+ * or noted at three: the episode, its season, or the whole show.
+ */
+export type ReviewLevel = "movie" | "show" | "season" | "episode";
+
+/**
+ * Body for POST /sync/ratings (and …/remove, which ignores `rating`). Seasons and
+ * episodes are addressed BY NUMBER nested under the show's trakt id — so we never
+ * need their own trakt ids for ratings (unlike comments).
+ */
+export interface RatingSyncBody {
+  movies?: { ids: { trakt: number }; rating?: number }[];
+  shows?: {
+    ids: { trakt: number };
+    rating?: number;
+    seasons?: {
+      number: number;
+      rating?: number;
+      episodes?: { number: number; rating?: number }[];
+    }[];
+  }[];
+}
+
 export type ScrobbleAction = "start" | "pause" | "stop";
 
 /** Body for POST /scrobble/{start,pause,stop}. */

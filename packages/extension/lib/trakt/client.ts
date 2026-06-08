@@ -3,7 +3,9 @@ import { corrections, resolutionCache } from "@/lib/storage";
 import type { ParsedMedia } from "@tmsync/shared";
 import { getValidAccessToken, refreshTokens } from "./auth";
 import type {
+  RatingSyncBody,
   ResolvedIdentity,
+  ReviewLevel,
   ScrobbleAction,
   ScrobbleBody,
   ScrobbleResponse,
@@ -29,7 +31,7 @@ function baseHeaders(): Record<string, string> {
 }
 
 interface ApiInit {
-  method?: "GET" | "POST";
+  method?: "GET" | "POST" | "PUT" | "DELETE";
   body?: string;
 }
 
@@ -146,4 +148,117 @@ export async function scrobble(
   }
   const data = (await res.json()) as ScrobbleResponse;
   return { ok: true, status: res.status, action: data.action };
+}
+
+// --- ratings (1–10) ---
+
+/** POST /sync/ratings (set) or /sync/ratings/remove. Returns ok + status. */
+export async function rate(
+  body: RatingSyncBody,
+  remove = false,
+): Promise<{ ok: boolean; status: number; error?: string }> {
+  const res = await api(
+    `/sync/ratings${remove ? "/remove" : ""}`,
+    { method: "POST", body: JSON.stringify(body) },
+    true,
+  );
+  if (!res.ok) {
+    let detail = "";
+    try {
+      detail = (await res.text()).trim().slice(0, 120);
+    } catch {
+      // ignore unreadable body
+    }
+    return { ok: false, status: res.status, error: detail || undefined };
+  }
+  return { ok: true, status: res.status };
+}
+
+// --- comments (managed as the user's single editable note per item) ---
+
+/** Trakt comment object (only the fields we use). */
+interface TraktComment {
+  id: number;
+  comment: string;
+  spoiler: boolean;
+}
+
+/** The item a comment attaches to. Season/episode need their OWN trakt ids. */
+type CommentItem =
+  | { movie: { ids: { trakt: number } } }
+  | { show: { ids: { trakt: number } } }
+  | { season: { ids: { trakt: number } } }
+  | { episode: { ids: { trakt: number } } };
+
+/**
+ * Resolve the item reference for a comment. Movie/show use the resolved id we
+ * already have; season/episode need a lookup (Trakt comments require the item's
+ * own trakt id, unlike ratings). Returns null if the lookup fails.
+ */
+export async function commentItem(
+  identity: ResolvedIdentity,
+  level: ReviewLevel,
+  season?: number,
+  episode?: number,
+): Promise<CommentItem | null> {
+  if (level === "movie") return { movie: { ids: { trakt: identity.traktId } } };
+  if (level === "show") return { show: { ids: { trakt: identity.traktId } } };
+  if (season === undefined) return null;
+  if (level === "season") {
+    const res = await api(`/shows/${identity.traktId}/seasons`);
+    if (!res.ok) return null;
+    const seasons = (await res.json()) as { number: number; ids: { trakt: number } }[];
+    const hit = seasons.find((s) => s.number === season);
+    return hit ? { season: { ids: { trakt: hit.ids.trakt } } } : null;
+  }
+  if (episode === undefined) return null;
+  const res = await api(`/shows/${identity.traktId}/seasons/${season}/episodes/${episode}`);
+  if (!res.ok) return null;
+  const ep = (await res.json()) as { ids: { trakt: number } };
+  return { episode: { ids: { trakt: ep.ids.trakt } } };
+}
+
+/** POST /comments — create a comment. Returns the new comment id. */
+export async function postComment(
+  item: CommentItem,
+  comment: string,
+  spoiler: boolean,
+): Promise<{ ok: boolean; id?: number; error?: string }> {
+  const res = await api(
+    "/comments",
+    { method: "POST", body: JSON.stringify({ ...item, comment, spoiler }) },
+    true,
+  );
+  if (!res.ok) return { ok: false, error: await errorDetail(res) };
+  const data = (await res.json()) as TraktComment;
+  return { ok: true, id: data.id };
+}
+
+/** PUT /comments/{id} — edit an existing comment. */
+export async function updateComment(
+  id: number,
+  comment: string,
+  spoiler: boolean,
+): Promise<{ ok: boolean; error?: string }> {
+  const res = await api(
+    `/comments/${id}`,
+    { method: "PUT", body: JSON.stringify({ comment, spoiler }) },
+    true,
+  );
+  return res.ok ? { ok: true } : { ok: false, error: await errorDetail(res) };
+}
+
+/** DELETE /comments/{id}. A 404 means it's already gone — treat as success. */
+export async function deleteComment(id: number): Promise<{ ok: boolean; error?: string }> {
+  const res = await api(`/comments/${id}`, { method: "DELETE" }, true);
+  if (res.ok || res.status === 404) return { ok: true };
+  return { ok: false, error: await errorDetail(res) };
+}
+
+async function errorDetail(res: Response): Promise<string | undefined> {
+  try {
+    return (await res.text()).trim().slice(0, 160) || undefined;
+  } catch {
+    return undefined;
+  }
 }

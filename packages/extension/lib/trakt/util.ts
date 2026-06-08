@@ -1,5 +1,11 @@
 import type { ParsedMedia } from "@tmsync/shared";
-import type { ResolvedIdentity, ScrobbleBody, TraktTokens } from "./types";
+import type {
+  RatingSyncBody,
+  ResolvedIdentity,
+  ReviewLevel,
+  ScrobbleBody,
+  TraktTokens,
+} from "./types";
 
 /**
  * Trakt `progress` is a 0–100 float. Coerce non-finite to 0, clamp, and round to
@@ -38,6 +44,44 @@ export function resolutionCacheKey(media: ParsedMedia): string {
   const mediaType =
     media.season !== undefined || media.episode !== undefined ? "show" : media.mediaType;
   return `${mediaType}:${media.title.trim().toLowerCase()}:${media.year ?? ""}`;
+}
+
+/**
+ * Stable key for a rating/note at a given level. Season/episode numbers are part
+ * of the key so each level is tracked independently for one resolved title.
+ */
+export function reviewKey(
+  identity: ResolvedIdentity,
+  level: ReviewLevel,
+  season?: number,
+  episode?: number,
+): string {
+  const s = level === "season" || level === "episode" ? (season ?? "") : "";
+  const e = level === "episode" ? (episode ?? "") : "";
+  return `${level}:${identity.traktId}:${s}:${e}`;
+}
+
+/**
+ * Build a /sync/ratings body for a level. Omit `rating` for the remove endpoint.
+ * Returns null when a season/episode level is missing its number(s). Pure.
+ */
+export function buildRatingBody(
+  identity: ResolvedIdentity,
+  level: ReviewLevel,
+  season: number | undefined,
+  episode: number | undefined,
+  rating?: number,
+): RatingSyncBody | null {
+  const r = rating !== undefined ? { rating } : {};
+  const ids = { ids: { trakt: identity.traktId } };
+  if (level === "movie") return { movies: [{ ...ids, ...r }] };
+  if (level === "show") return { shows: [{ ...ids, ...r }] };
+  if (season === undefined) return null;
+  if (level === "season") return { shows: [{ ...ids, seasons: [{ number: season, ...r }] }] };
+  if (episode === undefined) return null;
+  return {
+    shows: [{ ...ids, seasons: [{ number: season, episodes: [{ number: episode, ...r }] }] }],
+  };
 }
 
 /** True if the access token is expired (or within `skewSec` of expiring). */

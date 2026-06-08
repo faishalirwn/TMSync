@@ -38,6 +38,29 @@ export const corrections = storage.defineItem<Record<string, ResolvedIdentity>>(
 );
 
 /**
+ * Ratings the user set through TMSync, keyed by reviewKey(identity, level, …).
+ * A local mirror for instant UI — ratings made on the Trakt website aren't
+ * reflected here (we don't pull the full ratings list). 1–10.
+ */
+export const ratings = storage.defineItem<Record<string, number>>("local:ratings", {
+  fallback: {},
+});
+
+/**
+ * The user's single note per item (a managed public Trakt comment), keyed by
+ * reviewKey. We store the comment id so the note is always edited/deleted, never
+ * duplicated.
+ */
+export interface StoredNote {
+  commentId: number;
+  text: string;
+  spoiler: boolean;
+}
+export const notes = storage.defineItem<Record<string, StoredNote>>("local:notes", {
+  fallback: {},
+});
+
+/**
  * Per-tab watch session, keyed by tabId. Set by the recipe-matching frame and
  * updated by whichever frame owns the <video> (which may be a cross-origin
  * iframe). Lives in `session` storage (ephemeral, per browser session) — the
